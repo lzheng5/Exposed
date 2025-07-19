@@ -1,0 +1,30 @@
+#-Q src/UntypedExposed UntypedExposed
+
+#src/UntypedExposed/Util.v
+#src/UntypedExposed/ANF.v
+#src/UntypedExposed/Unary.v
+#src/UntypedExposed/Refl.v
+#src/UntypedExposed/Refl2.v
+#src/UntypedExposed/DPE.v
+#src/UntypedExposed/Top.v
+##src/UntypedExposed/Top2.v
+
+-Q src/Framework Framework
+
+src/Framework/Util.v
+src/Framework/ANF.v
+src/Framework/Refl.v
+src/Framework/Exposed.v
+src/Framework/Id.v
+src/Framework/DPE.v
+src/Framework/Defunc.v
+src/Framework/ConstProp.v
+src/Framework/Top.v
+src/Framework/Comp.v
+src/Framework/ReflComp.v
+src/Framework/SemSubst.v
+
+src/Framework/ANF0.v
+src/Framework/Refl0.v
+#src/Framework/Erase.v
+#src/Framework/Erase1.v
