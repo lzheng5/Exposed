@@ -229,7 +229,7 @@ Module VTransM <: Exposed.VTrans LM.
     - destruct H as [Hw [Hc HFV]]; subst.
       repeat (split; auto).
       rewrite normalize_step in *; try lia.
-      eapply ExposedUtil.V_mono_Forall; eauto.
+      eapply ExposedUtil.V_mono_Forall_aux; eauto.
   Qed.
 
 End VTransM.

@@ -9,7 +9,7 @@ From Framework Require Import Util ANF.
 
 Module ExposedUtil.
 
-  Lemma V_mono_Forall :
+  Lemma V_mono_Forall_aux :
     forall i j V vs1 vs2,
       (forall k : nat,
           k < S i ->
@@ -24,6 +24,57 @@ Module ExposedUtil.
     rename l' into vs2.
     constructor; auto.
     eapply H; eauto; lia.
+  Qed.
+
+  Definition V_refl0 (v1 : val) (v2 : val) : Prop :=
+    match v1, v2 with
+    | Vconstr t1 vs1, Vconstr t2 vs2 => t1 = t2 /\ length vs1 = length vs2
+    | Vfun f1 ρ1 xs1 e1, Vfun f2 ρ2 xs2 e2 => length xs1 = length xs2
+    | _, _ => False
+    end.
+
+  Definition V_refl
+    (V' : nat -> wval -> wval -> Prop)
+    (E' : nat -> env -> exp -> env -> exp -> Prop)
+    (i0 : nat) (w : web)
+    (v1 : val) (v2 : val) :=
+    match v1, v2 with
+    | Vconstr t1 vs1, Vconstr t2 vs2 =>
+        t1 = t2 /\
+        Forall2 (V' i0) vs1 vs2
+
+    | Vfun f1 ρ1 xs1 e1, Vfun f2 ρ2 xs2 e2 =>
+        length xs1 = length xs2 /\
+        forall j vs1 vs2 ρ3 ρ4,
+          j <= i0 ->
+          (w \in Exposed -> Forall exposed vs1) ->
+          (w \in Exposed -> Forall exposed vs2) ->
+          Forall2 (V' j) vs1 vs2 ->
+          set_lists xs1 vs1 (M.set f1 (Tag w (Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
+          set_lists xs2 vs2 (M.set f2 (Tag w (Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
+          E' j ρ3 e1 ρ4 e2
+
+    | _, _ => False
+    end.
+
+  (* Lemmas about V_refl0 *)
+  Lemma V_refl_V_refl0 { V E i w v1 v2 }:
+    V_refl V E i w v1 v2 -> V_refl0 v1 v2.
+  Proof.
+    unfold V_refl0.
+    intros.
+    destruct v1; destruct v2; simpl in H; try contradiction.
+    - destruct H; auto.
+    - destruct H as [Hc HF]; subst.
+      split; auto.
+      eapply Forall2_length; eauto.
+  Qed.
+
+  Lemma refl_V_refl0 v :
+    V_refl0 v v.
+  Proof.
+    unfold V_refl0.
+    destruct v; auto.
   Qed.
 
 End ExposedUtil.
@@ -79,6 +130,7 @@ Module ExposedV (LM : LSig) (VT : VTrans LM).
 
   Import VT.
   Import LM.
+  Import ExposedUtil.
 
   (* Logical Relations with Exposed Webs *)
   Definition R' (P : nat -> wval -> wval -> Prop) (i : nat) (r1 : res) (r2 : res) :=
@@ -95,37 +147,6 @@ Module ExposedV (LM : LSig) (VT : VTrans LM).
       exists j2 r2,
         bstep_fuel ex ρ2 e2 j2 r2 /\
         R' P (i - j1) r1 r2.
-
-  Definition V_refl0 (v1 : val) (v2 : val) : Prop :=
-    match v1, v2 with
-    | Vconstr t1 vs1, Vconstr t2 vs2 => t1 = t2 /\ length vs1 = length vs2
-    | Vfun f1 ρ1 xs1 e1, Vfun f2 ρ2 xs2 e2 => length xs1 = length xs2
-    | _, _ => False
-    end.
-
-  Definition V_refl
-    (V' : nat -> wval -> wval -> Prop)
-    (E' : nat -> env -> exp -> env -> exp -> Prop)
-    (i0 : nat) (w : web)
-    (v1 : val) (v2 : val) :=
-    match v1, v2 with
-    | Vconstr t1 vs1, Vconstr t2 vs2 =>
-        t1 = t2 /\
-        Forall2 (V' i0) vs1 vs2
-
-    | Vfun f1 ρ1 xs1 e1, Vfun f2 ρ2 xs2 e2 =>
-        length xs1 = length xs2 /\
-        forall j vs1 vs2 ρ3 ρ4,
-          j <= i0 ->
-          (w \in Exposed -> Forall exposed vs1) ->
-          (w \in Exposed -> Forall exposed vs2) ->
-          Forall2 (V' j) vs1 vs2 ->
-          set_lists xs1 vs1 (M.set f1 (Tag w (Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
-          set_lists xs2 vs2 (M.set f2 (Tag w (Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
-          E' j ρ3 e1 ρ4 e2
-
-    | _, _ => False
-    end.
 
   Fixpoint V (i : nat) (wv1 : wval) (wv2 : wval) {struct i} : Prop :=
     wf_val wv1 /\
@@ -153,26 +174,6 @@ Module ExposedV (LM : LSig) (VT : VTrans LM).
 
   Definition E := (E' V).
 
-  (* Lemmas about V_refl0 *)
-  Lemma V_refl_V_refl0 { V E i w v1 v2 }:
-    V_refl V E i w v1 v2 -> V_refl0 v1 v2.
-  Proof.
-    unfold V_refl0.
-    intros.
-    destruct v1; destruct v2; simpl in H; try contradiction.
-    - destruct H; auto.
-    - destruct H as [Hc HF]; subst.
-      split; auto.
-      eapply Forall2_length; eauto.
-  Qed.
-
-  Lemma refl_V_refl0 v :
-    V_refl0 v v.
-  Proof.
-    unfold V_refl0.
-    destruct v; auto.
-  Qed.
-
   (* Monotonicity Lemmas *)
   Lemma V_refl_mono :
     forall i V E j w v1 v2,
@@ -194,7 +195,7 @@ Module ExposedV (LM : LSig) (VT : VTrans LM).
     - destruct H0 as [Heqc HF];
         repeat split; auto.
       rewrite normalize_step in *; try lia.
-      eapply ExposedUtil.V_mono_Forall; eauto; lia.
+      eapply V_mono_Forall_aux; eauto; lia.
   Qed.
 
   Lemma V_mono i :

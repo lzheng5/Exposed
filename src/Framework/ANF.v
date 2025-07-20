@@ -1421,3 +1421,53 @@ Inductive has_id : exp -> vars :=
     has_id (Ecase x w ((c, e) :: cl)) y.
 
 Hint Constructors has_id : core.
+
+Inductive bound_var : exp -> vars :=
+| Bound_Econstr1 :
+    forall x w t ys e,
+      bound_var (Econstr x w t ys e) x
+
+| Bound_Econstr2 :
+    forall y x w t ys e,
+      bound_var e y ->
+      bound_var (Econstr x w t ys e) y
+
+| Bound_Eproj1 :
+    forall x y w i e,
+      bound_var (Eproj x w i y e) x
+
+| Bound_Eproj2 :
+    forall y x w i y' e,
+      bound_var e y ->
+      bound_var (Eproj x w i y' e) y
+
+| Bound_Eletapp1 :
+    forall x f w ys e,
+      bound_var (Eletapp x f w ys e) x
+
+| Bound_Eletapp2 :
+    forall y x f w ys e,
+      bound_var e y ->
+      bound_var (Eletapp x f w ys e) y
+
+| Bound_Ecase :
+    forall x y w c e cl,
+      bound_var e y ->
+      List.In (c, e) cl ->
+      bound_var (Ecase x w cl) y
+
+| Bound_Efun1 :
+    forall f w xs e k,
+      bound_var (Efun f w xs e k) f
+
+| Bound_Efun2 :
+    forall y f w xs e k,
+      List.In y xs ->
+      bound_var (Efun f w xs e k) y
+
+| Bound_Efun3 :
+    forall y f w xs e k,
+      bound_var e y ->
+      bound_var (Efun f w xs e k) y.
+
+Hint Constructors bound_var : core.

@@ -734,7 +734,7 @@ Proof.
     inv H5; simpl; auto.
 
   - destruct HV as [Hw HV]; subst.
-    unfold V_refl0 in *.
+    unfold ExposedUtil.V_refl0 in *.
     destruct v; destruct v0; try contradiction.
     + inv H2.
       inv H5.
@@ -787,7 +787,7 @@ Proof.
       eapply H; eauto; lia.
 
   - destruct HV as [Hw HV]; subst.
-    unfold V_refl in *.
+    unfold ExposedUtil.V_refl in *.
     destruct v; destruct v0; try contradiction.
     + destruct HV as [Hlen HV].
       inv H2.

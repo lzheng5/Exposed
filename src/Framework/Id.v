@@ -186,6 +186,8 @@ Proof.
 Qed.
 
 (* Reflexivity of E *)
+Import ExposedUtil.
+
 Lemma refl_V_G :
   forall i,
     (forall k : nat, k < S i -> forall v : wval, wf_val v -> V k v v) ->

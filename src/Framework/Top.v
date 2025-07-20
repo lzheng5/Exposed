@@ -28,6 +28,7 @@ Module ReflTop.
 
   (* Relate Id and Refl as Equivalence *)
 
+  Import ExposedUtil.
   Import Id.EM.EG.EV.
 
   Lemma exposed_V_relate :
@@ -164,6 +165,7 @@ Module Top (LM : LSig) (VT : VTrans LM).
   Import LM.
 
   Module IV := Id.EM.EG.EV.
+  Import ExposedUtil.
 
   Lemma exposed_V_relate :
     forall i v1 v2,
@@ -191,7 +193,7 @@ Module Top (LM : LSig) (VT : VTrans LM).
         destruct (LM.L ! w0) eqn:Heq1.
         * apply LM.L_inv_Some in Heq1.
           inv H0; contradiction.
-        * unfold IV.V_refl, EV.V_refl in *.
+        * unfold V_refl in *.
           destruct v; destruct v0; try contradiction.
           -- destruct H2.
              repeat (split; auto); intros.
@@ -222,7 +224,7 @@ Module Top (LM : LSig) (VT : VTrans LM).
       + destruct (LM.L ! w) eqn:Heq1.
         * apply LM.L_inv_Some in Heq1.
           inv H0; contradiction.
-        * unfold IV.V_refl, EV.V_refl in *.
+        * unfold V_refl in *.
           destruct HV as [Hw HV]; subst; split; auto.
           destruct v; destruct v0; try contradiction.
           -- destruct HV as [Hlen HV].
