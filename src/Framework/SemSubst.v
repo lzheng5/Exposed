@@ -11,24 +11,24 @@ From Framework Require Import Util ANF Exposed.
 
 (* DPE
 
-let f_work = fun [w0] (x) ->
+let f_work = fun [w_work] (x) ->
                let g0 = fun [w_g0] () ->
-                          [[ let f_wrap = fun [w1] (x y) -> {f_work} [w0] x (* the hole doesn't need to be at the elimination site *)
+                          [[ let f_wrap = fun [w_wrap] (x y) -> {f_work} [w_work] x (* the hole doesn't need to be at the elimination site *)
                              in f_wrap ]]
                let f = g0 [w_g0] ()
                in x + 1
 let g1 = fun [w_g1] () ->
-           let f_wrap = fun [w1] (x y) -> f_work [w0] x
+           let f_wrap = fun [w_wrap] (x y) -> f_work [w_work] x
            in f_wrap
 let f = g1 [w_g1] ()
-let h1 = fun [w_h1] (f') -> f' [w1] (1, 2)
-let h2 = fun [w_h2] (f') -> let r = f' [w1] (1, 2) in r + 1
+let h1 = fun [w_h1] (f') -> f' [w_wrap] (1, 2)
+let h2 = fun [w_h2] (f') -> let r = f' [w_wrap] (1, 2) in r + 1
 in h1 [w_h1] f
    h2 [w_h2] f
 
 ~~>
 
-let f_work = fun [w0] (x) ->
+let f_work = fun [w_work] (x) ->
                let g0 = fun [w_g0] () -> f_work
                let f = g0 [w_g0] ()
                in x + 1
@@ -36,16 +36,16 @@ let g1 = fun [w_g1] () -> f_work
 let f = g1 [w_g1] ()
 let h1 = fun [w_h1] (f') ->
           let g3 = fun [w_g3] () ->
-                    let f'_wrap = fun [w1] (x, y) -> f' [w0] x
+                    let f'_wrap = fun [w_wrap] (x, y) -> f' [w_work] x
                     in f'_wrap
           let f'_wrap = g3 [w_g3] ()
-          in f'_wrap [w1] (1, 2)
+          in f'_wrap [w_wrap] (1, 2)
 let h2 = fun [w_h2] (f') ->
           let g3 = fun [w_g3] () ->
-                    let f'_wrap = fun [w1] (x, y) -> f' [w0] x
+                    let f'_wrap = fun [w_wrap] (x, y) -> f' [w_work] x
                     in f'_wrap
           let f'_wrap = g3 [w_g3] ()
-          let r = f'_wrap [w1] (1, 2)
+          let r = f'_wrap [w_wrap] (1, 2)
           in r + 1
 in h1 [w_h1] f
    h2 [w_h2] f
@@ -130,7 +130,6 @@ Inductive trans (Γ : Ensemble var) : exp -> exp -> Prop :=
     (~ In f_wrap xs) ->
     NoDup ys ->
     length ys = length bs ->
-    length ys = length xs ->
 
     trans Γ (Eapp f w_wrap xs)
       (Efun f_temp w_temp []
@@ -195,7 +194,7 @@ End VTransM.
 Module EM := Exposed.Exposed LM VTransM.
 Import EM.
 
-(* Lemmas about [live_args] and [dead_args] *)
+(* Lemmas about [live_args] *)
 Lemma live_args_incl {A xs bs} :
   incl (@live_args A xs bs) xs.
 Proof.
@@ -348,14 +347,14 @@ Proof.
       eapply Free_fun1; eauto.
       intros Hc; subst.
       apply H6; auto.
-  - inv H15.
-    + inv H23; try contradiction.
-      inv H24; auto; contradiction.
-    + inv H24; auto.
-      * inv H25; contradiction.
-      * inv H26; auto.
+  - inv H14.
+    + inv H22; try contradiction.
+      inv H23; auto; contradiction.
+    + inv H23; auto.
+      * inv H24; contradiction.
+      * inv H25; auto.
         exfalso.
-        apply H25.
+        apply H24.
         eapply live_args_In; eauto.
 Qed.
 
@@ -867,7 +866,6 @@ Lemma app_compat_trans Γ bs f w xs w_temp f_temp w_wrap f_wrap ys :
   (~ In f_wrap xs) ->
   NoDup ys ->
   length ys = length bs ->
-  length ys = length xs ->
 
   trans_correct Γ (Eapp f w_wrap xs)
     (Efun f_temp w_temp []
@@ -877,7 +875,7 @@ Lemma app_compat_trans Γ bs f w xs w_temp f_temp w_wrap f_wrap ys :
           (Eapp f_wrap w_wrap xs))).
 Proof.
   unfold trans_correct, E, E'.
-  intros Hw Hw1 Hf Hxs Hw_temp Hw_temp1 Hf_temp Hf_temp2 Hw_wrap Hf_wrap Hf1 Hf_wrap1 Hf_wrap2 Hn Hys1 Hys2.
+  intros Hw Hw1 Hf Hxs Hw_temp Hw_temp1 Hf_temp Hf_temp2 Hw_wrap Hf_wrap Hf1 Hf_wrap1 Hf_wrap2 Hn Hys1.
   intros.
   inv H1.
   exists 0, OOT; split; simpl; auto.
@@ -979,7 +977,10 @@ Proof.
                                 (Eret f_wrap)))) ρ2))
                  ys vs2) as [ρ4' Heqρ4']; eauto.
     unfold wval in *.
-    rewrite <- (get_list_length_eq xs vs2 _ Heqvs2); eauto.
+    erewrite <- (Forall2_length _ _ _ HVvs); eauto.
+    rewrite <- (set_lists_length_eq _ _ _ _ H8).
+    unfold var in Hlen.
+    rewrite Hlen; auto.
 
     eapply BStep_app with (ρ' := (M.set f_temp
                                     (Tag w_temp

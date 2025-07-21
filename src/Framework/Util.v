@@ -166,7 +166,7 @@ Proof.
     + repeat (rewrite M.gso; auto).
 Qed.
 
-Lemma set_set_eq {A} {x} {v : A} {u : A} {ρ} :
+Lemma set_set_eq {A} x {v : A} {u : A} {ρ} :
   M.set x v (M.set x u ρ) = M.set x v ρ.
 Proof.
   apply M.extensionality.
