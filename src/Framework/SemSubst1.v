@@ -9,7 +9,6 @@ From Framework Require Import Util ANF Exposed.
 
 (* Semantic Substitution *)
 
-
 (* DPE
 
 let f_work = fun [w_work] (x) ->
@@ -279,13 +278,10 @@ Inductive trans (Γ : Ensemble var) : exp -> exp -> Prop :=
     NoDup ys ->
     length ys = length bs ->
 
-    (* worker wrapper spec *)
-    (~ In f_wrap xs) -> (* TODO: REVISIT *)
-
     trans Γ (Eapp f w_wrap xs)
       (Efun f_temp w_temp [] wrapper
-         (Eletapp f_wrap f_temp w_temp [] (* turn the worker into the wrapper *)
-            (Eapp f_wrap w_wrap xs))).
+         (Eletapp f_temp f_temp w_temp [] (* turn the worker into the wrapper *)
+            (Eapp f_temp w_wrap xs))).
 
 Hint Constructors trans : core.
 
@@ -457,14 +453,14 @@ Proof.
       eapply Free_fun1; eauto.
       intros Hc; subst.
       apply H5; auto.
-  - inv H13.
-    + inv H21; try contradiction.
-      inv H22; auto; contradiction.
-    + inv H22; auto.
-      * inv H23; contradiction.
-      * inv H24; auto.
+  - inv H12.
+    + inv H20; try contradiction.
+      inv H21; auto; contradiction.
+    + inv H21; auto.
+      * inv H22; contradiction.
+      * inv H23; auto.
         exfalso.
-        apply H23.
+        apply H22.
         eapply live_args_In; eauto.
 Qed.
 
@@ -838,13 +834,13 @@ Proof.
     + apply R_mono with ((i - 1) - c'); try lia; auto.
 Qed.
 
-Lemma free_wrap_xs_subset xs wrapper f_temp w_temp f_wrap w_wrap :
+Lemma free_wrap_xs_subset xs wrapper f_temp w_temp w_wrap :
   (~ In f_temp xs) ->
-  (~ In f_wrap xs) ->
   FromList xs \subset
   occurs_free
     (Efun f_temp w_temp [] wrapper
-       (Eletapp f_wrap f_temp w_temp [] (Eapp f_wrap w_wrap xs))).
+       (Eletapp f_temp f_temp w_temp []
+          (Eapp f_temp w_wrap xs))).
 Proof.
   unfold Ensembles.Included, Ensembles.In, FromList.
   intros.
@@ -877,17 +873,14 @@ Lemma app_compat_trans Γ bs f w xs w_temp f_temp w_wrap f_wrap ys :
   NoDup ys ->
   length ys = length bs ->
 
-  (* worker wrapper spec *)
-  (~ In f_wrap xs) ->
-
   trans_correct Γ (Eapp f w_wrap xs)
     (Efun f_temp w_temp [] wrapper
-       (Eletapp f_wrap f_temp w_temp [] (* turn the worker into the wrapper *)
-          (Eapp f_wrap w_wrap xs))).
+       (Eletapp f_temp f_temp w_temp [] (* turn the worker into the wrapper *)
+          (Eapp f_temp w_wrap xs))).
 Proof.
   unfold trans_correct, E, E'.
-  intros Hf Hxs Hw Hw1 Hw_temp Hw_temp1 Hf_temp Hf_temp2 Hw_wrap Hf_bv Hf_wrap Hn Hlenys Hf_wrap1.
-  edestruct bound_vars_wrap_inv as [Hf_wrap2 Hf_xs]; eauto.
+  intros Hf Hxs Hw Hw1 Hw_temp Hw_temp1 Hf_temp Hf_temp2 Hw_wrap Hf_bv Hf_wrap Hn Hlenys.
+  edestruct bound_vars_wrap_inv as [Hf_wrap1 Hf_xs]; eauto.
 
   intros.
   inv H1.

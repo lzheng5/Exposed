@@ -127,7 +127,6 @@ Inductive trans (Γ : Ensemble var) : exp -> exp -> Prop :=
     f_wrap <> f ->
     (~ In f ys) ->
     (~ In f_wrap ys) ->
-    (~ In f_wrap xs) ->
     NoDup ys ->
     length ys = length bs ->
 
@@ -135,8 +134,8 @@ Inductive trans (Γ : Ensemble var) : exp -> exp -> Prop :=
       (Efun f_temp w_temp []
          (Efun f_wrap w_wrap ys (Eapp f w (live_args ys bs)) (* wrap f *)
             (Eret f_wrap))
-         (Eletapp f_wrap f_temp w_temp [] (* turn the worker into the wrapper *)
-            (Eapp f_wrap w_wrap xs))).
+         (Eletapp f_temp f_temp w_temp [] (* turn the worker into the wrapper *)
+            (Eapp f_temp w_wrap xs))).
 
 Hint Constructors trans : core.
 
@@ -347,14 +346,14 @@ Proof.
       eapply Free_fun1; eauto.
       intros Hc; subst.
       apply H6; auto.
-  - inv H14.
-    + inv H22; try contradiction.
-      inv H23; auto; contradiction.
-    + inv H23; auto.
-      * inv H24; contradiction.
-      * inv H25; auto.
+  - inv H13.
+    + inv H21; try contradiction.
+      inv H22; auto; contradiction.
+    + inv H22; auto.
+      * inv H23; contradiction.
+      * inv H24; auto.
         exfalso.
-        apply H24.
+        apply H23.
         eapply live_args_In; eauto.
 Qed.
 
@@ -828,13 +827,13 @@ Qed.
 
 Lemma free_wrap_xs_subset xs f_temp w_temp f_wrap w_wrap ys f w bs :
   (~ In f_temp xs) ->
-  (~ In f_wrap xs) ->
   FromList xs \subset
   occurs_free
     (Efun f_temp w_temp []
        (Efun f_wrap w_wrap ys (Eapp f w (live_args ys bs))
           (Eret f_wrap))
-       (Eletapp f_wrap f_temp w_temp [] (Eapp f_wrap w_wrap xs))).
+       (Eletapp f_temp f_temp w_temp []
+          (Eapp f_temp w_wrap xs))).
 Proof.
   unfold Ensembles.Included, Ensembles.In, FromList.
   intros.
@@ -863,7 +862,6 @@ Lemma app_compat_trans Γ bs f w xs w_temp f_temp w_wrap f_wrap ys :
   f_wrap <> f ->
   (~ In f ys) ->
   (~ In f_wrap ys) ->
-  (~ In f_wrap xs) ->
   NoDup ys ->
   length ys = length bs ->
 
@@ -871,11 +869,11 @@ Lemma app_compat_trans Γ bs f w xs w_temp f_temp w_wrap f_wrap ys :
     (Efun f_temp w_temp []
        (Efun f_wrap w_wrap ys (Eapp f w (live_args ys bs)) (* wrap f *)
           (Eret f_wrap))
-       (Eletapp f_wrap f_temp w_temp [] (* turn the worker into the wrapper *)
-          (Eapp f_wrap w_wrap xs))).
+       (Eletapp f_temp f_temp w_temp [] (* turn the worker into the wrapper *)
+          (Eapp f_temp w_wrap xs))).
 Proof.
   unfold trans_correct, E, E'.
-  intros Hw Hw1 Hf Hxs Hw_temp Hw_temp1 Hf_temp Hf_temp2 Hw_wrap Hf_wrap Hf1 Hf_wrap1 Hf_wrap2 Hn Hys1.
+  intros Hw Hw1 Hf Hxs Hw_temp Hw_temp1 Hf_temp Hf_temp2 Hw_wrap Hf_wrap Hf1 Hf_wrap1 Hn Hys1.
   intros.
   inv H1.
   exists 0, OOT; split; simpl; auto.
