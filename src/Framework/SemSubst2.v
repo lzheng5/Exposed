@@ -389,67 +389,7 @@ Module EM := Exposed.Exposed LM VTransM.
 Import EM.
 
 (* Addtional Lemmas about [live_args] *)
-Lemma get_list_live_args_set_lists {A} :
-  forall ys bs vs1 vs0 ρ0 ρ0' ρ1 ρ2,
-    NoDup ys ->
-    length ys = length bs ->
-    @get_list A (live_args ys bs) ρ1 = Some vs1 ->
-    set_lists ys vs0 ρ0 = Some ρ1 ->
-    set_lists ys vs0 ρ0' = Some ρ2 ->
-    get_list (live_args ys bs) ρ2 = Some vs1.
-Proof.
-  intros ys.
-  induction ys; simpl; intros.
-  - destruct bs; inv H0.
-    simpl in *.
-    inv H1; auto.
-  - destruct bs; inv H0.
-    destruct vs0; try discriminate.
-    destruct (set_lists ys vs0 ρ0) eqn:Heq1; try discriminate.
-    destruct (set_lists ys vs0 ρ0') eqn:Heq2; try discriminate.
-    inv H; inv H2; inv H3.
-    assert (~ In a (live_args ys bs)) by (eapply live_args_not_In; eauto).
-
-    destruct b; simpl in *.
-    + rewrite M.gss in *.
-      destruct (get_list (live_args ys bs) (map_util.M.set a a0 t)) eqn:Heq3; try discriminate.
-      inv H1.
-      erewrite get_list_set_neq in Heq3; eauto.
-      erewrite get_list_set_neq; eauto.
-      erewrite IHys; eauto.
-    + erewrite get_list_set_neq in H1; eauto.
-      erewrite get_list_set_neq; eauto.
-Qed.
-
 Lemma get_list_live_args_Forall :
-  forall ys vs1 ρ0 ρ1 vs2 vs bs i,
-    NoDup ys ->
-    length ys = length bs ->
-    set_lists ys vs1 ρ0 = Some ρ1 ->
-    get_list (live_args ys bs) ρ1 = Some vs ->
-    Forall2 (V i) (live_args vs1 bs) vs2 ->
-    Forall2 (V i) vs vs2.
-Proof.
-  intros ys.
-  induction ys; simpl; intros;
-    destruct bs; inv H0;
-    simpl in *.
-  - destruct vs1; try discriminate.
-    inv H1; inv H2; inv H3; auto.
-  - destruct vs1; try discriminate.
-    destruct (set_lists ys vs1 ρ0) eqn:Heq1; try discriminate.
-    inv H; inv H1.
-    assert (~ In a (live_args ys bs)) by (eapply live_args_not_In; eauto).
-
-    destruct b; simpl in *.
-    + rewrite M.gss in *.
-      destruct (get_list (live_args ys bs) (map_util.M.set a w t)) eqn:Heq2; try discriminate.
-      inv H2; inv H3.
-      erewrite get_list_set_neq in Heq2; eauto.
-    + erewrite get_list_set_neq in H2; eauto.
-Qed.
-
-Lemma get_list_live_args_Forall' :
   forall ys vs1 ρ0 ρ1 vs2 vs bs i,
     NoDup ys ->
     length ys = length bs ->
@@ -496,19 +436,6 @@ Proof.
     + rewrite Heq1.
       erewrite IHxs; eauto.
     + erewrite IHxs; eauto.
-Qed.
-
-Lemma Forall2_live_args i xs ys:
-  Forall2 (V i) xs ys ->
-  forall bs,
-    length xs = length bs ->
-    Forall2 (V i) (live_args xs bs) (live_args ys bs).
-Proof.
-  intros H.
-  induction H; simpl; intros.
-  - destruct bs; inv H; auto.
-  - destruct bs; inv H1.
-    destruct b; auto.
 Qed.
 
 (* Invariants about [trans] *)
@@ -618,7 +545,7 @@ Proof.
   edestruct (HV_work (j - 1) vs (live_args vs2 tinfo) ρ'' ρ0') with (j1 := c) as [j2 [r2 [He0 HR]]]; eauto; try lia.
   - intros; contradiction.
   - intros; contradiction.
-  - eapply get_list_live_args_Forall' with (ρ1 := ρ3); eauto.
+  - eapply get_list_live_args_Forall with (ρ1 := ρ3); eauto.
     eapply V_mono_Forall; eauto; lia.
   - exists (S j2), r2; split; eauto.
     constructor; auto.
