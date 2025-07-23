@@ -210,6 +210,18 @@ Proof.
   rewrite M.gss; auto.
 Qed.
 
+Lemma bstep_fuel_wrap_inv {tinfo winfo f_work w_work f_wrap w_wrap v_work ρ k v_wrap}:
+  let wrapper := (wrap tinfo winfo f_work w_work f_wrap w_wrap) in
+  (~ f_work \in bound_var wrapper) ->
+  bstep_fuel false (M.set f_work v_work ρ) wrapper k (Res v_wrap) ->
+  exists ρ' xs e, v_wrap = Tag w_wrap (Vfun f_wrap ρ' xs e).
+Proof.
+  intros Hwrapper Hf_work Hstep.
+  subst Hwrapper.
+  edestruct bstep_fuel_wrap with (v_work := v_work) (ρ := ρ) as [k' [ρ' [xs [e Hstep']]]]; eauto.
+  edestruct (bstep_fuel_deterministic v_wrap (Tag w_wrap (Vfun f_wrap ρ' xs e)) Hstep Hstep') as [Heq1 Heq2]; eauto.
+Qed.
+
 Lemma bstep_fuel_wrap_inv' {bs ys f_work w_work f_wrap w_wrap v_work ρ k v_wrap}:
   let wrapper := (wrap bs ys f_work w_work f_wrap w_wrap) in
   bstep_fuel false (M.set f_work v_work ρ) wrapper k (Res v_wrap) ->
@@ -223,30 +235,6 @@ Proof.
   inv H.
   rewrite M.gss in *.
   inv H5; auto.
-Qed.
-
-Lemma bstep_fuel_wrap_inv {tinfo winfo f_work w_work f_wrap w_wrap v_work ρ k v_wrap}:
-  let wrapper := (wrap tinfo winfo f_work w_work f_wrap w_wrap) in
-  bstep_fuel false (M.set f_work v_work ρ) wrapper k (Res v_wrap) ->
-  exists ρ' xs e, v_wrap = Tag w_wrap (Vfun f_wrap ρ' xs e).
-Proof.
-  intros.
-  erewrite (bstep_fuel_wrap_inv' H); eauto.
-Qed.
-
-Lemma bstep_fuel_wrap_length tinfo winfo ρ ρ' ρ'' ρ''' k k' f_work w_work f_wrap w_wrap v_work f_work' w_work' f_wrap' w_wrap' v_work' xs xs' e e':
-  let wrapper := (wrap tinfo winfo f_work w_work f_wrap w_wrap) in
-  let wrapper' := (wrap tinfo winfo f_work' w_work' f_wrap' w_wrap') in
-  (~ f_work \in bound_var wrapper) ->
-  (~ f_work' \in bound_var wrapper') ->
-  bstep_fuel false (M.set f_work v_work ρ) wrapper k (Res (Tag w_wrap (Vfun f_wrap ρ'' xs e))) ->
-  bstep_fuel false (M.set f_work' v_work' ρ') wrapper' k' (Res (Tag w_wrap' (Vfun f_wrap' ρ''' xs' e'))) ->
-  length xs = length xs'.
-Proof.
-  intros.
-  eapply bstep_fuel_wrap_inv' in H1; eauto.
-  eapply bstep_fuel_wrap_inv' in H2; eauto.
-  inv H1; inv H2; auto.
 Qed.
 
 Lemma bound_vars_wrap_inv bs ys f w f_wrap w_wrap :
@@ -630,7 +618,8 @@ Lemma V_wrapper tinfo winfo f_work w_work f_wrap w_wrap k i v_work v_work' ρ wv
 Proof.
   intros Hw_wrap Hwrapper Hf_work Hw_work Hw_work1 HVv_work Hwrap_prop Hρ Hk.
   subst Hwrapper.
-  edestruct (bstep_fuel_wrap_inv Hk) as [ρ' [xs [e Heqv_wrap]]]; eauto; subst.
+
+  edestruct (bstep_fuel_wrap_inv Hf_work Hk) as [ρ' [xs [e Heqv_wrap]]]; eauto; subst.
   pose proof HVv_work as HVv_work'.
 
   destruct i; simpl in HVv_work; simpl;
@@ -646,9 +635,6 @@ Proof.
   unfold V_trans.
   repeat (split; auto); intros.
   edestruct (bstep_fuel_wrap tinfo winfo f_work0 w_work f_wrap0 w_wrap (Tag w_work v_work) ρ0) as [k' [ρ'' [xs' [e' Hstep]]]]; eauto.
-  eexists; eexists; eexists; eexists; repeat (split; eauto); intros.
-
-  eapply bstep_fuel_wrap_length with (f_work := f_work) (f_work' := f_work0); eauto.
 
   eapply V_wrapper_refl' with (k := k) (k' := k')
                               (f_work := f_work) (f_work' := f_work0)
@@ -658,6 +644,8 @@ Proof.
 
   unfold V_refl in HVv_work'.
   destruct HVv_work' as [Hlenxs HVv_work'].
+
+  eexists; eexists; eexists; eexists; repeat (split; eauto); intros.
   eapply (HVv_work' j vs1 vs2 ρ3 ρ4); eauto;
     intros;
     apply L_inv_Some in Hw_wrap; contradiction.
