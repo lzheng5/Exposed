@@ -264,6 +264,8 @@ Inductive trans (Γ : Ensemble var) : exp -> exp -> Prop :=
     (* worker spec *)
     L ! w = None ->
     (~ w \in Exposed) ->
+    (~ In f xs) ->
+    (~ f \in bound_var wrapper) ->
 
     (* temp binder spec *)
     L ! w_temp = None ->
@@ -272,8 +274,7 @@ Inductive trans (Γ : Ensemble var) : exp -> exp -> Prop :=
     (~ f_temp \in (occurs_free k)) ->
     (~ f_temp \in Γ) ->
     f_temp <> f ->
-    (* TODO: ~ f_temp \in bound_var (wrap f) *)
-    (~ In f_temp ys) ->
+    (~ In f_temp xs) ->
 
     (* wrapper spec *)
     L ! w_wrap = Some (bs, ys, w) ->
@@ -281,10 +282,6 @@ Inductive trans (Γ : Ensemble var) : exp -> exp -> Prop :=
     length bs = length ys ->
     (~ In f_wrap ys) ->
     NoDup ys ->
-
-    (* REVISIT: worker wrapper spec *)
-    (~ f \in bound_var wrapper) ->
-    xs = live_args ys bs ->
 
     trans Γ (Efun f w xs
                (Efun f_temp w_temp [] wrapper
@@ -303,6 +300,7 @@ Inductive trans (Γ : Ensemble var) : exp -> exp -> Prop :=
     (* worker spec *)
     L ! w = None ->
     (~ w \in Exposed) ->
+    (~ f \in bound_var wrapper) ->
 
     (* temp binder spec *)
     L ! w_temp = None ->
@@ -312,7 +310,6 @@ Inductive trans (Γ : Ensemble var) : exp -> exp -> Prop :=
 
     (* wrapper spec *)
     L ! w_wrap = Some (bs, ys, w) ->
-    (~ f \in bound_var wrapper) ->
     (~ In f_wrap ys) ->
     NoDup ys ->
     length ys = length bs ->
@@ -447,16 +444,16 @@ Proof.
   intros H.
   induction H; intros; subst; auto.
   - inv H16.
-    + eapply IHtrans2 in H23; eauto.
+    + eapply IHtrans2 in H24; eauto.
       econstructor; eauto.
       econstructor; eauto.
       intros Hc; subst.
-      apply H6; auto.
-    + eapply IHtrans1 in H24; eauto.
+      apply H8; auto.
+    + eapply IHtrans1 in H25; eauto.
       eapply Free_fun2; eauto.
       eapply Free_fun1; eauto.
       intros Hc; subst.
-      apply H5; auto.
+      apply H7; auto.
   - inv H12.
     + inv H20; try contradiction.
       inv H21; auto; contradiction.
@@ -675,6 +672,7 @@ Lemma V_worker_refl {Γ2 xs Γ1 e e' f_temp w_temp f_wrap w_wrap f_work w_work b
   L ! w_work = None ->
   (~ w_work \in Exposed) ->
   (~ f_work \in bound_var wrapper) ->
+  (~ In f_work xs) ->
 
   (* temp binder spec *)
   L ! w_temp = None ->
@@ -682,17 +680,13 @@ Lemma V_worker_refl {Γ2 xs Γ1 e e' f_temp w_temp f_wrap w_wrap f_work w_work b
   (~ f_temp \in (occurs_free e)) ->
   (~ f_temp \in Γ1) ->
   f_temp <> f_work ->
-  (~ In f_temp ys) ->
+  (~ In f_temp xs) ->
 
   (* wrapper spec *)
   L ! w_wrap = Some (bs, ys, w_work) ->
   (~ In f_wrap ys) ->
   NoDup ys ->
   length ys = length bs ->
-
-  (* worker wrapper spec *)
-  xs = live_args ys bs ->
-  (~ f_work \in bound_var wrapper) ->
 
   forall i ρ1 ρ2,
     G i Γ1 ρ1 Γ2 ρ2 ->
@@ -705,7 +699,7 @@ Lemma V_worker_refl {Γ2 xs Γ1 e e' f_temp w_temp f_wrap w_wrap f_work w_work b
       (Tag w_work (Vfun f_work ρ2 xs e')).
 Proof.
   unfold trans_correct.
-  intros He Hw_work Hw_work1 Hf_work Hw_temp Hw_temp1 Hf_temp Hf_temp1 Hf_temp2 Hf_temp3 Hw_wrap Hf_wrap1 Hnys Hlenys Heqxs Hf_work1 i; subst.
+  intros He Hw_work Hw_work1 Hf_work Hf_work1 Hw_temp Hw_temp1 Hf_temp Hf_temp1 Hf_temp2 Hf_temp3 Hw_wrap Hf_wrap1 Hnys Hlenys i; subst.
   edestruct bound_vars_wrap_inv as [Hf_wrap Hf_work2]; eauto.
 
   induction i; simpl; intros ρ1 ρ2 HG HS;
@@ -738,15 +732,13 @@ Proof.
 
   pose proof H5 as Hρ3.
 
-  assert (Hf_work3 : ~ In f_work (live_args ys bs)) by (eapply live_args_not_In; eauto).
-  apply (set_lists_set f_work v Hf_work3) in Hρ3.
+  eapply (set_lists_set f_work v) in Hρ3; eauto.
   erewrite set_set_eq in Hρ3; eauto.
 
-  assert (Hf_temp4 : ~ In f_temp (live_args ys bs)) by (eapply live_args_not_In; eauto).
-  apply (set_lists_set f_temp
+  eapply (set_lists_set f_temp
            (Tag w_temp
               (Vfun f_temp ρ3 []
-                 (wrap bs ys f_work w_work f_wrap w_wrap))) Hf_temp4) in Hρ3.
+                 (wrap bs ys f_work w_work f_wrap w_wrap)))) in Hρ3; eauto.
   rewrite (set_set f_temp f_work) in Hρ3; eauto.
   rewrite (set_set f_temp f_work) in Hρ3; eauto.
 
@@ -762,10 +754,10 @@ Proof.
     eapply (wf_env_set_lists
               (M.set f_work
                  (Tag w_work
-                    (Vfun f_work ρ1 (live_args ys bs)
+                    (Vfun f_work ρ1 xs
                        (Efun f_temp w_temp []
                           (wrap bs ys f_work w_work f_wrap w_wrap)
-                          (Eletapp f_work f_temp w_temp [] e)))) ρ1)) with (xs := live_args ys bs) (vs := vs1); eauto.
+                          (Eletapp f_work f_temp w_temp [] e)))) ρ1)) with (xs := xs) (vs := vs1); eauto.
     eapply wf_env_set; eauto.
     eapply V_wf_val_Forall_l; eauto.
   }
@@ -777,7 +769,7 @@ Proof.
                  (M.set f_temp
                     (Tag w_temp
                        (Vfun f_temp ρ3 []
-                          (wrap bs ys f_work w_work f_wrap w_wrap))) ρ1))) with (xs := live_args ys bs) (vs := vs1); eauto.
+                          (wrap bs ys f_work w_work f_wrap w_wrap))) ρ1))) with (xs := xs) (vs := vs1); eauto.
     eapply wf_env_set; eauto.
     eapply wf_env_set; eauto.
     eapply bstep_fuel_wf_res in H21; eauto.
@@ -790,8 +782,8 @@ Proof.
   rewrite Hmath; clear Hmath.
 
   eapply (He false ((i - (i - j) - 2 - c)) ρ3' ρ4) with (j1 := c'); eauto; try lia.
-  eapply G_subset with (Γ1 := (FromList (live_args ys bs) :|: (f_work |: Γ1))) (Γ2 := (FromList (live_args ys bs) :|: (f_work |: Γ2))); eauto.
-  eapply G_set_lists with (xs := (live_args ys bs)) (vs1 := vs1) (vs2 := vs2); eauto.
+  eapply G_subset with (Γ1 := (FromList xs :|: (f_work |: Γ1))) (Γ2 := (FromList xs :|: (f_work |: Γ2))); eauto.
+  eapply G_set_lists with (xs := xs) (vs1 := vs1) (vs2 := vs2); eauto.
   eapply G_set; eauto.
   - unfold G.
     split.
@@ -807,7 +799,7 @@ Proof.
     subst ρ3.
     erewrite set_set in H21; eauto.
     eapply V_wrapper with (k := c)
-                          (v_work' := (Vfun f_work ρ1 (live_args ys bs)
+                          (v_work' := (Vfun f_work ρ1 xs
                                          (Efun f_temp w_temp []
                                             (wrap bs ys f_work w_work f_wrap w_wrap)
                                             (Eletapp f_work f_temp w_temp [] e))))
@@ -816,8 +808,7 @@ Proof.
                                       (Vfun f_temp
                                          (map_util.M.set f_work
                                             (Tag w_work
-                                               (Vfun f_work ρ1
-                                                  (live_args ys bs)
+                                               (Vfun f_work ρ1 xs
                                                   (Efun f_temp w_temp []
                                                      (wrap bs ys f_work w_work f_wrap
                                                         w_wrap)
@@ -829,7 +820,7 @@ Proof.
       eapply IHi; eauto.
       eapply G_mono; eauto; try lia.
     + eapply wf_env_set; eauto.
-      eapply (wf_env_set_lists ρ1) with (xs := live_args ys bs) (vs := vs1); eauto.
+      eapply (wf_env_set_lists ρ1) with (xs := xs) (vs := vs1); eauto.
       eapply V_wf_val_Forall_l; eauto.
   - eapply V_mono_Forall; eauto; try lia.
   - apply Included_refl.
@@ -846,6 +837,8 @@ Lemma fun_compat_trans Γ1 e e' bs k k' f w xs w_temp f_temp w_wrap f_wrap ys :
   (* worker spec *)
   M.get w L = None ->
   (~ w \in Exposed) ->
+  (~ In f xs) ->
+  (~ f \in bound_var wrapper) ->
 
   (* temp binder spec *)
   L ! w_temp = None ->
@@ -854,17 +847,13 @@ Lemma fun_compat_trans Γ1 e e' bs k k' f w xs w_temp f_temp w_wrap f_wrap ys :
   (~ f_temp \in (occurs_free k)) ->
   (~ f_temp \in Γ1) ->
   f_temp <> f ->
-  (~ In f_temp ys) ->
+  (~ In f_temp xs) ->
 
   (* wrapper spec *)
   L ! w_wrap = Some (bs, ys, w) ->
   length bs = length ys ->
   (~ In f_wrap ys) ->
   NoDup ys ->
-
-  (* worker wrapper spec *)
-  xs = live_args ys bs ->
-  (~ f \in bound_var wrapper) ->
 
   trans_correct Γ1 (Efun f w xs
                       (Efun f_temp w_temp [] wrapper
@@ -874,8 +863,7 @@ Lemma fun_compat_trans Γ1 e e' bs k k' f w xs w_temp f_temp w_wrap f_wrap ys :
     (Efun f w xs e' k').
 Proof.
   unfold trans_correct, E, E'.
-  intros He Hes Hk Hks Hw Hw1 Hw_temp Hw_temp1 Hf_temp Hf_temp1 Hf_temp2 Hf_temp3 Hf_temp4 Hw_wrap Hbs Hf_wrap Hn Hxs Hf_bv.
-  edestruct bound_vars_wrap_inv as [Hf_wrap1 Hf_ys]; eauto.
+  intros He Hes Hk Hks Hw Hw1 Hf Hf_bv Hw_temp Hw_temp1 Hf_temp Hf_temp1 Hf_temp2 Hf_temp3 Hf_temp4 Hw_wrap Hbs Hf_wrap Hn.
 
   intros.
   inv H1.
@@ -907,11 +895,11 @@ Proof.
                         (Vfun f_temp
                            (M.set f
                               (Tag w
-                                 (Vfun f ρ1 (live_args ys bs)
+                                 (Vfun f ρ1 xs
                                     (Efun f_temp w_temp []
                                        (wrap bs ys f w f_wrap w_wrap)
                                        (Eletapp f f_temp w_temp [] e))))
-                              ρ1) [] (wrap bs ys f w f_wrap w_wrap))) ρ1)) (M.set f (Tag w (Vfun f ρ2 (live_args ys bs) e')) ρ2)) with (j1 := c') (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+                              ρ1) [] (wrap bs ys f w f_wrap w_wrap))) ρ1)) (M.set f (Tag w (Vfun f ρ2 xs e')) ρ2)) with (j1 := c') (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
   - assert (wf_env ρ1) by (eapply G_wf_env_l; eauto).
     assert (wf_env ρ2) by (eapply G_wf_env_r; eauto).
     assert (wf_env (M.set f_temp
@@ -919,7 +907,7 @@ Proof.
                          (Vfun f_temp
                             (M.set f
                                (Tag w
-                                  (Vfun f ρ1 (live_args ys bs)
+                                  (Vfun f ρ1 xs
                                      (Efun f_temp w_temp []
                                         (wrap bs ys f w f_wrap w_wrap)
                                         (Eletapp f f_temp w_temp [] e)))) ρ1)
@@ -931,7 +919,7 @@ Proof.
       eapply wf_env_set; eauto.
     }
 
-    eapply G_subset with (Γ1 := (f |: (f_temp |: Γ1))) (Γ2 := (f |: (occurs_free (Efun f w (live_args ys bs) e' k')))); eauto.
+    eapply G_subset with (Γ1 := (f |: (f_temp |: Γ1))) (Γ2 := (f |: (occurs_free (Efun f w xs e' k')))); eauto.
     eapply G_set; eauto.
     + unfold G.
       repeat (split; auto); intros.
@@ -944,7 +932,7 @@ Proof.
         -- exfalso.
            apply Hf_temp; auto.
       * rewrite M.gso in *; auto.
-        eapply (@G_get Γ1 (occurs_free (Efun f w (live_args ys bs) e' k'))); eauto.
+        eapply (@G_get Γ1 (occurs_free (Efun f w xs e' k'))); eauto.
         eapply G_mono; eauto; lia.
         inv H7; auto.
         inv H10; contradiction.
@@ -990,6 +978,7 @@ Lemma app_compat_trans Γ bs f w xs w_temp f_temp w_wrap f_wrap ys :
   (* worker spec *)
   L ! w = None ->
   (~ w \in Exposed) ->
+  (~ f \in bound_var wrapper) ->
 
   (* temp binder spec *)
   L ! w_temp = None ->
@@ -999,7 +988,6 @@ Lemma app_compat_trans Γ bs f w xs w_temp f_temp w_wrap f_wrap ys :
 
   (* wrapper spec *)
   L ! w_wrap = Some (bs, ys, w) ->
-  (~ f \in bound_var wrapper) ->
   (~ In f_wrap ys) ->
   NoDup ys ->
   length ys = length bs ->
@@ -1010,8 +998,7 @@ Lemma app_compat_trans Γ bs f w xs w_temp f_temp w_wrap f_wrap ys :
           (Eapp f_temp w_wrap xs))).
 Proof.
   unfold trans_correct, E, E'.
-  intros Hf Hxs Hw Hw1 Hw_temp Hw_temp1 Hf_temp Hf_temp2 Hw_wrap Hf_bv Hf_wrap Hn Hlenys.
-  edestruct bound_vars_wrap_inv as [Hf_wrap1 Hf_xs]; eauto.
+  intros Hf Hxs Hw Hw1 Hf_bv Hw_temp Hw_temp1 Hf_temp Hf_temp2 Hw_wrap Hf_wrap Hn Hlenys.
 
   intros.
   inv H1.
