@@ -685,7 +685,6 @@ Lemma V_worker_refl {Γ2 xs Γ1 e e' f_temp w_temp f_wrap w_wrap f_work w_work b
 Proof.
   unfold trans_correct.
   intros He Hw_work Hw_work1 Hf_work Hf_work1 Hw_temp Hw_temp1 Hf_temp Hf_temp1 Hf_temp2 Hf_temp3 Hw_wrap Hwrap_prop i; subst.
-  edestruct bound_vars_wrap_inv as [Hf_wrap Hf_work2]; eauto.
 
   induction i; simpl; intros ρ1 ρ2 HG HS;
     assert (wf_env ρ1) by (eapply G_wf_env_l; eauto);
