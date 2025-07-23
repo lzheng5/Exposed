@@ -226,6 +226,21 @@ Proof.
   erewrite (bstep_fuel_wrap_inv' H); eauto.
 Qed.
 
+Lemma bstep_fuel_wrap_length tinfo winfo ρ ρ' ρ'' ρ''' k k' f_work w_work f_wrap w_wrap v_work f_work' w_work' f_wrap' w_wrap' v_work' xs xs' e e':
+  let wrapper := (wrap tinfo winfo f_work w_work f_wrap w_wrap) in
+  let wrapper' := (wrap tinfo winfo f_work' w_work' f_wrap' w_wrap') in
+  (~ f_work \in bound_var wrapper) ->
+  (~ f_work' \in bound_var wrapper') ->
+  bstep_fuel false (M.set f_work v_work ρ) wrapper k (Res (Tag w_wrap (Vfun f_wrap ρ'' xs e))) ->
+  bstep_fuel false (M.set f_work' v_work' ρ') wrapper' k' (Res (Tag w_wrap' (Vfun f_wrap' ρ''' xs' e'))) ->
+  length xs = length xs'.
+Proof.
+  intros.
+  eapply bstep_fuel_wrap_inv' in H1; eauto.
+  eapply bstep_fuel_wrap_inv' in H2; eauto.
+  inv H1; inv H2; auto.
+Qed.
+
 Lemma bound_vars_wrap_inv bs ys f w f_wrap w_wrap :
   let wrapper := (wrap bs ys f w f_wrap w_wrap) in
   (~ f \in bound_var wrapper) ->
@@ -321,20 +336,21 @@ Module VTransM <: Exposed.VTrans LM.
     let '(bs, ys, w_work) := d in
     w_work = w_work' /\
     match v_wrap with
-    | Vfun f_wrap ρ1 xs1 e1 =>
-        forall f_work ρ,
+    | Vfun f1 ρ1 xs1 e1 =>
+        forall f_work f_wrap ρ,
           let wrapper := (wrap bs ys f_work w_work f_wrap w_wrap) in
           (~ f_work \in bound_var wrapper) ->
           wf_env ρ ->
 
           exists k ρ2 xs2 e2,
             bstep_fuel false (M.set f_work (Tag w_work v_work) ρ) wrapper k (Res (Tag w_wrap (Vfun f_wrap ρ2 xs2 e2))) /\
+            length xs1 = length xs2 /\
 
             forall j vs1 vs2 ρ3 ρ4,
               j <= i0 ->
               Forall wf_val vs1 ->
               Forall2 (V' j) vs1 vs2 ->
-              set_lists xs1 vs1 (M.set f_wrap (Tag w_wrap (Vfun f_wrap ρ1 xs1 e1)) ρ1) = Some ρ3 ->
+              set_lists xs1 vs1 (M.set f1 (Tag w_wrap (Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
               set_lists xs2 vs2 (M.set f_wrap (Tag w_wrap (Vfun f_wrap ρ2 xs2 e2)) ρ2) = Some ρ4 ->
               E' j ρ3 e1 ρ4 e2
 
@@ -358,8 +374,8 @@ Module VTransM <: Exposed.VTrans LM.
     destruct p.
     destruct H as [Hw HV]; subst.
     repeat split; eauto; intros.
-    edestruct (HV f_work ρ) as [k [ρ2 [xs2 [e2 [Hstep HV']]]]]; eauto.
-    exists k, ρ2, xs2, e2; split; auto; intros.
+    edestruct (HV f_work f_wrap ρ) as [k [ρ2 [xs2 [e2 [Hstep [Hlen HV']]]]]]; eauto.
+    exists k, ρ2, xs2, e2; repeat (split; auto); intros.
     specialize (HV' j0 vs1 vs2 ρ3 ρ4).
     rewrite normalize_step in *; try lia.
     eapply HV'; eauto; try lia.
@@ -526,9 +542,9 @@ Proof.
 Qed.
 
 (* Compatibility Lemmas *)
-Lemma V_wrapper_refl tinfo winfo f_work f_work' w_work f_wrap w_wrap :
+Lemma V_wrapper_refl tinfo winfo f_work f_work' w_work f_wrap f_wrap' w_wrap :
   let wrapper := (wrap tinfo winfo f_work w_work f_wrap w_wrap) in
-  let wrapper' := (wrap tinfo winfo f_work' w_work f_wrap w_wrap) in
+  let wrapper' := (wrap tinfo winfo f_work' w_work f_wrap' w_wrap) in
 
   (~ f_work \in bound_var wrapper) ->
   (~ f_work' \in bound_var wrapper') ->
@@ -616,9 +632,9 @@ Proof.
     + intros; contradiction.
 Qed.
 
-Lemma V_wrapper_refl' tinfo winfo f_work f_work' w_work f_wrap w_wrap :
+Lemma V_wrapper_refl' tinfo winfo f_work f_work' w_work f_wrap f_wrap' w_wrap :
   let wrapper := (wrap tinfo winfo f_work w_work f_wrap w_wrap) in
-  let wrapper' := (wrap tinfo winfo f_work' w_work f_wrap w_wrap) in
+  let wrapper' := (wrap tinfo winfo f_work' w_work f_wrap' w_wrap) in
 
   (~ f_work \in bound_var wrapper) ->
   (~ f_work' \in bound_var wrapper') ->
@@ -706,8 +722,10 @@ Proof.
 
   unfold V_trans.
   repeat (split; auto); intros.
-  edestruct (bstep_fuel_wrap tinfo winfo f_work0 w_work f_wrap w_wrap (Tag w_work v_work) ρ0) as [k' [ρ'' [xs' [e' Hstep]]]]; eauto.
-  eexists; eexists; eexists; eexists; split; eauto; intros.
+  edestruct (bstep_fuel_wrap tinfo winfo f_work0 w_work f_wrap0 w_wrap (Tag w_work v_work) ρ0) as [k' [ρ'' [xs' [e' Hstep]]]]; eauto.
+  eexists; eexists; eexists; eexists; repeat (split; eauto); intros.
+
+  eapply bstep_fuel_wrap_length with (f_work := f_work) (f_work' := f_work0); eauto.
 
   eapply V_wrapper_refl' with (k := k) (k' := k')
                               (f_work := f_work) (f_work' := f_work0)
@@ -1053,7 +1071,7 @@ Lemma app_compat_trans Γ bs f w xs w_temp f_temp w_wrap f_wrap ys :
   (~ In f_temp xs) ->
 
   (* wrapper spec *)
-  L ! w_wrap = Some (bs, w) ->
+  L ! w_wrap = Some (bs, ys, w) ->
   (~ f \in bound_var wrapper) ->
   (~ In f_wrap ys) ->
   NoDup ys ->
@@ -1085,27 +1103,32 @@ Proof.
   rewrite Hw_wrap in HV.
   unfold VTransM.V_trans in HV.
   destruct HV as [Heqw HV]; subst.
-  destruct v; try contradiction.
-  destruct HV as [Hlen [Heqxs HV]]; subst; try discriminate.
+
+  assert (wf_env ρ1) by (eapply G_wf_env_l; eauto).
+  assert (wf_env ρ2) by (eapply G_wf_env_r; eauto).
+
+  destruct (HV f f_wrap (M.set f_temp
+                           (Tag w_temp
+                              (Vfun f_temp ρ2 [] (wrap bs ys f w0 f_wrap w_wrap))) ρ2)) as [k [ρ3 [xs2 [e2 [Hstep [Hlen HV']]]]]]; eauto.
+  eapply wf_env_set; eauto.
+
+  erewrite set_set in Hstep; eauto.
+  rewrite (get_set_eq f) in Hstep.
 
   edestruct (G_get_list H xs) as [vs2 [Heqvs2 HVvs]]; eauto.
   eapply free_wrap_xs_subset; eauto.
 
-  destruct (set_lists_length3 (M.set v (Tag w (Vfun v t (live_args xs' bs) e0)) t) (live_args xs' bs) (live_args vs2 bs)) as [ρ4 Heqρ4].
-  unfold wval in *.
-  apply live_args_length.
-  rewrite <- (Forall2_length _ _ _ HVvs).
-  rewrite <- (set_lists_length_eq _ _ _ _ H8); auto.
+  destruct (set_lists_length3 (M.set f_wrap (Tag w_wrap (Vfun f_wrap ρ3 xs2 e2)) ρ3) xs2 vs2) as [ρ4 Heqρ4].
+  unfold var in *.
+  rewrite <- Hlen.
+  rewrite (set_lists_length_eq _ _ _ _ H8); auto.
+  apply (Forall2_length _ _ _ HVvs).
 
-  assert (HE : E false (i - (i - i)) ρ'' e ρ4 e0).
+  assert (HE : E false (i - (i - i)) ρ'' e ρ4 e2).
   {
-    eapply (HV i vs (live_args vs2 bs)); eauto.
-    eapply wf_env_get_list; eauto.
-    eapply G_wf_env_l; eauto.
-    eapply Forall2_live_args; eauto.
+    eapply (HV' i vs vs2); eauto.
+    eapply V_wf_val_Forall_l; eauto.
     apply V_mono_Forall with (S i); auto; lia.
-    rewrite <- Hlen.
-    rewrite <- (set_lists_length_eq _ _ _ _ H8); auto.
   }
 
   unfold E, E' in *.
@@ -1123,69 +1146,32 @@ Proof.
     eapply R_exposed; eauto.
   }
 
-  destruct r2.
+  destruct r1.
   exists 0, OOT; split; simpl; eauto.
 
-  assert (if (exposedb w_wrap) then exposed_res (Res w0) else True) by (destruct (exposed_reflect w_wrap); try contradiction; auto).
-
-  exists (S (S (S (S (S (S j2)))))), (Res w0); split; eauto.
+  exists (S (S (S (k + j2)))), r2; split; eauto.
 
   constructor; auto.
+  2 : { unfold wval in *.
+        rewrite Heqfv2; auto. }
+
   constructor; auto.
   constructor; auto.
-  assert (Hmath : S (S (S (S j2))) = 2 + (S (S j2))) by lia.
+  assert (Hmath : (S (k + j2)) = k + (S j2)) by lia.
   rewrite Hmath; clear Hmath.
 
-  eapply BStep_letapp_Res with (v := (Tag w_wrap
-                                        (Vfun f_wrap
-                                           (M.set f_temp
-                                              (Tag w_temp
-                                                 (Vfun f_temp ρ2 []
-                                                    (wrap bs ys f w f_wrap w_wrap))) ρ2) ys
-                                           (Eapp f w (live_args ys bs))))); simpl; eauto.
+  eapply BStep_letapp_Res with (v := (Tag w_wrap (Vfun f_wrap ρ3 xs2 e2))); simpl; eauto.
   - rewrite M.gss; eauto.
   - simpl; eauto.
-  - destruct (exposed_reflect w_temp); try contradiction.
-    repeat (econstructor; eauto).
-    rewrite M.gss; eauto.
-  - intros; split; auto; try contradiction.
-  - constructor; auto.
-    edestruct (set_lists_length3
-                 (M.set f_wrap
-                    (Tag w_wrap
-                       (Vfun f_wrap
-                          (M.set f_temp
-                             (Tag w_temp
-                                (Vfun f_temp ρ2 []
-                                   (wrap bs ys f w f_wrap w_wrap))) ρ2) ys
-                          (Eapp f w (live_args ys bs))))
-                    (M.set f_temp
-                       (Tag w_temp
-                          (Vfun f_temp ρ2 []
-                             (wrap bs ys f w f_wrap w_wrap))) ρ2))
-                 ys vs2) as [ρ4' Heqρ4']; eauto.
-    unfold wval in *.
-    erewrite <- (Forall2_length _ _ _ HVvs); eauto.
-    rewrite <- (set_lists_length_eq _ _ _ _ H8).
-    unfold var in Hlen.
-    rewrite Hlen; auto.
-
-    eapply BStep_app with (ρ' := (M.set f_temp
-                                    (Tag w_temp
-                                       (Vfun f_temp ρ2 []
-                                          (wrap bs ys f w f_wrap w_wrap))) ρ2)); eauto.
-    + rewrite M.gss; eauto.
-    + erewrite get_list_set_neq; eauto.
-      erewrite get_list_set_neq; eauto.
-    + constructor; auto.
-      econstructor; eauto.
-      * erewrite <- (set_lists_not_In ys vs2 _ _ f Heqρ4'); eauto.
-        rewrite M.gso; auto.
-        rewrite M.gso; eauto.
-      * eapply get_list_live_args; eauto.
-        eapply get_list_set_lists; eauto.
-      * destruct (exposed_reflect w); try contradiction; auto.
-      * intros; contradiction.
+  - destruct (exposed_reflect w_temp); try contradiction; auto.
+  - intros; contradiction.
+  - erewrite set_set_eq; eauto.
+    constructor; auto.
+    econstructor; eauto.
+    + rewrite M.gss; auto.
+    + rewrite get_list_set_neq; auto.
+    + destruct (exposed_reflect w_wrap); auto.
+      apply L_inv_Some in Hw_wrap; contradiction.
     + intros; contradiction.
 Qed.
 

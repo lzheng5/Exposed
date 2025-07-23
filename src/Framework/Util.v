@@ -147,6 +147,17 @@ Proof.
       apply in_cons; auto.
 Qed.
 
+Lemma get_set_eq {A} x ρ (v : A) :
+  M.get x ρ = Some v ->
+  M.set x v ρ = ρ.
+Proof.
+  intros.
+  apply M.extensionality; intros.
+  destruct (M.elt_eq x i); subst.
+  - rewrite M.gss; auto.
+  - rewrite M.gso; auto.
+Qed.
+
 Lemma set_set {A} x y {v : A} {u : A} {ρ} :
   x <> y ->
   M.set x v (M.set y u ρ) = M.set y u (M.set x v ρ).
