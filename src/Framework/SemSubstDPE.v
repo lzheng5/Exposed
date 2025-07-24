@@ -80,8 +80,8 @@ Module DPEWrap <: WrapSig.
       destruct b0; simpl; eauto.
   Qed.
 
-  Lemma free_vars_wrap tinfo winfo w_work f_wrap w_wrap f:
-    let wrapper := (wrap tinfo winfo f w_work f_wrap w_wrap) in
+  Lemma free_vars_wrap bs ys w_work f_wrap w_wrap f:
+    let wrapper := (wrap bs ys f w_work f_wrap w_wrap) in
     (~ f \in (bound_var wrapper)) ->
     (occurs_free wrapper <--> [set f]).
   Proof.
@@ -101,14 +101,14 @@ Module DPEWrap <: WrapSig.
       apply H; auto.
   Qed.
 
-  Lemma bstep_fuel_wf_wrap tinfo winfo f_work w_work f_wrap w_wrap v_work ρ:
-    let wrapper := (wrap tinfo winfo f_work w_work f_wrap w_wrap) in
+  Lemma bstep_fuel_wf_wrap bs ys f_work w_work f_wrap w_wrap v_work ρ:
+    let wrapper := (wrap bs ys f_work w_work f_wrap w_wrap) in
     (~ f_work \in bound_var wrapper) ->
     exists k ρ' xs e,
       bstep_fuel false (M.set f_work v_work ρ) wrapper k (Res (Tag w_wrap (Vfun f_wrap ρ' xs e))).
   Proof.
     unfold wrap.
-    exists 2, (M.set f_work v_work ρ), winfo, (Eapp f_work w_work (live_args winfo tinfo)).
+    exists 2, (M.set f_work v_work ρ), ys, (Eapp f_work w_work (live_args ys bs)).
     repeat (constructor; auto).
     rewrite M.gss; auto.
   Qed.
@@ -195,15 +195,15 @@ Module SemSubstDPE <: SemSubstSig DPEWrap.
         inv H3; simpl; eauto.
   Qed.
 
-  Lemma V_wrapper_refl tinfo winfo f_work f_work' w_work f_wrap f_wrap' w_wrap :
-    let wrapper := (wrap tinfo winfo f_work w_work f_wrap w_wrap) in
-    let wrapper' := (wrap tinfo winfo f_work' w_work f_wrap' w_wrap) in
+  Lemma V_wrapper_refl bs ys f_work f_work' w_work f_wrap f_wrap' w_wrap :
+    let wrapper := (wrap bs ys f_work w_work f_wrap w_wrap) in
+    let wrapper' := (wrap bs ys f_work' w_work f_wrap' w_wrap) in
 
     (~ f_work \in bound_var wrapper) ->
     (~ f_work' \in bound_var wrapper') ->
     (~ w_work \in Exposed) ->
 
-    wrap_prop tinfo winfo f_work w_work f_wrap w_wrap ->
+    wrap_prop bs ys f_work w_work f_wrap w_wrap ->
 
     forall i ρ ρ' v_work v_work' k k' v_wrap v_wrap',
       wf_env ρ ->
@@ -254,7 +254,7 @@ Module SemSubstDPE <: SemSubstSig DPEWrap.
 
     rename t into ρ0.
 
-    edestruct (set_lists_length3 (M.set v (Tag w_work (Vfun v ρ0 l e0)) ρ0) l (live_args vs2 tinfo)) as [ρ0' Heqρ0']; eauto.
+    edestruct (set_lists_length3 (M.set v (Tag w_work (Vfun v ρ0 l e0)) ρ0) l (live_args vs2 bs)) as [ρ0' Heqρ0']; eauto.
     unfold var in *.
     rewrite <- Hlen.
     rewrite (set_lists_length_eq _ _ _ _ H15).
@@ -265,7 +265,7 @@ Module SemSubstDPE <: SemSubstSig DPEWrap.
     assert (Hmath : (i - (i - j) - S c) = (i - (i - (j - 1)) - c)) by lia.
     rewrite Hmath.
 
-    edestruct (HV_work (j - 1) vs (live_args vs2 tinfo) ρ'' ρ0') with (j1 := c) as [j2 [r2 [He0 HR]]]; eauto; try lia.
+    edestruct (HV_work (j - 1) vs (live_args vs2 bs) ρ'' ρ0') with (j1 := c) as [j2 [r2 [He0 HR]]]; eauto; try lia.
     - intros; contradiction.
     - intros; contradiction.
     - eapply get_list_live_args_Forall with (ρ1 := ρ3); eauto.

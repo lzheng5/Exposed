@@ -129,9 +129,9 @@ Module Type WrapSig.
 
 End WrapSig.
 
-Module WrapUtils (WS : WrapSig).
+Module WrapUtils (WM : WrapSig).
 
-  Import WS.
+  Import WM.
 
   Lemma bstep_fuel_wrap_inv {tinfo winfo f_work w_work f_wrap w_wrap v_work ρ k v_wrap}:
     let wrapper := (wrap tinfo winfo f_work w_work f_wrap w_wrap) in
@@ -163,12 +163,12 @@ Module SemSubstV (WM : WrapSig).
       (E' : nat -> env -> exp -> env -> exp -> Prop)
       (i0 : nat) (d : trans_info_t * wrapper_info_t * web)
       (w_wrap : web) (v_wrap : val) (w_work' : web) (v_work : val) :=
-      let '(bs, ys, w_work) := d in
+      let '(tinfo, winfo, w_work) := d in
       w_work = w_work' /\
         match v_wrap with
         | Vfun f1 ρ1 xs1 e1 =>
             forall f_work f_wrap ρ,
-              let wrapper := (wrap bs ys f_work w_work f_wrap w_wrap) in
+              let wrapper := (wrap tinfo winfo f_work w_work f_wrap w_wrap) in
               (~ f_work \in bound_var wrapper) ->
               wf_env ρ ->
 
@@ -363,8 +363,8 @@ Module SemSubstExposed (WM : WrapSig) (SS : SemSubstSig WM).
       apply L_inv_Some in Hw_wrap; contradiction.
   Qed.
 
-  Lemma V_worker_refl {Γ2 xs Γ1 e e' f_temp w_temp f_wrap w_wrap f_work w_work bs ys} :
-    let wrapper := (wrap bs ys f_work w_work f_wrap w_wrap) in
+  Lemma V_worker_refl {Γ2 xs Γ1 e e' f_temp w_temp f_wrap w_wrap f_work w_work tinfo winfo} :
+    let wrapper := (wrap tinfo winfo f_work w_work f_wrap w_wrap) in
     trans_correct (FromList xs :|: (f_work |: Γ1)) e e' ->
 
     (* worker spec *)
@@ -382,8 +382,8 @@ Module SemSubstExposed (WM : WrapSig) (SS : SemSubstSig WM).
     (~ In f_temp xs) ->
 
     (* wrapper spec *)
-    L ! w_wrap = Some (bs, ys, w_work) ->
-    wrap_prop bs ys f_work w_work f_wrap w_wrap ->
+    L ! w_wrap = Some (tinfo, winfo, w_work) ->
+    wrap_prop tinfo winfo f_work w_work f_wrap w_wrap ->
 
     forall i ρ1 ρ2,
       G i Γ1 ρ1 Γ2 ρ2 ->
@@ -434,7 +434,7 @@ Module SemSubstExposed (WM : WrapSig) (SS : SemSubstSig WM).
     eapply (set_lists_set f_temp
               (Tag w_temp
                  (Vfun f_temp ρ3 []
-                    (wrap bs ys f_work w_work f_wrap w_wrap)))) in Hρ3; eauto.
+                    (wrap tinfo winfo f_work w_work f_wrap w_wrap)))) in Hρ3; eauto.
     rewrite (set_set f_temp f_work) in Hρ3; eauto.
     rewrite (set_set f_temp f_work) in Hρ3; eauto.
 
@@ -443,7 +443,7 @@ Module SemSubstExposed (WM : WrapSig) (SS : SemSubstSig WM).
                 (M.set f_temp
                    (Tag w_temp
                       (Vfun f_temp ρ3 []
-                         (wrap bs ys f_work w_work f_wrap w_wrap))) ρ3)) as ρ3'.
+                         (wrap tinfo winfo f_work w_work f_wrap w_wrap))) ρ3)) as ρ3'.
 
     assert (Hwfρ3 : wf_env ρ3).
     {
@@ -452,7 +452,7 @@ Module SemSubstExposed (WM : WrapSig) (SS : SemSubstSig WM).
                    (Tag w_work
                       (Vfun f_work ρ1 xs
                          (Efun f_temp w_temp []
-                            (wrap bs ys f_work w_work f_wrap w_wrap)
+                            (wrap tinfo winfo f_work w_work f_wrap w_wrap)
                             (Eletapp f_work f_temp w_temp [] e)))) ρ1)) with (xs := xs) (vs := vs1); eauto.
       eapply wf_env_set; eauto.
       eapply V_wf_val_Forall_l; eauto.
@@ -465,7 +465,7 @@ Module SemSubstExposed (WM : WrapSig) (SS : SemSubstSig WM).
                    (M.set f_temp
                       (Tag w_temp
                          (Vfun f_temp ρ3 []
-                            (wrap bs ys f_work w_work f_wrap w_wrap))) ρ1))) with (xs := xs) (vs := vs1); eauto.
+                            (wrap tinfo winfo f_work w_work f_wrap w_wrap))) ρ1))) with (xs := xs) (vs := vs1); eauto.
       eapply wf_env_set; eauto.
       eapply wf_env_set; eauto.
       eapply bstep_fuel_wf_res in H21; eauto.
@@ -497,7 +497,7 @@ Module SemSubstExposed (WM : WrapSig) (SS : SemSubstSig WM).
       eapply V_wrapper with (k := c)
                             (v_work' := (Vfun f_work ρ1 xs
                                            (Efun f_temp w_temp []
-                                              (wrap bs ys f_work w_work f_wrap w_wrap)
+                                              (wrap tinfo winfo f_work w_work f_wrap w_wrap)
                                               (Eletapp f_work f_temp w_temp [] e))))
                             (ρ := (M.set f_temp
                                      (Tag w_temp
@@ -506,11 +506,11 @@ Module SemSubstExposed (WM : WrapSig) (SS : SemSubstSig WM).
                                               (Tag w_work
                                                  (Vfun f_work ρ1 xs
                                                     (Efun f_temp w_temp []
-                                                       (wrap bs ys f_work w_work f_wrap
+                                                       (wrap tinfo winfo f_work w_work f_wrap
                                                           w_wrap)
                                                        (Eletapp f_work f_temp w_temp []
                                                           e)))) ρ1') []
-                                           (wrap bs ys f_work w_work f_wrap w_wrap)))
+                                           (wrap tinfo winfo f_work w_work f_wrap w_wrap)))
                                      ρ1')); eauto.
       + eapply V_mono with i; eauto; try lia.
         eapply IHi; eauto.
@@ -522,8 +522,8 @@ Module SemSubstExposed (WM : WrapSig) (SS : SemSubstSig WM).
     - apply Included_refl.
   Qed.
 
-  Lemma fun_compat_trans Γ1 e e' bs k k' f w xs w_temp f_temp w_wrap f_wrap ys :
-    let wrapper := (wrap bs ys f w f_wrap w_wrap) in
+  Lemma fun_compat_trans Γ1 e e' tinfo k k' f w xs w_temp f_temp w_wrap f_wrap winfo :
+    let wrapper := (wrap tinfo winfo f w f_wrap w_wrap) in
     trans_correct (FromList xs :|: (f |: Γ1)) e e' ->
     occurs_free e' \subset occurs_free e ->
 
@@ -546,8 +546,8 @@ Module SemSubstExposed (WM : WrapSig) (SS : SemSubstSig WM).
     (~ In f_temp xs) ->
 
     (* wrapper spec *)
-    L ! w_wrap = Some (bs, ys, w) ->
-    wrap_prop bs ys f w f_wrap w_wrap ->
+    L ! w_wrap = Some (tinfo, winfo, w) ->
+    wrap_prop tinfo winfo f w f_wrap w_wrap ->
 
     trans_correct Γ1 (Efun f w xs
                         (Efun f_temp w_temp [] wrapper
@@ -591,9 +591,9 @@ Module SemSubstExposed (WM : WrapSig) (SS : SemSubstSig WM).
                                 (Tag w
                                    (Vfun f ρ1 xs
                                       (Efun f_temp w_temp []
-                                         (wrap bs ys f w f_wrap w_wrap)
+                                         (wrap tinfo winfo f w f_wrap w_wrap)
                                          (Eletapp f f_temp w_temp [] e))))
-                                ρ1) [] (wrap bs ys f w f_wrap w_wrap))) ρ1)) (M.set f (Tag w (Vfun f ρ2 xs e')) ρ2)) with (j1 := c') (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+                                ρ1) [] (wrap tinfo winfo f w f_wrap w_wrap))) ρ1)) (M.set f (Tag w (Vfun f ρ2 xs e')) ρ2)) with (j1 := c') (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
     - assert (wf_env ρ1) by (eapply G_wf_env_l; eauto).
       assert (wf_env ρ2) by (eapply G_wf_env_r; eauto).
       assert (wf_env (M.set f_temp
@@ -603,9 +603,9 @@ Module SemSubstExposed (WM : WrapSig) (SS : SemSubstSig WM).
                                  (Tag w
                                     (Vfun f ρ1 xs
                                        (Efun f_temp w_temp []
-                                          (wrap bs ys f w f_wrap w_wrap)
+                                          (wrap tinfo winfo f w f_wrap w_wrap)
                                           (Eletapp f f_temp w_temp [] e)))) ρ1)
-                              [] (wrap bs ys f w f_wrap w_wrap))) ρ1)).
+                              [] (wrap tinfo winfo f w f_wrap w_wrap))) ρ1)).
       {
         eapply wf_env_set; eauto.
         constructor; auto.
@@ -663,8 +663,8 @@ Module SemSubstExposed (WM : WrapSig) (SS : SemSubstSig WM).
     intros Hc; subst; contradiction.
   Qed.
 
-  Lemma app_compat_trans Γ bs f w xs w_temp f_temp w_wrap f_wrap ys :
-    let wrapper := (wrap bs ys f w f_wrap w_wrap) in
+  Lemma app_compat_trans Γ tinfo f w xs w_temp f_temp w_wrap f_wrap winfo :
+    let wrapper := (wrap tinfo winfo f w f_wrap w_wrap) in
 
     (f \in Γ) ->
     (FromList xs \subset Γ) ->
@@ -681,8 +681,8 @@ Module SemSubstExposed (WM : WrapSig) (SS : SemSubstSig WM).
     (~ In f_temp xs) ->
 
     (* wrapper spec *)
-    L ! w_wrap = Some (bs, ys, w) ->
-    (* wrap_prop bs ys f w f_wrap w_wrap -> *)
+    L ! w_wrap = Some (tinfo, winfo, w) ->
+    (* wrap_prop tinfo winfo f w f_wrap w_wrap -> *)
 
     trans_correct Γ (Eapp f w_wrap xs)
       (Efun f_temp w_temp [] wrapper
@@ -715,7 +715,7 @@ Module SemSubstExposed (WM : WrapSig) (SS : SemSubstSig WM).
 
     destruct (HV f f_wrap (M.set f_temp
                              (Tag w_temp
-                                (Vfun f_temp ρ2 [] (wrap bs ys f w0 f_wrap w_wrap))) ρ2)) as [k [ρ3 [xs2 [e2 [Hstep [Hlen HV']]]]]]; eauto.
+                                (Vfun f_temp ρ2 [] (wrap tinfo winfo f w0 f_wrap w_wrap))) ρ2)) as [k [ρ3 [xs2 [e2 [Hstep [Hlen HV']]]]]]; eauto.
     eapply wf_env_set; eauto.
 
     erewrite set_set in Hstep; eauto.
