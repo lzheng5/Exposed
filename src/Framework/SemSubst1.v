@@ -7,7 +7,7 @@ Require Import Lia.
 
 From Framework Require Import Util ANF Exposed.
 
-(* Semantic Substitution *)
+(* Semantic Substitution for DPE *)
 
 (* DPE
 
@@ -190,7 +190,6 @@ Proof.
     apply H; auto.
 Qed.
 
-(* TODO : generalize *)
 Lemma bound_vars_wrap_inv bs ys f w f_wrap w_wrap :
   let wrapper := (wrap bs ys f w f_wrap w_wrap) in
   (~ f \in bound_var wrapper) ->
@@ -233,7 +232,6 @@ Inductive trans (Γ : Ensemble var) : exp -> exp -> Prop :=
     (~ f_temp \in (occurs_free k)) ->
     (~ f_temp \in Γ) ->
     f_temp <> f ->
-    (* TODO: ~ f_temp \in bound_var (wrap f) *)
     (~ In f_temp ys) ->
 
     (* wrapper spec *)

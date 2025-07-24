@@ -198,14 +198,14 @@ Module Top (LM : LSig) (VT : VTrans LM).
           -- destruct H2.
              repeat (split; auto); intros.
 
-             assert (HE' : IV.E' IV.V (exposedb w0) (i - (i - j)) ρ3 e ρ4 e0).
+             assert (HE' : E' IV.V (exposedb w0) (i - (i - j)) ρ3 e ρ4 e0).
              {
                inv H0.
                eapply H2 with (vs1 := vs1) (vs2 := vs2); try lia; eauto.
                eapply exposed_V_relate_Forall; eauto; try lia.
              }
 
-             unfold EV.E', IV.E', EV.R', IV.R' in *.
+             unfold E', R' in *.
              intros.
              edestruct HE' as [j2 [r2 [He0 HR']]]; eauto.
              exists j2; exists r2; split; auto.
@@ -230,14 +230,14 @@ Module Top (LM : LSig) (VT : VTrans LM).
           -- destruct HV as [Hlen HV].
              split; auto; intros.
 
-             assert (HE' : EV.E' EV.V (exposedb w0) (i - (i - j)) ρ3 e ρ4 e0).
+             assert (HE' : E' EV.V (exposedb w0) (i - (i - j)) ρ3 e ρ4 e0).
              {
                inv H0.
                eapply HV with (vs1 := vs1) (vs2 := vs2); try lia; eauto.
                eapply exposed_V_relate_Forall with (V1 := IV.V); eauto; try lia.
              }
 
-             unfold EV.E', IV.E', EV.R', IV.R' in *.
+             unfold E', R' in *.
              intros.
              edestruct HE' as [j2 [r2 [He0 HR']]]; eauto.
              exists j2; exists r2; split; auto.
@@ -270,7 +270,7 @@ Module Top (LM : LSig) (VT : VTrans LM).
   Lemma exposed_E_relate {i ρ1 ρ2 e1 e2}:
     IV.E true i ρ1 e1 ρ2 e2 <-> EV.E true i ρ1 e1 ρ2 e2.
   Proof.
-    unfold IV.E, EV.E, IV.E', EV.E'.
+    unfold IV.E, EV.E, E'.
     split; intros;
     edestruct H as [j2 [r2 [He2 HR]]]; eauto;
       eexists; eexists; split; eauto;

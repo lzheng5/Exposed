@@ -26,6 +26,19 @@ Module ExposedUtil.
     eapply H; eauto; lia.
   Qed.
 
+  Lemma V_mono_Forall_mono (V : nat -> wval -> wval -> Prop) :
+    (forall i j v1 v2, V i v1 v2 -> j <= i -> V j v1 v2) ->
+    forall i j {vs1 vs2},
+      Forall2 (V i) vs1 vs2 ->
+      j <= i ->
+      Forall2 (V j) vs1 vs2.
+  Proof.
+    intros V_mono. intros.
+    revert j H0.
+    induction H; simpl; intros; auto.
+    constructor; eauto.
+  Qed.
+
   Definition V_refl0 (v1 : val) (v2 : val) : Prop :=
     match v1, v2 with
     | Vconstr t1 vs1, Vconstr t2 vs2 => t1 = t2 /\ length vs1 = length vs2
@@ -77,6 +90,21 @@ Module ExposedUtil.
     destruct v; auto.
   Qed.
 
+  Definition R' (P : nat -> wval -> wval -> Prop) (i : nat) (r1 : res) (r2 : res) :=
+    match r1, r2 with
+    | OOT, OOT => True
+    | Res v1, Res v2 => P i v1 v2
+    | _, _ => False
+    end.
+
+  Definition E' (P : nat -> wval -> wval -> Prop) (ex : bool) (i : nat) (ρ1 : env) (e1 :exp) (ρ2 : env) (e2 : exp) : Prop :=
+    forall j1 r1,
+      j1 <= i ->
+      bstep_fuel ex ρ1 e1 j1 r1 ->
+      exists j2 r2,
+        bstep_fuel ex ρ2 e2 j2 r2 /\
+        R' P (i - j1) r1 r2.
+
 End ExposedUtil.
 
 Module Type LSig.
@@ -85,9 +113,9 @@ Module Type LSig.
 
   Parameter L : M.t elt.
 
-  Axiom L_inv_None : forall w, w \in Exposed -> L ! w = None.
+  Parameter L_inv_None : forall w, w \in Exposed -> L ! w = None.
 
-  Axiom L_inv_Some : forall w d, L ! w = Some d -> (~ (w \in Exposed)).
+  Parameter L_inv_Some : forall w d, L ! w = Some d -> (~ (w \in Exposed)).
 
 End LSig.
 
@@ -115,7 +143,7 @@ Module Type VTrans (LM : LSig).
                       (nat -> env -> exp -> env -> exp -> Prop) ->
                       nat -> LM.elt -> web -> val -> web -> val -> Prop.
 
-  Axiom V_trans_mono :
+  Parameter V_trans_mono :
     forall V E i j d w1 v1 w2 v2,
       (forall k : nat,
           k < S i ->
@@ -130,24 +158,9 @@ Module ExposedV (LM : LSig) (VT : VTrans LM).
 
   Import VT.
   Import LM.
-  Import ExposedUtil.
+  Export ExposedUtil.
 
   (* Logical Relations with Exposed Webs *)
-  Definition R' (P : nat -> wval -> wval -> Prop) (i : nat) (r1 : res) (r2 : res) :=
-    match r1, r2 with
-    | OOT, OOT => True
-    | Res v1, Res v2 => P i v1 v2
-    | _, _ => False
-    end.
-
-  Definition E' (P : nat -> wval -> wval -> Prop) (ex : bool) (i : nat) (ρ1 : env) (e1 :exp) (ρ2 : env) (e2 : exp) : Prop :=
-    forall j1 r1,
-      j1 <= i ->
-      bstep_fuel ex ρ1 e1 j1 r1 ->
-      exists j2 r2,
-        bstep_fuel ex ρ2 e2 j2 r2 /\
-        R' P (i - j1) r1 r2.
-
   Fixpoint V (i : nat) (wv1 : wval) (wv2 : wval) {struct i} : Prop :=
     wf_val wv1 /\
     wf_val wv2 /\
@@ -222,10 +235,8 @@ Module ExposedV (LM : LSig) (VT : VTrans LM).
     j <= i ->
     Forall2 (V j) vs1 vs2.
   Proof.
-    intros H.
-    revert j.
-    induction H; simpl; intros; auto.
-    constructor; eauto.
+    intros.
+    eapply V_mono_Forall_mono; eauto.
     eapply V_mono; eauto.
   Qed.
 

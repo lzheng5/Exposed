@@ -7,7 +7,7 @@ Require Import Lia.
 
 From Framework Require Import Util ANF Exposed.
 
-(* Semantic Substitution *)
+(* Semantic Substitution for DPE *)
 
 (* DPE
 
@@ -378,7 +378,7 @@ Import EM.
 
 (* Addtional Lemmas about [live_args] *)
 Lemma get_list_live_args_Forall :
-  forall ys vs1 ρ0 ρ1 vs2 vs bs i,
+  forall (V : nat -> wval -> wval -> Prop) ys vs1 ρ0 ρ1 vs2 vs bs i,
     NoDup ys ->
     length ys = length bs ->
     set_lists ys vs1 ρ0 = Some ρ1 ->
@@ -386,7 +386,7 @@ Lemma get_list_live_args_Forall :
     Forall2 (V i) vs1 vs2 ->
     Forall2 (V i) vs (live_args vs2 bs).
 Proof.
-  intros ys.
+  intros V ys.
   induction ys; simpl; intros;
     destruct bs; inv H0;
     simpl in *.
@@ -458,14 +458,15 @@ Proof.
 Qed.
 
 (* Compatibility Lemmas *)
-Lemma V_wrapper_refl tinfo winfo f_work f_work' w_work f_wrap f_wrap' w_wrap :
+(* Note making V abstract is not required *)
+Lemma V_wrapper_refl V tinfo winfo f_work f_work' w_work f_wrap f_wrap' w_wrap :
+  (forall i j v1 v2, V i v1 v2 -> j <= i -> V j v1 v2) ->
+
   let wrapper := (wrap tinfo winfo f_work w_work f_wrap w_wrap) in
   let wrapper' := (wrap tinfo winfo f_work' w_work f_wrap' w_wrap) in
 
   (~ f_work \in bound_var wrapper) ->
   (~ f_work' \in bound_var wrapper') ->
-
-  L ! w_work = None ->
   (~ w_work \in Exposed) ->
 
   wrap_prop tinfo winfo f_work w_work f_wrap w_wrap ->
@@ -481,11 +482,11 @@ Lemma V_wrapper_refl tinfo winfo f_work f_work' w_work f_wrap f_wrap' w_wrap :
     | 0 =>
         V_refl0 v_wrap v_wrap'
     | S i0 =>
-        V_refl (fun j => V (i0 - (i0 - j))) (fun j => E false (i0 - (i0 - j))) i0 w_work v_work v_work' ->
-        V_refl (fun j => V (i0 - (i0 - j))) (fun j => E false (i0 - (i0 - j))) i0 w_wrap v_wrap v_wrap'
+        V_refl (fun j => V (i0 - (i0 - j))) (fun j => E' V false (i0 - (i0 - j))) i0 w_work v_work v_work' ->
+        V_refl (fun j => V (i0 - (i0 - j))) (fun j => E' V false (i0 - (i0 - j))) i0 w_wrap v_wrap v_wrap'
     end.
 Proof.
-  intros Hwrapper Hwrapper' Hf_work Hf_work' Hw_work Hw_work1 Hwrap_prop i.
+  intros V_mono Hwrapper Hwrapper' Hf_work Hf_work' Hw_work Hwrap_prop i.
   destruct Hwrap_prop as [Hinfo [_ Hinfo1]].
   edestruct bound_vars_wrap_inv with (f := f_work) as [Hf_work1 Hf_work2]; eauto.
   edestruct bound_vars_wrap_inv with (f := f_work') as [Hf_work'1 Hf_work'2]; eauto.
@@ -534,7 +535,7 @@ Proof.
   - intros; contradiction.
   - intros; contradiction.
   - eapply get_list_live_args_Forall with (ρ1 := ρ3); eauto.
-    eapply V_mono_Forall; eauto; lia.
+    eapply V_mono_Forall_mono; eauto; lia.
   - exists (S j2), r2; split; eauto.
     constructor; auto.
     econstructor; eauto.
@@ -590,6 +591,7 @@ Proof.
                                (ρ := ρ) (ρ' := ρ')
                                (v_wrap := v_wrap) (v_wrap' := v_wrap')
                                (v_work := v_work) (v_work' := v_work'); eauto.
+    eapply V_mono; eauto.
   }
 
   destruct i; auto.
