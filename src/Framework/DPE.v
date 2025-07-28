@@ -50,7 +50,8 @@ Inductive trans (Γ : Ensemble var) : exp -> exp -> Prop :=
 
     NoDup (f :: xs) ->
     Disjoint _ (FromList xs) Γ ->
-    Disjoint _ (FromList (dead_args xs bs)) (occurs_free e') ->
+
+    Disjoint _ (FromList (dead_args xs bs)) (occurs_free e) ->
     trans Γ (Efun f w xs e k) (Efun f w (live_args xs bs) e' k')
 
 | Trans_fun_exposed :
@@ -310,7 +311,7 @@ Qed.
 Lemma trans_fun_inv {f w xs bs e' k' e k }:
   (occurs_free e') \subset (occurs_free e) ->
   (occurs_free k') \subset (occurs_free k) ->
-  Disjoint var (FromList (dead_args xs bs)) (occurs_free e') ->
+  Disjoint var (FromList (dead_args xs bs)) (occurs_free e) ->
   length xs = length bs ->
   (occurs_free (Efun f w (live_args xs bs) e' k')) \subset (occurs_free (Efun f w xs e k)).
 Proof.
@@ -318,6 +319,7 @@ Proof.
   intros.
   inv H3; auto.
   destruct (in_dec M.elt_eq x xs); auto.
+  specialize (H _ H12).
   apply not_live_dead_args in H11; auto.
   exfalso.
   inv H1.
@@ -480,7 +482,6 @@ Lemma Vfun_V_trans {Γ2 f xs Γ1 e e'} :
     length xs = length bs ->
     G i Γ1 ρ1 Γ2 ρ2 ->
     occurs_free e' \subset (FromList (live_args xs bs) :|: (f |: Γ2)) ->
-    Disjoint _ (FromList (dead_args xs bs)) (occurs_free e') ->
     V i (Tag w (Vfun f ρ1 xs e)) (Tag w (Vfun f ρ2 (live_args xs bs) e')).
 Proof.
   unfold trans_correct.
@@ -515,15 +516,14 @@ Lemma fun_compat_trans {Γ1 e e' bs k k'} f w xs :
   length xs = length bs ->
   NoDup (f :: xs) ->
   Disjoint _ (FromList xs) Γ1 ->
-  Disjoint _ (FromList (dead_args xs bs)) (occurs_free e') ->
   (occurs_free (Efun f w (live_args xs bs) e' k')) \subset Γ1 ->
   trans_correct Γ1 (Efun f w xs e k) (Efun f w (live_args xs bs) e' k').
 Proof.
   unfold trans_correct, E, E'.
   intros.
-  inv H9.
+  inv H8.
   - exists 0, OOT; split; simpl; eauto.
-  - inv H10.
+  - inv H9.
     edestruct (H0 ex (i - 1) (M.set f (Tag w (Vfun f ρ1 xs e)) ρ1) (M.set f (Tag w (Vfun f ρ2 (live_args xs bs) e')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
     + eapply G_subset with (Γ2 := (f |: (occurs_free (Efun f w (live_args xs bs) e' k')))); eauto.
       * eapply G_set; eauto.
