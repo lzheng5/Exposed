@@ -214,32 +214,6 @@ Proof.
     destruct b0; simpl; eauto.
 Qed.
 
-Lemma dead_args_incl {A xs bs} :
-  incl (@dead_args A xs bs) xs.
-Proof.
-  revert bs.
-  induction xs; intros.
-  - destruct bs; simpl; apply incl_nil_l.
-  - destruct bs; simpl.
-    + apply incl_refl.
-    + destruct b.
-      * apply incl_tl; auto.
-      * apply incl_cons.
-        apply in_eq; auto.
-        apply incl_tl; auto.
-Qed.
-
-Lemma dead_args_In : forall {A xs bs a}, In a (@dead_args A xs bs) -> In a xs.
-Proof. intros; eapply dead_args_incl; eauto. Qed.
-
-Lemma dead_args_not_In : forall {A xs a} bs, ~ In a xs -> ~ In a (@dead_args A xs bs).
-Proof.
-  intros.
-  intro Hc.
-  apply H.
-  eapply dead_args_In; eauto.
-Qed.
-
 Lemma not_live_dead_args {A} : forall {xs bs x},
     length xs = length bs ->
     ~ In x (@live_args A xs bs) ->

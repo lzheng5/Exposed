@@ -5,23 +5,13 @@ From CertiCoq.Libraries Require Import maps_util.
 Import ListNotations.
 Require Import Lia.
 
-From Framework Require Import Util ANF SemSubst.
+From Framework Require Import Util ANF DPE SemSubst.
 
 Module DPEWrap <: WrapSig.
 
   Definition trans_info_t := list bool.
 
   Definition wrapper_info_t := list var.
-
-  (* Apply bit mask to argument list *)
-  Fixpoint live_args {A} (ys : list A) (bs : list bool) : list A :=
-    match bs, ys with
-    | [], [] => ys
-    | b :: bs', y :: ys' =>
-        if b then y :: (live_args ys' bs')
-        else live_args ys' bs'
-    | _, _ => ys
-    end.
 
   Definition wrap
     (bs : trans_info_t) (ys : wrapper_info_t)
@@ -37,48 +27,6 @@ Module DPEWrap <: WrapSig.
     length bs = length ys /\
     (~ In f_wrap ys) /\
     NoDup ys.
-
-  (* Lemmas about [live_args] *)
-  Lemma live_args_incl {A xs bs} :
-    incl (@live_args A xs bs) xs.
-  Proof.
-    revert bs.
-    induction xs; intros.
-    - destruct bs; simpl; apply incl_nil_l.
-    - destruct bs; simpl.
-      + apply incl_refl.
-      + destruct b.
-        * apply incl_cons.
-          apply in_eq; auto.
-          apply incl_tl; auto.
-        * apply incl_tl; auto.
-  Qed.
-
-  Lemma live_args_In : forall {A xs bs a}, In a (@live_args A xs bs) -> In a xs.
-  Proof.
-    intros; eapply live_args_incl; eauto.
-  Qed.
-
-  Lemma live_args_not_In : forall {A xs a} bs, ~ In a xs -> ~ In a (@live_args A xs bs).
-  Proof.
-    intros.
-    intro Hc.
-    apply H.
-    eapply live_args_In; eauto.
-  Qed.
-
-  Lemma live_args_length {A B} xs ys bs :
-    length xs = length ys ->
-    length (@live_args A xs bs) = length (@live_args B ys bs).
-  Proof.
-    revert ys bs. induction xs; intros; eauto.
-    - destruct ys; try (simpl in * ; congruence).
-      destruct bs; reflexivity.
-    - simpl.
-      destruct ys; try (simpl in * ; congruence). inv H.
-      destruct bs. simpl. congruence.
-      destruct b0; simpl; eauto.
-  Qed.
 
   Lemma free_vars_wrap bs ys w_work f_wrap w_wrap f:
     let wrapper := (wrap bs ys f w_work f_wrap w_wrap) in
