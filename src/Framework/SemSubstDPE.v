@@ -7,6 +7,49 @@ Require Import Lia.
 
 From Framework Require Import Util ANF DPE SemSubst.
 
+(* DPE
+
+let f_work = fun [w_work] (x) ->
+               let g0 = fun [w_g0] () ->
+                          [[ let f_wrap = fun [w_wrap] (x y) -> {f_work} [w_work] x (* the hole doesn't need to be at the elimination site *)
+                             in f_wrap ]]
+               let f = g0 [w_g0] ()
+               in x + 1
+let g1 = fun [w_g1] () ->
+           let f_wrap = fun [w_wrap] (x y) -> f_work [w_work] x
+           in f_wrap
+let f = g1 [w_g1] ()
+let h1 = fun [w_h1] (f') -> f' [w_wrap] (1, 2)
+let h2 = fun [w_h2] (f') -> let r = f' [w_wrap] (1, 2) in r + 1
+in h1 [w_h1] f
+   h2 [w_h2] f
+
+~~>
+
+let f_work = fun [w_work] (x) ->
+               let g0 = fun [w_g0] () -> f_work
+               let f = g0 [w_g0] ()
+               in x + 1
+let g1 = fun [w_g1] () -> f_work
+let f = g1 [w_g1] ()
+let h1 = fun [w_h1] (f') ->
+          let g3 = fun [w_g3] () ->
+                    let f'_wrap = fun [w_wrap] (x, y) -> f' [w_work] x
+                    in f'_wrap
+          let f'_wrap = g3 [w_g3] ()
+          in f'_wrap [w_wrap] (1, 2)
+let h2 = fun [w_h2] (f') ->
+          let g3 = fun [w_g3] () ->
+                    let f'_wrap = fun [w_wrap] (x, y) -> f' [w_work] x
+                    in f'_wrap
+          let f'_wrap = g3 [w_g3] ()
+          let r = f'_wrap [w_wrap] (1, 2)
+          in r + 1
+in h1 [w_h1] f
+   h2 [w_h2] f
+
+*)
+
 Module DPEWrap <: WrapSig.
 
   Definition trans_info_t := list bool.

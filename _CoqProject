@@ -24,6 +24,7 @@ src/Framework/Comp.v
 src/Framework/ReflComp.v
 src/Framework/SemSubst.v
 src/Framework/SemSubstDPE.v
+src/Framework/SemSubstDefunc.v
 src/Framework/SemSubst1.v
 src/Framework/SemSubst2.v
 
