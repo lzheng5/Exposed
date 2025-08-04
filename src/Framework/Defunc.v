@@ -14,7 +14,7 @@ From Framework Require Import Util ANF Exposed.
 Definition ctor_map := M.t web.
 
 (* Web Map *)
-(* This map takes an existing call web id and returns a constructor map that describes how to turn the call web into a data web and how to create the new call webs *)
+(* This map takes an existing call web id and returns a constructor map that describes how to turn the call web into a data web and how to create the new call web *)
 Module LT <: Exposed.LTy. Definition t := ctor_map. End LT.
 Module LM := Exposed.DefaultL LT.
 Import LM.
