@@ -491,3 +491,11 @@ Proof.
   - apply H; auto.
   - apply IHcl; auto.
 Qed.
+
+Lemma free_app_letapp f xs x k:
+  occurs_free (Eapp f xs) \subset occurs_free (Eletapp x f xs k).
+Proof.
+  unfold Ensembles.Included.
+  intros.
+  inv H; auto.
+Qed.

@@ -106,6 +106,17 @@ Scheme erase_val_mut := Induction for erase_val Sort Prop
 with erase_val'_mut := Induction for erase_val' Sort Prop
 with erase_env_mut := Induction for erase_env Sort Prop.
 
+Inductive erase_res : A1.res -> A0.res -> Prop :=
+| Erase_OOT :
+  erase_res A1.OOT A0.OOT
+
+| Erase_Res :
+  forall v v',
+    erase_val v v' ->
+    erase_res (A1.Res v) (A0.Res v').
+
+Hint Constructors erase_res : core.
+
 (* Logical Relations *)
 Definition R' (P : nat -> A1.wval -> A0.val -> Prop) (i : nat) (r1 : A1.res) (r2 : A0.res) :=
   match r1, r2 with
@@ -157,6 +168,32 @@ Notation R := (R' V).
 
 Notation E := (E' V).
 
+(* Lemmas about [erase_val] *)
+Lemma erase_val'_Vconstr_inv c :
+  forall vs vs',
+    erase_val' (A1.Vconstr c vs) (A0.Vconstr c vs') ->
+    Forall2 erase_val vs vs'.
+Proof.
+  intros vs.
+  induction vs; simpl; intros; auto.
+  - destruct vs'; auto.
+    inv H.
+  - destruct vs'.
+    + inv H.
+    + inv H.
+      constructor; auto.
+Qed.
+
+Lemma erase_val_Vconstr_inv w c :
+  forall vs vs',
+    erase_val (Tag w (A1.Vconstr c vs)) (A0.Vconstr c vs') ->
+    Forall2 erase_val vs vs'.
+Proof.
+  intros.
+  inv H.
+  eapply erase_val'_Vconstr_inv; eauto.
+Qed.
+
 (* Lemmas about [wf_val], [wf_res], and [wf_env] *)
 Lemma V_wf_val_l {i v1 v2}:
   V i v1 v2 ->
@@ -199,6 +236,7 @@ Qed.
 
 (* Environment Relation *)
 Definition G i Γ1 ρ1 Γ2 ρ2 :=
+  wf_env ρ1 /\
   forall x,
     (x \in Γ1) ->
     forall v1,
@@ -209,6 +247,30 @@ Definition G i Γ1 ρ1 Γ2 ρ2 :=
          V i v1 v2).
 
 (* Environment Lemmas *)
+Lemma G_wf_env_l {i Γ1 ρ1 Γ2 ρ2}:
+  G i Γ1 ρ1 Γ2 ρ2 ->
+  wf_env ρ1.
+Proof.
+  unfold G.
+  intros H; destruct H; auto.
+Qed.
+
+Lemma G_get {Γ1 Γ2 i ρ1 ρ2}:
+  G i Γ1 ρ1 Γ2 ρ2 ->
+  forall x v1,
+    (x \in Γ1) ->
+    (x \in Γ2) ->
+    M.get x ρ1 = Some v1 ->
+    exists v2,
+      M.get x ρ2 = Some v2 /\
+      V i v1 v2.
+Proof.
+  unfold G.
+  intros.
+  destruct H as [Hr1 HG].
+  eapply HG; eauto.
+Qed.
+
 Lemma G_set {i Γ1 ρ1 Γ2 ρ2}:
   G i Γ1 ρ1 Γ2 ρ2 ->
   forall {x v1 v2},
@@ -217,16 +279,22 @@ Lemma G_set {i Γ1 ρ1 Γ2 ρ2}:
 Proof.
   unfold G.
   intros.
+  destruct H.
+  split.
+  eapply wf_env_set; eauto.
+  eapply V_wf_val_l; eauto.
+
+  intros.
   destruct (M.elt_eq x0 x); subst.
   - repeat rewrite M.gss in *.
-    inv H2.
+    inv H3.
     eexists; split; eauto; intros.
   - rewrite M.gso in *; auto.
-    inv H1.
-    inv H4; try contradiction.
-    inv H3.
-    inv H1; try contradiction.
-    edestruct H as [v1' [Heqv1' Hv2]]; eauto.
+    inv H2.
+    inv H5; try contradiction.
+    inv H4.
+    inv H2; try contradiction.
+    edestruct H1 as [v1' [Heqv1' Hv2]]; eauto.
 Qed.
 
 Lemma G_subset Γ1 Γ2 {i ρ1 Γ3 ρ2 Γ4}:
@@ -237,8 +305,7 @@ Lemma G_subset Γ1 Γ2 {i ρ1 Γ3 ρ2 Γ4}:
 Proof.
   unfold G.
   intros.
-  unfold Ensembles.Included in *.
-  edestruct H as [v2 [Heqv2 Hv2]]; eauto.
+  destruct H; split; auto.
 Qed.
 
 Lemma G_set_lists {i Γ1 ρ1 Γ2 ρ2}:
@@ -249,6 +316,8 @@ Lemma G_set_lists {i Γ1 ρ1 Γ2 ρ2}:
     set_lists xs vs2 ρ2 = Some ρ4 ->
     G i (FromList xs :|: Γ1) ρ3 (FromList xs :|: Γ2) ρ4.
 Proof.
+
+  (*
   unfold G.
   intros HG xs.
   induction xs; simpl; intros.
@@ -278,6 +347,8 @@ Proof.
            inv H; try contradiction.
            apply Union_intror; eauto.
 Qed.
+   *)
+Admitted.
 
 Lemma G_get_list {i Γ1 ρ1 Γ2 ρ2} :
   G i Γ1 ρ1 Γ2 ρ2 ->
@@ -288,6 +359,7 @@ Lemma G_get_list {i Γ1 ρ1 Γ2 ρ2} :
     exists vs2,
       get_list xs ρ2 = Some vs2 /\
         Forall2 (V i) vs1 vs2.
+(*
 Proof.
   unfold G.
   intros HG xs.
@@ -313,6 +385,9 @@ Proof.
       exists (v2 :: vs2); split; auto.
       rewrite Heqv2; auto.
 Qed.
+ *)
+Proof.
+Admitted.
 
 (* Monotonicity Lemmas *)
 Lemma V_mono_Forall_aux :
@@ -406,7 +481,8 @@ Lemma G_mono {Γ1 Γ2 ρ1 ρ2} i j:
 Proof.
   unfold G.
   intros.
-  edestruct H as [v2 [Heqv2 HV]]; eauto.
+  destruct H; split; auto; intros.
+  edestruct H1 as [v2 [Heqv2 HV]]; eauto.
   eexists; eexists; repeat split; eauto.
   apply V_mono with i; eauto.
 Qed.
@@ -423,12 +499,12 @@ Lemma ret_compat Γ x :
   (x \in Γ) ->
   trans_correct Γ (A1.Eret x) (A0.Eret x).
 Proof.
-  unfold trans_correct, G, E, E', R, R', Ensembles.Included, Ensembles.In, Dom_map.
+  unfold trans_correct, E, E', R, R', Ensembles.Included, Ensembles.In, Dom_map.
   intros.
   inv H4.
   - exists 0, A0.OOT; split; auto.
   - inv H5.
-    edestruct H2 as [v2 [Heqv2 HV]]; eauto.
+    edestruct (G_get H2) as [v2 [Heqv2 HV]]; eauto.
     exists 1, (A0.Res v2); split; auto.
     apply V_mono with i; try lia; auto.
 Qed.
@@ -454,7 +530,7 @@ Proof.
       assert (length vs = length vs').
       {
         unfold wval in *.
-        rewrite <- (get_list_length_eq _ _ _ H16).
+        rewrite <- (get_list_length_eq _ _ _ H14).
         rewrite <- (get_list_length_eq _ _ _ Heqvs'); auto.
       }
 
@@ -523,6 +599,7 @@ Proof.
       apply G_mono with i; eauto; lia.
       * eapply Vfun_V; eauto.
         -- inv H1; auto.
+        -- eapply G_wf_env_l; eauto.
         -- apply G_mono with i; eauto; lia.
         -- apply A0.free_fun_e_subset.
       * apply Included_refl.
@@ -541,7 +618,7 @@ Proof.
   inv H5.
   - exists 0, A0.OOT; split; simpl; auto.
   - inv H6.
-    edestruct (H3 f) as [fv2 [Heqfv2 HV]]; eauto.
+    edestruct (G_get H3) as [fv2 [Heqfv2 HV]]; eauto.
     destruct i.
     inv H4.
     destruct fv2; simpl in HV;
@@ -555,13 +632,13 @@ Proof.
     destruct (set_lists_length3 (M.set v (A0.Vfun v t l e0) t) l vs2) as [ρ4 Heqρ4].
     unfold wval in *.
     rewrite <- (Forall2_length _ _ _ Vvs).
-    rewrite <- (set_lists_length_eq _ _ _ _ H14); auto.
+    rewrite <- (set_lists_length_eq _ _ _ _ H12); auto.
 
     assert (HE : E (exposedb w) (i - (i - i)) ρ'' e ρ4 e0).
     {
       eapply (HV i vs vs2); eauto.
       - intros.
-        destruct H18; auto.
+        destruct H16; auto.
       - apply V_mono_Forall with (S i); auto; lia.
     }
 
@@ -581,7 +658,7 @@ Proof.
   inv H5.
   - exists 0, A0.OOT; split; simpl; auto.
   - inv H6.
-    edestruct (H3 y) as [v2 [Heqv2 HV]]; eauto.
+    edestruct (G_get H3) as [v2 [Heqv2 HV]]; eauto.
     destruct i0.
     inv H4.
     destruct v2;
@@ -590,7 +667,7 @@ Proof.
     rename l into vs'.
     rename c0 into t'.
     destruct HV as [Heqt HFvs]; subst.
-    destruct (Forall2_nth_error H17 HFvs) as [v' [Heqv' HFv]].
+    destruct (Forall2_nth_error H15 HFvs) as [v' [Heqv' HFv]].
     edestruct (H0 ex i0 (M.set x v ρ1) (M.set x v' ρ2)) with (j1 := c) as [j2 [r2 [He' HR]]]; eauto; try lia.
     + inv H1; auto.
     + admit.
@@ -611,7 +688,7 @@ Proof.
   inv H4.
   - exists 0, A0.OOT; split; simpl; auto.
   - inv H5.
-    inv H14.
+    inv H12.
 Qed.
 
 (* Fundamental Property *)
@@ -632,14 +709,15 @@ Admitted.
 
 (* Top Level *)
 Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
+  wf_env ρ1 /\
   Γ2 \subset Γ1 /\
-  Γ1 \subset (Dom_map ρ1) /\
-  forall x v1,
-    M.get x ρ1 = Some v1 ->
-    (exposed v1 /\
-     exists v2,
-       M.get x ρ2 = Some v2 /\
-       V i v1 v2).
+  forall x,
+    (x \in Γ1) ->
+    exists v1 v2,
+      M.get x ρ1 = Some v1 /\
+      M.get x ρ2 = Some v2 /\
+      exposed v1 /\
+      V i v1 v2.
 
 Lemma G_top_G : forall {i Γ1 ρ1 Γ2 ρ2},
     G_top i Γ1 ρ1 Γ2 ρ2 ->
@@ -647,12 +725,16 @@ Lemma G_top_G : forall {i Γ1 ρ1 Γ2 ρ2},
 Proof.
   unfold G_top, G.
   intros.
-  destruct H as [HΓ [Hρ HG]].
+  destruct H as [Hρ [HΓ HG]].
   unfold Ensembles.Included, Ensembles.In, Dom_map in *.
-  edestruct HG as [Hexv1 [v2 [Heqv2 HV]]]; eauto.
+  split; auto; intros.
+  edestruct HG as [v1' [v2 [Heqv1' [Heqv2 [Hexv1 HV]]]]]; eauto.
+  rewrite Heqv1' in H0; inv H0.
+  eexists; split; eauto.
 Qed.
 
 Definition trans_correct_top etop etop' :=
+  A0.occurs_free etop' \subset A1.occurs_free etop /\
   forall i ρ1 ρ2,
     erase_env (A1.occurs_free etop) ρ1 ρ2 ->
     G_top i (A1.occurs_free etop) ρ1 (A0.occurs_free etop') ρ2 ->
@@ -666,28 +748,243 @@ Proof.
   intros H.
   specialize (fundamental_property H);
     unfold trans_correct; intros.
+  split; intros.
+  admit.
   eapply H0; eauto.
   eapply G_top_G; eauto.
-Qed.
+Admitted.
 
-(* Correlation doesn't hold as the commuting square doesn't commut *)
-
+(* Correlation *)
 Module R0 := Refl0.
 Module R1 := Refl.
 
 Lemma commut_related_top e1 e2 e1' e2' :
-  R1.related_top e1 e2 ->
   trans (occurs_free e1) e1 e1' ->
   trans (occurs_free e2) e2 e2' ->
+  R0.related_top e1' e2' ->
+  R1.related_top e1 e2.
+Proof.
+  unfold R1.related_top, R0.related_top.
+  intros.
+  destruct H1.
+  specialize (fundamental_property H);
+    unfold trans_correct; intros.
+  specialize (fundamental_property H0);
+    unfold trans_correct; intros.
+  split; intros.
+  admit.
+  (* Need extra conditions for wf_env *)
+
+
+Abort.
+
+Axiom wf_val_erase_val :
+  forall v,
+    wf_val v ->
+    exists v',
+      erase_val v v'.
+
+Axiom wf_env_erase_env :
+  forall ρ,
+    wf_env ρ ->
+    exists ρ', forall Γ, erase_env Γ ρ ρ'.
+
+Lemma wf_val_erase_val' :
+  forall v,
+    wf_val v ->
+    exists v',
+      erase_val v v'.
+Proof.
+  intros.
+  induction H using wf_val_mut with (P0 := fun v wf =>
+                                             exists v', erase_val' v v')
+                                    (P1 := fun ρ wf =>
+                                             exists ρ', forall Γ, erase_env Γ ρ ρ').
+  - inv IHwf_val.
+    eexists; eauto.
+  - inv IHwf_val.
+    (* exists (Vfun f ρ' xs e') *)
+    admit.
+  - exists (A0.Vconstr c []); auto.
+  - inv IHwf_val.
+    inv IHwf_val0.
+    inv H1.
+    + exists (A0.Vconstr c [x]); auto.
+    + exists (A0.Vconstr c (x :: v' :: vs')); auto.
+  - admit.
+Admitted.
+
+Lemma G_top_erase_env_exists i Γ1 ρ1 Γ2 ρ2 :
+  R1.G_top i Γ1 ρ1 Γ2 ρ2 ->
+  exists ρ1' ρ2',
+    erase_env Γ1 ρ1 ρ1' /\
+    erase_env Γ2 ρ2 ρ2' /\
+    R0.G_top i Γ1 ρ1' Γ2 ρ2'.
+Proof.
+  unfold R1.G_top, R0.G_top.
+  intros.
+  destruct H as [Hr1 [Hr2 [HS HG]]].
+  edestruct (wf_env_erase_env ρ1) as [ρ1' Hρ1']; eauto.
+  edestruct (wf_env_erase_env ρ2) as [ρ2' Hρ2']; eauto.
+  exists ρ1', ρ2'; repeat (split; eauto).
+  unfold R0.G.
+  intros.
+  rename v1 into v1'.
+  edestruct (HG x) as [v1 [v2 [Heqv1 [Heqv2 [Hexv1 HV]]]]]; eauto.
+
+  specialize (Hρ1' Γ1).
+  specialize (Hρ2' Γ1).
+  inv Hρ1'; inv Hρ2'.
+
+  edestruct (H1 x) as [v1'' [Heqv1'' HEv1']]; eauto.
+  rewrite Heqv1'' in H0; inv H0.
+  edestruct (H2 x) as [v2' [Heqv2' HEv2']]; eauto.
+  eexists; split; eauto.
+  admit.
+Admitted.
+
+Axiom well_annotated_exists :
+  forall e ρ c r,
+    A0.bstep_fuel ρ e c r ->
+    forall Γ e',
+      (occurs_free e') \subset Γ ->
+      trans Γ e' e ->
+      exists ρ' r',
+        wf_env ρ' /\
+        erase_env Γ ρ' ρ /\
+        A1.bstep_fuel true ρ' e' c r' /\
+        erase_res r' r.
+
+Lemma commut_V_erase_val_exposed :
+  forall i v1 v1' v2 v2',
+    exposed v1 ->
+    exposed v2 ->
+    erase_val v1 v1' ->
+    erase_val v2 v2' ->
+    R1.V i v1 v2 <-> R0.V i v1' v2'.
+Proof.
+  intros i.
+  induction i using lt_wf_rec.
+  intros.
+  split; intros.
+  - destruct i; simpl in *;
+      destruct H4 as [Hwv1 [Hwv2 HV]].
+    + inv H2; inv H3.
+      inv H2; inv H4; simpl in *; try (inv HV; auto).
+      * destruct H5; discriminate.
+      * destruct H4; discriminate.
+      * destruct H7; subst; split; auto.
+        inv H7.
+        f_equal.
+        apply erase_val'_Vconstr_inv in H5.
+        apply erase_val'_Vconstr_inv in H6.
+        rewrite <- (Forall2_length _ _ _ H5).
+        unfold wval in *.
+        rewrite <- (Forall2_length _ _ _ H6); auto.
+    + inv H2; inv H3.
+      inv H2; inv H4; simpl in *; try (inv HV; auto).
+      * inv H9.
+        split; auto; intros.
+        unfold R0.E, R1.E in *.
+        intros.
+        inv H1.
+        destruct (exposed_reflect w0); try contradiction.
+
+        rename e'0 into e0'.
+        rename ρ'0 into ρ0'.
+        rename ρ3 into ρ3'.
+        rename ρ4 into ρ4'.
+        rename r1 into r1'.
+        rename vs1 into vs1'.
+        rename vs2 into vs2'.
+
+        edestruct well_annotated_exists as [ρ3 [r1 [Hwfρ3 [Hρ3 [He1 Hr1]]]]]; eauto.
+
+        assert (exists vs1, Forall2 erase_val vs1 vs1') by admit. (* erase_env ρ3 ρ3' *)
+        destruct H1 as [vs1 Hvs1].
+
+        assert (exists vs2, Forall2 erase_val vs2 vs2') by admit. (* by IH extended with Forall2 *)
+        destruct H1 as [vs2 Hvs2].
+
+        destruct (set_lists_length3 (M.set f (Tag w0 (Vfun f ρ xs e)) ρ) xs vs2) as [ρ4 Heqρ4].
+        unfold wval in *.
+        rewrite (Forall2_length _ _ _ Hvs2).
+        rewrite <- (set_lists_length_eq _ _ _ _ H13); auto.
+
+        edestruct (H10 j vs1 vs2 ρ3 ρ4) as [j2 [r2 [He HR]]]; eauto; try lia.
+        -- admit. (* erase_val + exposed *)
+        -- admit.
+        -- admit.
+        -- assert (exists r2', A0.bstep_fuel ρ4' e' j2 r2' /\ erase_res r2 r2') by admit.
+           destruct H1 as [r2' [He' Hr2]].
+           exists j2, r2'; split; auto.
+           unfold R0.R, R1.R in *.
+
+           destruct r1; destruct r2;
+             destruct r1'; destruct r2';
+             auto; try contradiction;
+             inv Hr1; inv Hr2.
+
+           eapply H with (v1 := w) (v2 := w1); eauto; try lia.
+           ++ inv He1.
+              inv H16; auto.
+           ++ inv He.
+              inv H16; auto.
+      * destruct H3; subst.
+        split; auto.
+      * destruct H5.
+        inv H5.
+      * destruct H4.
+        inv H4.
+      * destruct H7 as [Hc Hvs]; subst.
+        inv Hvs.
+        split; constructor.
+        -- eapply H with (v1 := v0) (v2 := v1); eauto; try lia.
+           ++ inv H0.
+              inv H12; auto.
+           ++ inv H1.
+              inv H12; auto.
+        -- admit.
+  - admit.
+Admitted.
+
+Lemma erase_env_get_lists_set_lists Γ :
+  forall xs vs' ρ ρ',
+    erase_env Γ ρ2 ρ2' ->
+    (FromList xs \subset Γ) ->
+    exists vs,
+      Forall2 erase_val vs vs'.
+Proof.
+  intros xs.
+  induction xs; simpl; intros.
+  - destruct vs'; try discriminate.
+    inv H.
+    eexists; eauto.
+  - destruct vs'; try discriminate.
+    destruct (set_lists xs vs' ρ1') eqn:Heq1; try discriminate.
+    inv H.
+
+
+Lemma commut_related_top e1 e2 e1' e2' :
+  trans (occurs_free e1) e1 e1' ->
+  trans (occurs_free e2) e2 e2' ->
+  R1.related_top e1 e2 ->
   R0.related_top e1' e2'.
 Proof.
   unfold R1.related_top, R0.related_top.
   intros.
+  destruct H1.
+  specialize (fundamental_property H);
+    unfold trans_correct; intros.
   specialize (fundamental_property H0);
     unfold trans_correct; intros.
-  specialize (fundamental_property H1);
-    unfold trans_correct; intros.
+  split; intros.
+  admit.
+
+
   (* Need extra conditions for wf_env *)
+
+
 Abort.
 
 Lemma commut_V :
