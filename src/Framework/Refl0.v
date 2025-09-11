@@ -207,7 +207,7 @@ Proof.
         eapply ForallV_mono_aux; eauto; lia.
 Qed.
 
-Lemma ForallV_mono {vs1 vs2} i j :
+Lemma V_mono_Forall {vs1 vs2} i j :
   Forall2 (V i) vs1 vs2 ->
   j <= i ->
   Forall2 (V j) vs1 vs2.
@@ -274,9 +274,9 @@ Proof.
     apply V_mono with i; try lia; auto.
 Qed.
 
-Lemma constr_compat {k} x t xs :
-  related k k ->
-  related (Econstr x t xs k) (Econstr x t xs k).
+Lemma constr_compat {k k'} x t xs :
+  related k k' ->
+  related (Econstr x t xs k) (Econstr x t xs k').
 Proof.
   unfold related, E, E'.
   intros.
@@ -297,7 +297,7 @@ Proof.
       eapply G_set; eauto.
       destruct i; simpl;
         repeat (split; auto).
-      eapply ForallV_mono; eauto; lia.
+      eapply V_mono_Forall; eauto; lia.
       eapply free_constr_k_subset; eauto.
     + exists (S j2), r2; split; eauto.
       eapply R_mono; eauto; lia.
@@ -325,17 +325,17 @@ Proof.
     apply G_mono with (S i); auto; lia.
 Qed.
 
-Lemma fun_compat {e k} f xs :
-  related e e ->
-  related k k ->
-  related (Efun f xs e k) (Efun f xs e k).
+Lemma fun_compat {e e' k k'} f xs :
+  related e e' ->
+  related k k' ->
+  related (Efun f xs e k) (Efun f xs e' k').
 Proof.
   unfold related, E, E'.
   intros.
   inv H3.
   - exists 0, OOT; split; simpl; auto.
   - inv H4.
-    edestruct (H0 (i - 1) (M.set f (Vfun f ρ1 xs e) ρ1) (M.set f (Vfun f ρ2 xs e) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+    edestruct (H0 (i - 1) (M.set f (Vfun f ρ1 xs e) ρ1) (M.set f (Vfun f ρ2 xs e') ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
     + eapply G_subset; eauto.
       eapply G_set; eauto.
       * eapply G_mono with i; eauto; lia.
@@ -373,7 +373,7 @@ Proof.
     {
       eapply (HVv i vs vs2); eauto.
       rewrite normalize_step in *; try lia.
-      apply ForallV_mono with (S i); auto; lia.
+      apply V_mono_Forall with (S i); auto; lia.
     }
 
     apply (E_mono _ i) in HE; try lia.
@@ -382,9 +382,9 @@ Proof.
     exists (S j2), r2; split; eauto.
 Qed.
 
-Lemma proj_compat x i y e :
-  related e e ->
-  related (Eproj x i y e) (Eproj x i y e).
+Lemma proj_compat x i y e e' :
+  related e e' ->
+  related (Eproj x i y e) (Eproj x i y e').
 Proof.
   unfold related, E, E'.
   intros.
@@ -406,9 +406,9 @@ Proof.
     + exists (S j2), r2; split; eauto.
 Qed.
 
-Lemma letapp_compat {k} x f xs :
-  related k k ->
-  related (Eletapp x f xs k) (Eletapp x f xs k).
+Lemma letapp_compat {k k'} x f xs :
+  related k k' ->
+  related (Eletapp x f xs k) (Eletapp x f xs k').
 Proof.
   intros.
   specialize (app_compat f xs); intros Ha.
@@ -458,10 +458,10 @@ Proof.
     inv H5.
 Qed.
 
-Lemma case_cons_compat e x cl c:
-  related e e ->
-  related (Ecase x cl) (Ecase x cl) ->
-  related (Ecase x ((c, e) :: cl)) (Ecase x ((c, e) :: cl)).
+Lemma case_cons_compat e e' x cl cl' c:
+  related e e' ->
+  related (Ecase x cl) (Ecase x cl') ->
+  related (Ecase x ((c, e) :: cl)) (Ecase x ((c, e') :: cl')).
 Proof.
   unfold related, E, E', G.
   intros.
