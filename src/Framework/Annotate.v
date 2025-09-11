@@ -164,6 +164,17 @@ Proof.
   eapply V_wf_val_r; eauto.
 Qed.
 
+(* Inversion Lemmas *)
+Lemma R_res_inv_l v1 r2 :
+  (forall k, R k (A0.Res v1) r2) ->
+  exists v2, r2 = A1.Res v2 /\ (forall k, V k v1 v2).
+Proof.
+  intros.
+  destruct r2.
+  - specialize (H 0); simpl in *; contradiction.
+  - eexists; split; eauto.
+Qed.
+
 (* Exposed Lemmas *)
 Lemma V_exposed_r {i v1 v2}:
   V i v1 v2 ->
@@ -725,6 +736,26 @@ Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
       exposed v2 /\
       V i v1 v2.
 
+Lemma G_top_wf_env_r i Γ1 ρ1 Γ2 ρ2 :
+  G_top i Γ1 ρ1 Γ2 ρ2 ->
+  wf_env ρ2.
+Proof.
+  unfold G_top.
+  intros; tauto.
+Qed.
+
+Lemma G_top_subset i Γ1 ρ1 Γ2 ρ2 Γ3 Γ4 :
+  G_top i Γ1 ρ1 Γ2 ρ2 ->
+  Γ3 \subset Γ1 ->
+  Γ4 \subset Γ3 ->
+  G_top i Γ3 ρ1 Γ4 ρ2.
+Proof.
+  unfold G_top.
+  intros.
+  destruct H as [Hr [Hs HG]].
+  repeat (split; auto).
+Qed.
+
 Lemma G_top_G : forall {i Γ1 ρ1 Γ2 ρ2},
     G_top i Γ1 ρ1 Γ2 ρ2 ->
     G i Γ1 ρ1 Γ2 ρ2.
@@ -744,6 +775,15 @@ Definition trans_correct_top etop etop' :=
     G_top i (A0.occurs_free etop) ρ1 (A1.occurs_free etop') ρ2 ->
     E true i ρ1 etop ρ2 etop'.
 
+Lemma trans_correct_top_subset e1 e2 :
+  trans_correct_top e1 e2 ->
+  A1.occurs_free e2 \subset A0.occurs_free e1.
+Proof.
+  unfold Annotate.trans_correct_top.
+  intros.
+  inv H; auto.
+Qed.
+
 Theorem top etop etop':
   trans (A0.occurs_free etop) etop etop' ->
   trans_correct_top etop etop'.
@@ -756,4 +796,40 @@ Proof.
   - eapply trans_exp_inv; eauto.
   - eapply H0; eauto.
     eapply G_top_G; eauto.
+Qed.
+
+(* Adequacy *)
+Lemma adequacy e1 e2:
+  trans_correct_top e1 e2 ->
+  forall ρ1 ρ2,
+    wf_env ρ2 ->
+    (forall k, G_top k (A0.occurs_free e1) ρ1 (A1.occurs_free e2) ρ2) ->
+    forall j1 r1,
+      A0.bstep_fuel ρ1 e1 j1 r1 ->
+      exists j2 r2,
+        A1.bstep_fuel true ρ2 e2 j2 r2 /\
+        (forall k, R k r1 r2).
+Proof.
+  intros.
+  unfold trans_correct_top in H.
+  destruct H as [HS HT].
+
+  assert (HE : E true j1 ρ1 e1 ρ2 e2) by (eapply (HT j1); eauto).
+  edestruct (HE j1) as [j2 [r2 [Hstep2 HR]]]; eauto.
+  eexists; eexists; split; eauto.
+
+  intros.
+  assert (HE' : E true (j1 + k) ρ1 e1 ρ2 e2) by (eapply HT; eauto).
+  edestruct (HE' j1) as [j2' [r2' [Hstep2' HR']]]; eauto; try lia.
+
+  assert (Hm : j1 + k - j1 = k) by lia. (* TODO: REFACTOR *)
+  rewrite Hm in *; clear Hm.
+
+  assert (Hm : j1 - j1 = 0) by lia.
+  rewrite Hm in *; clear Hm.
+
+  destruct r2; destruct r2'; destruct r1;
+    simpl in *; auto; try contradiction.
+
+  edestruct (A1.bstep_fuel_deterministic w w1 Hstep2 Hstep2'); subst; eauto.
 Qed.

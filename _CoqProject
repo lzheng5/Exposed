@@ -36,4 +36,4 @@ src/Framework/RelComp.v
 src/Framework/IdComp.v
 src/Framework/ReflComp.v
 src/Framework/Refl0Comp.v
-#src/Framework/Comp.v
+src/Framework/Comp.v
