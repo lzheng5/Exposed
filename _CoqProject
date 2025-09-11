@@ -30,5 +30,6 @@ src/Framework/SemSubst2.v
 
 src/Framework/ANF0.v
 src/Framework/Refl0.v
+src/Framework/Annotate.v
 src/Framework/Erase.v
 #src/Framework/Erase1.v
