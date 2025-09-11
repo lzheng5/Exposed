@@ -32,6 +32,7 @@ src/Framework/Annotate.v
 src/Framework/Erase.v
 #src/Framework/Erase1.v
 
+src/Framework/RelComp.v
 src/Framework/IdComp.v
 src/Framework/ReflComp.v
 src/Framework/Refl0Comp.v
