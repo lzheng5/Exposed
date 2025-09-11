@@ -118,6 +118,12 @@ Notation R := (R' V).
 
 Notation E := (E' V).
 
+Lemma trans_exp_inv {Γ e e'} :
+  trans Γ e e' ->
+  (A1.occurs_free e') \subset (A0.occurs_free e).
+Proof.
+Admitted.
+
 (* Lemmas about [wf_val], [wf_res], and [wf_env] *)
 Lemma V_wf_val_r {i v1 v2}:
   V i v1 v2 ->
@@ -733,6 +739,7 @@ Proof.
 Qed.
 
 Definition trans_correct_top etop etop' :=
+  A1.occurs_free etop' \subset A0.occurs_free etop /\
   forall i ρ1 ρ2,
     G_top i (A0.occurs_free etop) ρ1 (A1.occurs_free etop') ρ2 ->
     E true i ρ1 etop ρ2 etop'.
@@ -745,6 +752,8 @@ Proof.
   intros H.
   specialize (fundamental_property H);
     unfold trans_correct; intros.
-  eapply H0; eauto.
-  eapply G_top_G; eauto.
+  split; intros.
+  - eapply trans_exp_inv; eauto.
+  - eapply H0; eauto.
+    eapply G_top_G; eauto.
 Qed.
