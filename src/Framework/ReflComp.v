@@ -123,14 +123,14 @@ Section ReflComp.
     repeat (split; auto).
   Qed.
 
-  Lemma G_n_subset n Γ1 Γ2 ρ2 Γ3 ρ3 :
-    G_n n Γ1 Γ3 ρ2 ρ3 ->
-    Γ2 \subset Γ1 ->
-    Γ3 \subset Γ2 ->
-    G_n n Γ2 Γ3 ρ2 ρ3.
+  Lemma G_n_subset n Γ1 Γ2 ρ1 Γ3 Γ4 ρ2 :
+    G_n n Γ1 Γ2 ρ1 ρ2 ->
+    Γ3 \subset Γ1 ->
+    Γ4 \subset Γ3 ->
+    G_n n Γ3 Γ4 ρ1 ρ2.
   Proof.
     intros H.
-    revert Γ2.
+    revert Γ3 Γ4.
     induction H; simpl; intros.
     - constructor.
     - econstructor.
