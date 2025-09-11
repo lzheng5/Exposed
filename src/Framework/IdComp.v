@@ -9,7 +9,7 @@ From Framework Require Import Util ANF Id.
 
 Import EM EM.EG EM.EG.EV.
 
-(* Compositionality of The Reflexive Pipeline Based on [trans_correct_top] *)
+(* Compositionality of The Reflexive Pipeline Based on [Id.trans_correct_top] *)
 
 (* Adequacy / Preservation of Termination *)
 (* Behavioral Refinement *)

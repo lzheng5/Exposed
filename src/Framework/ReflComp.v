@@ -7,7 +7,7 @@ Require Import Lia.
 
 From Framework Require Import Util ANF Refl.
 
-(* Compositionality of The Reflexive Pipeline Based on [related_top] *)
+(* Compositionality of The Reflexive Pipeline Based on [Refl.related_top] *)
 
 (* Adequacy / Preservation of Termination *)
 (* Behavioral Refinement *)

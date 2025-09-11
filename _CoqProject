@@ -20,8 +20,9 @@ src/Framework/DPE.v
 src/Framework/Defunc.v
 src/Framework/ConstProp.v
 src/Framework/Top.v
-src/Framework/Comp.v
+src/Framework/IdComp.v
 src/Framework/ReflComp.v
+#src/Framework/Comp.v
 src/Framework/SemSubst.v
 src/Framework/SemSubstDPE.v
 #src/Framework/SemSubstDefunc.v
