@@ -64,6 +64,21 @@ Inductive val : Type :=
 
 Hint Constructors val : core.
 
+Lemma val_ind' :
+  forall P : val -> Prop,
+    (forall (t : ctor_tag), P (Vconstr t nil)) ->
+    (forall (t : ctor_tag) (v : val) (l : list val),
+        P v -> P (Vconstr t l) -> P (Vconstr t (v :: l))) ->
+    (forall (f : var) (t : M.t val) (xs : list var) (e : exp), P (Vfun f t xs e)) ->
+    forall v : val, P v.
+Proof.
+  intros P H1 H2 H3.
+  fix val_ind' 1.
+  destruct v; try (now clear val_ind'; eauto).
+  - induction l as [ | x xs IHxs].
+    eapply H1. eapply H2. apply val_ind'. eauto.
+Qed.
+
 (* Environment *)
 Definition env := M.t val.
 

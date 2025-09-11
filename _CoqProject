@@ -20,9 +20,6 @@ src/Framework/DPE.v
 src/Framework/Defunc.v
 src/Framework/ConstProp.v
 src/Framework/Top.v
-src/Framework/IdComp.v
-src/Framework/ReflComp.v
-#src/Framework/Comp.v
 src/Framework/SemSubst.v
 src/Framework/SemSubstDPE.v
 #src/Framework/SemSubstDefunc.v
@@ -34,3 +31,8 @@ src/Framework/Refl0.v
 src/Framework/Annotate.v
 src/Framework/Erase.v
 #src/Framework/Erase1.v
+
+src/Framework/IdComp.v
+src/Framework/ReflComp.v
+src/Framework/Refl0Comp.v
+#src/Framework/Comp.v
