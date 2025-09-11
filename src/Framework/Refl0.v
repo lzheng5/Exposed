@@ -1,4 +1,4 @@
-From Coq Require Import ZArith.ZArith Sets.Ensembles Lists.List.
+From Coq Require Import ZArith.ZArith Sets.Ensembles Lists.List Classes.RelationClasses.
 From compcert.lib Require Export Maps.
 From CertiCoq.LambdaANF Require Import Ensembles_util map_util set_util List_util tactics.
 From CertiCoq.Libraries Require Import maps_util.
@@ -501,29 +501,30 @@ Proof.
   - apply proj_compat; auto.
 Qed.
 
-(* Reflexivity *)
+(* Reflexivity of E *)
 Lemma refl_V_G :
   forall i,
     (forall k : nat, k < S i -> forall v : val, V k v v) ->
-    forall ρ,
-      forall xs Γ j vs1 vs2 ρ1 ρ2,
-        j <= i ->
-        Forall2 (V j) vs1 vs2 ->
-        set_lists xs vs1 ρ = Some ρ1 ->
-        set_lists xs vs2 ρ = Some ρ2 ->
-        G j Γ ρ1 ρ2.
+    forall ρ xs Γ j vs1 vs2 ρ1 ρ2,
+      j <= i ->
+      Forall2 (V j) vs1 vs2 ->
+      set_lists xs vs1 ρ = Some ρ1 ->
+      set_lists xs vs2 ρ = Some ρ2 ->
+      G j Γ ρ1 ρ2.
 Proof.
   unfold G.
   intros i HI ρ xs.
   induction xs; simpl; intros.
   - destruct vs1; destruct vs2; try discriminate.
     inv H1; inv H2.
+    repeat (split; auto); intros.
     eexists; split; eauto.
     eapply HI; eauto; try lia.
   - destruct vs1; destruct vs2; try discriminate.
     destruct (set_lists xs vs1 ρ) eqn:Heq1; try discriminate.
     destruct (set_lists xs vs2 ρ) eqn:Heq2; try discriminate.
     inv H0; inv H1; inv H2.
+
     destruct (M.elt_eq a x); subst.
     + rewrite M.gss in *; auto.
       inv H4.
@@ -550,8 +551,7 @@ Theorem refl_V :
 Proof.
   intros i.
   induction i using lt_wf_rec; intros.
-  destruct i; simpl; intros;
-    destruct v;
+  destruct i; destruct v; intros; simpl in *;
     split; auto; intros.
   - rewrite normalize_step in *; try lia.
     specialize (fundamental_property e); intros FP.
@@ -559,6 +559,14 @@ Proof.
     apply FP.
     eapply refl_V_G; eauto.
   - eapply refl_V_ForallV; eauto; lia.
+Qed.
+
+Corollary refl_V_Forall vs :
+  forall i, Forall2 (V i) vs vs.
+Proof.
+  induction vs; intros; auto;
+    constructor; auto.
+  eapply refl_V; eauto.
 Qed.
 
 Theorem refl_R :
@@ -571,22 +579,159 @@ Proof.
 Qed.
 
 Theorem refl_E :
-  forall i ρ e, E i ρ e ρ e.
+  forall i ρ e,
+    E i ρ e ρ e.
 Proof.
   unfold E, E'.
   intros.
   eexists; eexists; split; eauto.
-  inv H0; simpl; auto.
   apply refl_R; auto.
 Qed.
 
 Theorem refl_G :
-  forall i Γ ρ, G i Γ ρ ρ.
+  forall i Γ ρ,
+    G i Γ ρ ρ.
 Proof.
   unfold G.
   intros.
   eexists; split; eauto.
   apply refl_V.
+Qed.
+
+(* Transitivity of E *)
+Lemma trans_E_aux i :
+  (forall m : nat,
+      m <= i ->
+      forall v1 v2 v3 : val,
+        V m v1 v2 ->
+        (forall i : nat, V i v2 v3) ->
+        V m v1 v3) ->
+  forall {ρ1 e1 ρ2 e2 ρ3 e3},
+    E i ρ1 e1 ρ2 e2 ->
+    (forall i, E i ρ2 e2 ρ3 e3) ->
+    E i ρ1 e1 ρ3 e3.
+Proof.
+  unfold E, E'.
+  intros IH; intros.
+  edestruct H as [j2 [r2 [Hr2 HR]]]; eauto.
+  edestruct (H0 j2) as [j3 [r3 [Hr3 HR']]]; eauto; try lia.
+  eexists; eexists; split; eauto.
+  unfold R' in *.
+  destruct r1; destruct r2; destruct r3; try contradiction; auto.
+  eapply IH; eauto; try lia.
+  intros.
+  edestruct (H0 (i0 + j2) j2) as [j3' [r3' [Hr3' HR'']]]; eauto; try lia.
+  simpl in *.
+  destruct r3'; try contradiction.
+  edestruct (bstep_fuel_deterministic v1 v2 Hr3 Hr3'); eauto; subst.
+  eapply V_mono; eauto; try lia.
+Qed.
+
+Lemma trans_V_Forall_aux i :
+  (forall m : nat,
+      m <= i ->
+      forall v1 v2 v3 : val,
+        V m v1 v2 ->
+        (forall i : nat, V i v2 v3) ->
+        V m v1 v3) ->
+  forall {vs1 vs2 vs3},
+    Forall2 (V i) vs1 vs2 ->
+    (forall i, Forall2 (V i) vs2 vs3) ->
+    Forall2 (V i) vs1 vs3.
+Proof.
+  intros IH vs1.
+  induction vs1; simpl; intros.
+  - inv H.
+    eapply H0; eauto.
+  - inv H.
+    pose proof (H0 i) as H0'.
+    inv H0'.
+    constructor.
+    + eapply IH; eauto; try lia.
+      intros.
+      specialize (H0 i0).
+      inv H0; auto.
+    + eapply IHvs1; eauto; try lia.
+      intros.
+      specialize (H0 i0).
+      inv H0; auto.
+Qed.
+
+Theorem trans_V :
+  forall {i v1 v2 v3},
+    V i v1 v2 ->
+    (forall i, V i v2 v3) ->
+    V i v1 v3.
+Proof.
+  intros i.
+  induction i using lt_wf_rec1; intros.
+  destruct i.
+  - specialize (H1 0).
+    destruct v1; destruct v2; destruct v3;
+      simpl in *; try contradiction.
+    + destruct H0; destruct H1; subst.
+      split; auto.
+      rewrite H0; auto.
+    + destruct H0; destruct H1; subst.
+      split; auto.
+      rewrite H2; auto.
+  - pose proof (H1 (S i)).
+    simpl in *.
+    destruct v1; destruct v2; destruct v3; try contradiction.
+    + destruct H0 as [Hlen HV];
+      destruct H2 as [Hlen' HV'].
+
+      split.
+      rewrite Hlen; auto.
+
+      intros.
+      destruct (set_lists_length3 (M.set v0 (Vfun v0 t0 l0 e0) t0) l0 vs2) as [ρ5 Heqρ5].
+      rewrite <- (set_lists_length_eq _ _ _ _ H4); auto.
+      eapply trans_E_aux; eauto.
+      * intros; eapply H; eauto; lia.
+      * clear HV'.
+        intros k.
+        specialize (H1 (S k)); simpl in H1.
+        destruct H1 as [_ HV'].
+        assert (E (k - (k - k)) ρ5 e0 ρ4 e1).
+        {
+          eapply (HV' k vs2 vs2); eauto; try lia.
+          intros.
+          destruct H2; auto.
+          eapply refl_V_Forall; eauto.
+        }
+        eapply E_mono; eauto; try lia.
+    + destruct H0 as [Hc HV]; subst.
+      destruct H2 as [Hc' HV']; subst.
+      split; auto.
+      eapply trans_V_Forall_aux; eauto; try lia.
+      * intros; eapply H; eauto; lia.
+      * clear HV'.
+        intros.
+        specialize (H1 (S i0)); simpl in H1.
+        destruct H1 as [_ HV']; auto.
+Qed.
+
+Corollary trans_R {i r1 r2 r3} :
+  R i r1 r2 ->
+  (forall k, R k r2 r3) ->
+  R i r1 r3.
+Proof.
+  unfold R, R'.
+  intros.
+  destruct r1; destruct r2; destruct r3; try contradiction; auto.
+  eapply trans_V; eauto.
+Qed.
+
+Corollary trans_E {i ρ1 e1 ρ2 e2 ρ3 e3}:
+  E i ρ1 e1 ρ2 e2 ->
+  (forall i, E i ρ2 e2 ρ3 e3) ->
+  E i ρ1 e1 ρ3 e3.
+Proof.
+  intros.
+  eapply trans_E_aux; eauto.
+  intros.
+  eapply trans_V; eauto.
 Qed.
 
 (* Top Level *)
@@ -621,4 +766,40 @@ Proof.
 
   eapply H; eauto.
   eapply G_top_G; eauto.
+Qed.
+
+(* Reflexivity of [related_top] *)
+Corollary refl_related_top :
+  Reflexive related_top.
+Proof.
+  unfold related_top.
+  intros e.
+  split.
+  apply Included_refl.
+  intros.
+  specialize (fundamental_property e);
+    unfold related.
+  intros.
+  eapply H0; eauto.
+  eapply G_top_G; eauto.
+Qed.
+
+(* Transitivity of [related_top] *)
+Theorem trans_related_top :
+  Transitive related_top.
+Proof.
+  intros e1 e2 e3.
+  unfold related_top, G_top.
+  intros.
+  destruct H.
+  destruct H0.
+  split; intros.
+  - eapply Included_trans; eauto.
+  - destruct H3 as [Hs HG].
+    eapply trans_E; eauto.
+    intros.
+    eapply H2; eauto.
+    repeat (split; auto); intros.
+    unfold Ensembles.Included, Ensembles.In in *.
+    eapply refl_G; eauto.
 Qed.
