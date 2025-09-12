@@ -798,8 +798,10 @@ Proof.
     eapply G_top_G; eauto.
 Qed.
 
+(* Cross-language Compositionality *)
+
 (* Adequacy *)
-Lemma adequacy e1 e2:
+Theorem adequacy e1 e2:
   trans_correct_top e1 e2 ->
   forall ρ1 ρ2,
     wf_env ρ2 ->
@@ -832,4 +834,97 @@ Proof.
     simpl in *; auto; try contradiction.
 
   edestruct (A1.bstep_fuel_deterministic w w1 Hstep2 Hstep2'); subst; eauto.
+Qed.
+
+(* Behavioral Refinement *)
+Inductive val_ref : A0.val -> A1.wval -> Prop :=
+| Ref_Vfun :
+  forall f1 ρ1 xs1 e1 f2 ρ2 xs2 e2,
+    val_ref (A0.Vfun f1 ρ1 xs1 e1) (Tag w0 (A1.Vfun f2 ρ2 xs2 e2))
+
+| Ref_Vconstr_nil :
+  forall c,
+    val_ref (A0.Vconstr c []) (Tag w0 (A1.Vconstr c []))
+
+| Ref_Vconstr_cons :
+  forall c v1 v2 vs1 vs2,
+    val_ref v1 v2 ->
+    val_ref (A0.Vconstr c vs1) (Tag w0 (A1.Vconstr c vs2)) ->
+    val_ref (A0.Vconstr c (v1 :: vs1)) (Tag w0 (A1.Vconstr c (v2 :: vs2))).
+
+Hint Constructors val_ref : core.
+
+Lemma val_ref_Vconstr c vs1 vs2 :
+  Forall2 val_ref vs1 vs2 ->
+  val_ref (A0.Vconstr c vs1) (Tag w0 (A1.Vconstr c vs2)).
+Proof.
+  intros.
+  induction H; simpl; auto.
+Qed.
+
+Theorem V_val_ref {v1 v2} :
+  (forall i, V i v1 v2) ->
+  val_ref v1 v2.
+Proof.
+  revert v2.
+  induction v1 using val_ind'; intros; simpl.
+  - specialize (H 0).
+    destruct v2.
+    destruct H as [Hw [Hex HV]].
+    destruct v; try contradiction.
+    destruct HV as [Hc Hlen]; subst.
+
+    symmetry in Hlen.
+    apply length_zero_iff_nil in Hlen; subst; auto.
+    inv Hex.
+    apply Exposed_Singleton in H1; subst; auto.
+  - destruct v2.
+    pose proof (H 0) as H0; simpl in *.
+    destruct H0 as [Hw [Hex HV]].
+    destruct v; try contradiction.
+    destruct HV as [Hc Hlen]; subst.
+
+    destruct l0; simpl in *; inv Hlen.
+    inv Hex.
+    apply Exposed_Singleton in H3; subst.
+
+    assert (HV' : forall i, V i v1 t /\ V i (A0.Vconstr c l) (Tag w0 (A1.Vconstr c l0))).
+    {
+      intros.
+      specialize (H (S i)); simpl in *.
+      destruct H as [_ [He [Hc HFV]]]; subst.
+      inv HFV.
+      split; auto.
+
+      assert (He' : exposed (Tag w0 (A1.Vconstr c l0))) by (inv He; inv H5; auto).
+
+      assert (Hw' : wf_val (Tag w0 (A1.Vconstr c l0))).
+      {
+        constructor; intros; auto.
+        inv Hw.
+        inv H4; auto.
+      }
+
+      destruct i; simpl in *;
+        repeat (split; auto);
+        try (eapply V_mono_Forall with (S i); eauto).
+    }
+
+    assert (HV0 : forall i, V i v1 t) by (intros; destruct (HV' i); auto).
+    assert (HV1 : forall i, V i (A0.Vconstr c l) (Tag w0 (A1.Vconstr c l0))) by (intros; destruct (HV' i); auto).
+
+    auto.
+  - specialize (H 0); simpl in *.
+    destruct H as [Hw [He HV]].
+    destruct v2; try contradiction; auto.
+    destruct v; try contradiction.
+    inv He.
+    apply Exposed_Singleton in H0; subst; auto.
+Qed.
+
+Corollary R_res_val_ref {v1 v2} :
+  (forall i, R i (A0.Res v1) (A1.Res v2)) ->
+  val_ref v1 v2.
+Proof.
+  intros; eapply V_val_ref; eauto.
 Qed.

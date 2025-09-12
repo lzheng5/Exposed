@@ -33,7 +33,7 @@ Section Comp.
 
   Definition R_n n m := Cross (Cross (C0.R_n n) (fun v1 v2 => forall k, Annotate.R k v1 v2)) (C1.R_n m).
 
-  Definition G_n n m Γ1 Γ2 ρ1 ρ4 := Cross (Cross (C0.G_n n Γ1 Γ2) (fun ρ1 ρ2 => forall k, Annotate.G_top k Γ1 ρ1 Γ2 ρ2)) (C1.G_n m Γ1 Γ2) ρ1 ρ4.
+  Definition G_n n m Γ1 Γ2 := Cross (Cross (C0.G_n n Γ1 Γ2) (fun ρ1 ρ2 => forall k, Annotate.G_top k Γ1 ρ1 Γ2 ρ2)) (C1.G_n m Γ1 Γ2).
 
   Lemma R_n_V_n n m v1 v2:
     R_n n m (A0.Res v1) (A1.Res v2) ->
@@ -147,3 +147,46 @@ Section Adequacy.
   Qed.
 
 End Adequacy.
+
+Section Refinement.
+
+  Definition val_ref := Cross (Cross C0.val_ref Annotate.val_ref) C1.val_ref.
+
+  Lemma R_n_res_val_ref {n m v1 v2} :
+    R_n n m (A0.Res v1) (A1.Res v2) ->
+    val_ref v1 v2.
+  Proof.
+    unfold R_n, val_ref, Cross.
+    intros.
+    destruct H as [r2' [[r1' [HC0 HR]] HC1]].
+    edestruct C0.R_n_Res_inv as [v1' [Heqv1' HV1]]; eauto; subst.
+    eapply C0.R_n_res_val_ref in HC0; eauto.
+    edestruct Annotate.R_res_inv_l as [v2' [Heqv2' HV2]]; eauto; subst.
+    eapply C1.R_n_res_val_ref in HC1; eauto.
+    eexists; split; eauto.
+    - eexists; split; eauto.
+      eapply Annotate.V_val_ref; eauto.
+    - specialize (HV2 0).
+      eapply Annotate.V_wf_val_r; eauto.
+  Qed.
+
+  (* Behavioral Refinement *)
+  Theorem Top_n_val_ref n m e1 e2 :
+    Top_n n m e1 e2 ->
+    forall ρ1 ρ2,
+      wf_env ρ2 ->
+      G_n n m (A0.occurs_free e1) (A1.occurs_free e2) ρ1 ρ2 ->
+      forall j1 v1,
+        A0.bstep_fuel ρ1 e1 j1 (A0.Res v1) ->
+        exists j2 v2,
+          A1.bstep_fuel true ρ2 e2 j2 (A1.Res v2) /\
+          val_ref v1 v2.
+  Proof.
+    intros.
+    edestruct Top_n_R_n with (ρ1 := ρ1) as [j2 [r2 [Hr2 HR]]]; eauto.
+    edestruct R_n_Res_inv as [v2 [Heq HVn]]; eauto; subst.
+    eexists; eexists; split; eauto.
+    eapply R_n_res_val_ref; eauto.
+  Qed.
+
+End Refinement.

@@ -397,7 +397,7 @@ Section Refinement.
       eapply val_ref_trans; eauto.
   Qed.
 
-  (* Termination Refinement *)
+  (* Behavioral Refinement *)
   Theorem Top_n_val_ref n e1 e2 :
     Top_n n e1 e2 ->
     forall ρ1 ρ2,
