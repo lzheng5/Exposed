@@ -78,7 +78,6 @@ Proof.
   intros HG; intros; eauto.
 Qed.
 
-
 Lemma G_set {i Γ ρ1 ρ2}:
   G i Γ ρ1 ρ2 ->
   forall {x v1 v2},

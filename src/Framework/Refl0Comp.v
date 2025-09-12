@@ -380,25 +380,6 @@ Section Linking.
     eapply G_G_top; eauto.
   Qed.
 
-  Lemma free_fun_compat e' e k' k f xs :
-    occurs_free e' \subset occurs_free e ->
-    occurs_free k' \subset occurs_free k ->
-    occurs_free (Efun f xs e' k') \subset occurs_free (Efun f xs e k).
-  Proof.
-    unfold Ensembles.Included, Ensembles.In.
-    intros.
-    inv H1; auto.
-  Qed.
-
-  Lemma free_letapp_compat k' k x f xs :
-    occurs_free k' \subset occurs_free k ->
-    occurs_free (Eletapp x f xs k') \subset occurs_free (Eletapp x f xs k).
-  Proof.
-    unfold Ensembles.Included, Ensembles.In.
-    intros.
-    inv H0; auto.
-  Qed.
-
   (* Linking Preservation for [related_top] *)
   Theorem related_top_preserves_linking f x e1 e2 e1' e2':
     related_top e1 e2 ->
