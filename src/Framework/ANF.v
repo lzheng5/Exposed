@@ -1471,3 +1471,7 @@ Inductive bound_var : exp -> vars :=
       bound_var (Efun f w xs e k) y.
 
 Hint Constructors bound_var : core.
+
+Definition link f w x e1 e2 : exp :=
+  Efun f w [] e1
+    (Eletapp x f w [] e2).

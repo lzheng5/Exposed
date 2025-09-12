@@ -514,3 +514,7 @@ Proof.
   intros.
   inv H; auto.
 Qed.
+
+Definition link f x e1 e2 : exp :=
+  Efun f [] e1
+    (Eletapp x f [] e2).

@@ -331,10 +331,10 @@ Section Linking.
      1. e1 and e2 can contain multiple holes
      2. f can be either free or not in either e1 or e2 as long as e1 is compiled by the pipeline.
      3. x can be either free or not in e2 as long as e2 is compiled by the pipeline.
-     4. w needs to be exposed *)
-  Definition link f x e1 e2 : exp :=
-    Efun f [] e1
-      (Eletapp x f [] e2).
+     4. w needs to be exposed
+
+     Print link.
+   *)
 
   Lemma related_preserves_linking f x e1 e2 e1' e2':
     related e1 e2 ->

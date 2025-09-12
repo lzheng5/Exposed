@@ -1211,3 +1211,15 @@ Proof.
            eapply R_exposed_res_r; eauto.
     + eexists; exists OOT; split; simpl; eauto.
 Qed.
+
+(* Linking Preservation *)
+Lemma preserves_linking f x e1 e2 e1' e2' :
+  trans_correct_top e1 e2 ->
+  trans_correct_top e1' e2' ->
+  trans_correct_top (A0.link f x e1 e1') (A1.link f Annotate.w0 x e2 e2').
+Proof.
+  unfold A0.link, A1.link.
+  intros.
+  eapply fun_compat_top; eauto.
+  eapply letapp_compat_top; eauto.
+Qed.
