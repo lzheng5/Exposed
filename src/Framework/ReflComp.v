@@ -35,6 +35,16 @@ Section ReflComp.
       + eapply IHn; eauto.
   Qed.
 
+  Lemma V_n_wf_val n v1 v2 :
+    V_n n v1 v2 ->
+    wf_val v1 <-> wf_val v2.
+  Proof.
+    intros.
+    induction H; split; intros; auto;
+      destruct (H 0) as [Hv1 [Hv2 _]]; auto.
+    apply IHComp; auto.
+  Qed.
+
   Lemma R_n_V_n n v1 v2:
     R_n n (Res v1) (Res v2) ->
     V_n n v1 v2.
@@ -103,12 +113,11 @@ Section ReflComp.
 
   Lemma G_n_wf_env { n Γ1 Γ2 ρ1 ρ2 } :
     G_n n Γ1 Γ2 ρ1 ρ2 ->
-    wf_env ρ2 ->
-    wf_env ρ1.
+    wf_env ρ1 <-> wf_env ρ2.
   Proof.
-    intros.
-    induction H; auto.
-    destruct (H 0) as [Hr1 [Hr2 _]]; auto.
+    intros; split;
+      induction H; auto;
+      destruct (H 0) as [Hr1 [Hr2 _]]; auto.
   Qed.
 
   Lemma G_top_subset i Γ1 ρ1 Γ2 ρ2 Γ3 Γ4 :

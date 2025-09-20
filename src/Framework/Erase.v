@@ -663,6 +663,15 @@ Definition trans_correct_top etop etop' :=
     G_top i (A1.occurs_free etop) ρ1 (A0.occurs_free etop') ρ2 ->
     E true i ρ1 etop ρ2 etop'.
 
+Lemma trans_correct_top_subset e1 e2 :
+  trans_correct_top e1 e2 ->
+  A0.occurs_free e2 \subset A1.occurs_free e1.
+Proof.
+  unfold Erase.trans_correct_top.
+  intros.
+  inv H; auto.
+Qed.
+
 Theorem top etop etop':
   trans (A1.occurs_free etop) etop etop' ->
   trans_correct_top etop etop'.
