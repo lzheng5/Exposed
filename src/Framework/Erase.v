@@ -664,3 +664,164 @@ Proof.
   - eapply H0; eauto.
     eapply G_top_G; eauto.
 Qed.
+
+(* Cross-language Compositionality *)
+
+(* Adequacy *)
+Theorem adequacy e1 e2:
+  trans_correct_top e1 e2 ->
+  forall ρ1 ρ2,
+    wf_env ρ1 ->
+    (forall k, G_top k (A1.occurs_free e1) ρ1 (A0.occurs_free e2) ρ2) ->
+    forall j1 r1,
+      A1.bstep_fuel true ρ1 e1 j1 r1 ->
+      exists j2 r2,
+        A0.bstep_fuel ρ2 e2 j2 r2 /\
+        (forall k, R k r1 r2).
+Proof.
+  intros.
+  unfold trans_correct_top in H.
+  destruct H as [HS HT].
+
+  assert (HE : E true j1 ρ1 e1 ρ2 e2) by (eapply (HT j1); eauto).
+  edestruct (HE j1) as [j2 [r2 [Hstep2 HR]]]; eauto.
+  eexists; eexists; split; eauto.
+
+  intros.
+  assert (HE' : E true (j1 + k) ρ1 e1 ρ2 e2) by (eapply HT; eauto).
+  edestruct (HE' j1) as [j2' [r2' [Hstep2' HR']]]; eauto; try lia.
+
+  assert (Hm : j1 + k - j1 = k) by lia. (* TODO: REFACTOR *)
+  rewrite Hm in *; clear Hm.
+
+  assert (Hm : j1 - j1 = 0) by lia.
+  rewrite Hm in *; clear Hm.
+
+  destruct r2; destruct r2'; destruct r1;
+    simpl in *; auto; try contradiction.
+
+  edestruct (A0.bstep_fuel_deterministic v v0 Hstep2 Hstep2'); subst; eauto.
+Qed.
+
+(* Behavioral Refinement *)
+Inductive val_ref : A1.wval -> A0.val -> Prop :=
+| Ref_Tag :
+  forall w v1 v2,
+    val_ref' v1 v2 ->
+    val_ref (Tag w v1) v2
+
+with val_ref' : A1.val -> A0.val -> Prop :=
+| Ref_Vfun :
+  forall f1 ρ1 xs1 e1 f2 ρ2 xs2 e2,
+    val_ref' (A1.Vfun f1 ρ1 xs1 e1) (A0.Vfun f2 ρ2 xs2 e2)
+
+| Ref_Vconstr_nil :
+  forall c,
+    val_ref' (A1.Vconstr c []) (A0.Vconstr c [])
+
+| Ref_Vconstr_cons :
+  forall c v1 v2 vs1 vs2,
+    val_ref v1 v2 ->
+    val_ref' (A1.Vconstr c vs1) (A0.Vconstr c vs2) ->
+    val_ref' (A1.Vconstr c (v1 :: vs1)) (A0.Vconstr c (v2 :: vs2)).
+
+Hint Constructors val_ref : core.
+Hint Constructors val_ref' : core.
+
+Scheme val_ref_mut := Induction for val_ref Sort Prop
+with val_ref'_mut := Induction for val_ref' Sort Prop.
+
+Lemma val_ref_Vconstr c w vs1 vs2 :
+  Forall2 val_ref vs1 vs2 ->
+  val_ref (Tag w (A1.Vconstr c vs1)) (A0.Vconstr c vs2).
+Proof.
+  intros.
+  induction H; simpl; auto.
+  constructor.
+  econstructor; eauto.
+  inv IHForall2; auto.
+Qed.
+
+Lemma V_val_ref {v1 v2} :
+  wf_val v1 ->
+  (forall i, V i v1 v2) ->
+  val_ref v1 v2.
+Proof.
+  intros H.
+  revert v2.
+  induction H using wf_val_mut with (P0 := fun v1 wf =>
+                                             forall (v2 : A0.val) w,
+                                               (forall i, (V i (Tag w v1) v2)) ->
+                                               match v1, v2 with
+                                               | A1.Vfun _ _ _ _, A0.Vfun _ _ _ _ => True
+                                               | A1.Vconstr c1 vs1, A0.Vconstr c2 vs2  =>
+                                                   c1 = c2 /\ Forall2 val_ref vs1 vs2
+                                               | _ , _ => False
+                                               end)
+                                    (P1 := fun ρ wf => True);
+    intros; simpl in *; eauto.
+  - specialize (IHwf_val _ _ H).
+    destruct v; destruct v2; try contradiction; subst; auto.
+    destruct IHwf_val as [Hc HV]; subst; auto.
+    eapply val_ref_Vconstr; eauto.
+  - destruct v2; auto.
+    destruct (H 0); subst; auto; contradiction.
+  - destruct v2.
+    + destruct (H 0); subst; auto; contradiction.
+    + destruct (H 0) as [_ [Hc Hlen]]; subst; simpl in *.
+      symmetry in Hlen.
+      apply length_zero_iff_nil in Hlen; subst.
+      split; auto.
+  - destruct v2.
+    + destruct (H0 0); subst; auto; contradiction.
+    + destruct (H0 1) as [Hv1 [Hc HV']]; subst;
+        split; auto.
+      inv HV'.
+      clear H3 H5.
+      assert (HV' : forall i, V i v y /\ V i (Tag w0 (A1.Vconstr c0 vs)) (A0.Vconstr c0 l')).
+      {
+        intros.
+        specialize (H0 (S i)).
+        destruct i; simpl in *;
+          destruct H0 as [_ [_ HFV]];
+          inv HFV.
+        - inv Hv1.
+          inv H4.
+          inv H8; inv H5;
+            repeat (split; auto).
+          + intros.
+            apply H2 in H0.
+            inv H0.
+            inv H12; auto.
+          + simpl.
+            f_equal.
+            eapply Forall2_length; eauto.
+        - inv Hv1.
+          inv H4.
+          inv H8; inv H5;
+            repeat (split; auto).
+          + intros.
+            apply H2 in H0.
+            inv H0.
+            inv H12; auto.
+          + constructor; auto.
+            * eapply V_mono with (S i); eauto.
+            * eapply V_mono_Forall with (S i); eauto.
+      }
+
+      assert (HV0 : forall i, V i v y) by (intros; destruct (HV' i); auto).
+      assert (HV1 : forall i, V i (Tag w0 (A1.Vconstr c0 vs)) (A0.Vconstr c0 l')) by (intros; destruct (HV' i); auto).
+
+      constructor; auto.
+      specialize (IHwf_val0 _ _ HV1).
+      simpl in IHwf_val0.
+      destruct IHwf_val0 as [Hc HF]; auto.
+Qed.
+
+Lemma R_res_val_ref {v1 v2} :
+  wf_val v1 ->
+  (forall i, R i (A1.Res v1) (A0.Res v2)) ->
+  val_ref v1 v2.
+Proof.
+  intros; eapply V_val_ref; eauto.
+Qed.
