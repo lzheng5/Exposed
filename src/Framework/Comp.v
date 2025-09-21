@@ -18,7 +18,7 @@ Module C1 := ReflComp.
 
 (* Compositionality of the cross-language pipeline
 
-   Unannotated ANF0 -> Annotate ANF
+   Unannotated ANF -> Annotate ANF
  *)
 
 (* Adequacy / Preservation of Termination *)
@@ -34,6 +34,18 @@ Section Comp.
   Definition R_n n m := Cross (Cross (C0.R_n n) (fun v1 v2 => forall k, Annotate.R k v1 v2)) (C1.R_n m).
 
   Definition G_n n m Γ1 Γ2 := Cross (Cross (C0.G_n n Γ1 Γ2) (fun ρ1 ρ2 => forall k, Annotate.G_top k Γ1 ρ1 Γ2 ρ2)) (C1.G_n m Γ1 Γ2).
+
+  Lemma V_n_wf_val_r n m v1 v2:
+    V_n n m v1 v2 ->
+    wf_val v2.
+  Proof.
+    unfold V_n, Cross.
+    intros H.
+    destruct H as [v2' [[v1' [HC0 HA]] HC1]].
+    specialize (HA 0).
+    eapply Annotate.V_wf_val_r in HA; eauto.
+    edestruct C1.V_n_wf_val; eauto.
+  Qed.
 
   Lemma R_n_V_n n m v1 v2:
     R_n n m (A0.Res v1) (A1.Res v2) ->
@@ -79,6 +91,39 @@ Section Comp.
     apply Annotate.trans_correct_top_subset in HA.
     eapply Included_trans; eauto.
     eapply Included_trans; eauto.
+  Qed.
+
+  Lemma G_n_wf_env { n m Γ1 Γ2 ρ1 ρ2 } :
+    G_n n m Γ1 Γ2 ρ1 ρ2 ->
+    wf_env ρ2.
+  Proof.
+    unfold G_n, Cross.
+    intros H.
+    destruct H as [ρ2' [[ρ1' [HC0 HA]] HC1]].
+    specialize (HA 0).
+    apply Annotate.G_top_wf_env_r in HA.
+    eapply (C1.G_n_wf_env HC1); eauto.
+  Qed.
+
+  Lemma G_n_subset n m Γ1 Γ2 ρ1 Γ3 Γ4 ρ2 :
+    G_n n m Γ1 Γ2 ρ1 ρ2 ->
+    Γ3 \subset Γ1 ->
+    Γ4 \subset Γ3 ->
+    G_n n m Γ3 Γ4 ρ1 ρ2.
+  Proof.
+    unfold G_n, Cross.
+    intros H.
+    destruct H as [ρ2' [[ρ1' [HC0 HA]] HC1]].
+
+    intros.
+    eapply C0.G_n_subset in HC0; eauto.
+    eapply C1.G_n_subset in HC1; eauto.
+    eexists; split; eauto.
+    eexists; split; eauto.
+
+    intros.
+    specialize (HA k).
+    eapply Annotate.G_top_subset; eauto.
   Qed.
 
 End Comp.
