@@ -516,7 +516,7 @@ Proof.
   inv H1; auto.
 Qed.
 
-Lemma free_fun_e_subset k f w e : forall xs,
+Lemma free_fun_e_subset k f w e xs :
   (occurs_free e) \subset (FromList xs :|: (f |: occurs_free (Efun f w xs e k))).
 Proof.
   unfold Ensembles.Included, Ensembles.In.

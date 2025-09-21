@@ -127,6 +127,92 @@ Lemma trans_exp_weaken {Γ Γ' e e'} :
 Proof.
 Admitted.
 
+Lemma trans_exp_strengthen {Γ e e'} :
+  trans Γ e e' ->
+  (A1.occurs_free e) \subset Γ ->
+  trans (A1.occurs_free e) e e'.
+Proof.
+  intro H.
+  induction H; simpl; intros; auto.
+  - constructor.
+    + assert (He : A1.occurs_free e \subset FromList xs :|: (f |: Γ)).
+      {
+        eapply Included_trans.
+        eapply A1.free_fun_e_subset; eauto.
+        eapply Included_Union_compat; eauto.
+        eapply Included_refl.
+        eapply Included_Union_compat; eauto.
+        eapply Included_refl.
+      }
+      apply IHtrans1 in He.
+      eapply (trans_exp_weaken He); eauto.
+      eapply A1.free_fun_e_subset; eauto.
+    + assert (Hk : A1.occurs_free k \subset f |: Γ).
+      {
+        eapply Included_trans.
+        eapply A1.free_fun_k_subset; eauto.
+        eapply Included_Union_compat; eauto.
+        eapply Included_refl.
+      }
+      apply IHtrans2 in Hk.
+      eapply (trans_exp_weaken Hk); eauto.
+      eapply A1.free_fun_k_subset; eauto.
+  - constructor; auto.
+    eapply A1.free_app_xs_subset; eauto.
+  - constructor; auto.
+    + eapply A1.free_letapp_xs_subset; eauto.
+    + assert (Hk : A1.occurs_free k \subset x |: Γ).
+      {
+        eapply Included_trans.
+        eapply A1.free_letapp_k_subset; eauto.
+        eapply Included_Union_compat; eauto.
+        eapply Included_refl.
+      }
+      apply IHtrans in Hk.
+      eapply (trans_exp_weaken Hk); eauto.
+      eapply A1.free_letapp_k_subset; eauto.
+  - constructor; auto.
+    + apply A1.free_constr_xs_subset; eauto.
+    + assert (Hk : A1.occurs_free k \subset x |: Γ).
+      {
+        eapply Included_trans.
+        eapply A1.free_constr_k_subset; eauto.
+        eapply Included_Union_compat; eauto.
+        eapply Included_refl.
+      }
+      apply IHtrans in Hk.
+      eapply (trans_exp_weaken Hk); eauto.
+      eapply A1.free_constr_k_subset; eauto.
+  - constructor; auto.
+    assert (Hk : A1.occurs_free k \subset x |: Γ).
+    {
+      eapply Included_trans.
+      eapply A1.free_proj_k_subset; eauto.
+      eapply Included_Union_compat; eauto.
+      eapply Included_refl.
+    }
+    apply IHtrans in Hk.
+    eapply (trans_exp_weaken Hk); eauto.
+    eapply A1.free_proj_k_subset; eauto.
+  - constructor; auto.
+    + assert (He : A1.occurs_free e \subset Γ).
+      {
+        eapply Included_trans; eauto.
+        eapply A1.free_case_hd_subset; eauto.
+      }
+      apply IHtrans1 in He.
+      eapply (trans_exp_weaken He); eauto.
+      eapply A1.free_case_hd_subset; eauto.
+    + assert (Hk : A1.occurs_free (A1.Ecase x w cl) \subset Γ).
+      {
+        eapply Included_trans; eauto.
+        eapply A1.free_case_tl_subset; eauto.
+      }
+      apply IHtrans2 in Hk.
+      eapply (trans_exp_weaken Hk); eauto.
+      eapply A1.free_case_tl_subset; eauto.
+Qed.
+
 Theorem trans_complete :
   forall e,
    exists e',
@@ -720,7 +806,7 @@ Lemma trans_correct_top_subset e1 e2 :
   trans_correct_top e1 e2 ->
   A0.occurs_free e2 \subset A1.occurs_free e1.
 Proof.
-  unfold Erase.trans_correct_top.
+  unfold trans_correct_top.
   intros.
   inv H; auto.
 Qed.

@@ -243,6 +243,7 @@ Section Linking.
   Qed.
 
   (* TODO: Try Unary *)
+  (* Below definition is currently unused *)
   Definition not_stuck (e : A0.exp) :=
     (forall ρ,
         (forall x,
@@ -265,7 +266,7 @@ Section Linking.
     intros.
     rename c1 into e1.
     rename c2 into e2.
-  Admitted.
+  Abort.
 
   (* This should hold regardless of the actual Annotate pass *)
   Lemma Annotate_Erase_id e1 e2 e1' :
@@ -280,32 +281,36 @@ Section Linking.
     - inv H1; auto.
       erewrite IHtrans1 with (e2 := e'0); eauto.
       + erewrite IHtrans2 with (e2 := k'0); eauto.
-        eapply Erase.trans_exp_weaken; eauto. (* strength *)
-        admit.
-      + eapply Erase.trans_exp_weaken; eauto.
-        admit.
+        eapply Erase.trans_exp_strengthen; eauto.
+        eapply A1.free_fun_k_subset; eauto.
+      + eapply Erase.trans_exp_strengthen; eauto.
+        eapply A1.free_fun_e_subset; eauto.
     - inv H1; auto.
     - inv H2; auto.
       erewrite IHtrans with (e2 := k'0); eauto.
-      admit.
+      eapply Erase.trans_exp_strengthen; eauto.
+      eapply A1.free_letapp_k_subset; eauto.
     - inv H1; auto.
       erewrite IHtrans with (e2 := k'0); eauto.
-      admit.
+      eapply Erase.trans_exp_strengthen; eauto.
+      eapply A1.free_constr_k_subset; eauto.
     - inv H1; auto.
       erewrite IHtrans with (e2 := k'0); eauto.
-      admit.
+      eapply Erase.trans_exp_strengthen; eauto.
+      eapply A1.free_proj_k_subset; eauto.
     - inv H0; auto.
     - inv H2; auto.
       erewrite IHtrans1 with (e2 := e'0); eauto.
       + assert (A0.Ecase x cl = A0.Ecase x cl'0).
         {
           erewrite IHtrans2 with (e2 := (A0.Ecase x cl'0)); eauto.
-          admit.
+          eapply Erase.trans_exp_strengthen; eauto.
+          eapply A1.free_case_tl_subset; eauto.
         }
         inv H2; auto.
-      + eapply Erase.trans_exp_weaken; eauto.
-        admit.
-  Admitted.
+      + eapply Erase.trans_exp_strengthen; eauto.
+        eapply A1.free_case_hd_subset; eauto.
+  Qed.
 
   Theorem Top_n_correlate n e1 e2 :
     (* not_stuck e1 -> *)
