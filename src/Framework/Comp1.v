@@ -223,7 +223,7 @@ Section Linking.
   Qed.
 
   (* This should hold regardless of the actual Annotate pass *)
-  Lemma Annotate_Erase_id e1 e2 e1' :
+  Lemma Erase_Annotate_id e1 e2 e1' :
     Annotate.trans (A0.occurs_free e1) e1 e1' ->
     Erase.trans (A1.occurs_free e1') e1' e2 ->
     e1 = e2.
@@ -281,7 +281,7 @@ Section Linking.
           eapply Annotate.top; eauto.
         * eapply C1.Top_n_refl; eauto.
       + destruct (Erase.trans_complete e2') as [e2'' HE].
-        erewrite Annotate_Erase_id; eauto.
+        erewrite Erase_Annotate_id; eauto.
         eapply Erase.top; eauto.
     - eapply C0.Top_n_refl; eauto.
   Qed.
