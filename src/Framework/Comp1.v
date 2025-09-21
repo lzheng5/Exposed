@@ -222,32 +222,6 @@ Section Linking.
     auto.
   Qed.
 
-  (* TODO: Try Unary *)
-  (* Below definition is currently unused *)
-  Definition not_stuck (e : A0.exp) :=
-    (forall ρ,
-        (forall x,
-            (x \in (A0.occurs_free e)) ->
-            exists v,
-              ρ ! x = v) ->
-        forall i, exists r, A0.bstep_fuel ρ e i r).
-
-  Lemma Refl0_Top_n_perserves_not_stuck e1 n e2 :
-    not_stuck e1 ->
-    C0.Top_n n e1 e2 ->
-    not_stuck e2.
-  Proof.
-    intros.
-    induction H0; auto.
-    apply IHComp.
-    clear H1 IHComp.
-    unfold not_stuck, Refl0.related_top in *.
-    inv H0.
-    intros.
-    rename c1 into e1.
-    rename c2 into e2.
-  Abort.
-
   (* This should hold regardless of the actual Annotate pass *)
   Lemma Annotate_Erase_id e1 e2 e1' :
     Annotate.trans (A0.occurs_free e1) e1 e1' ->
@@ -293,7 +267,6 @@ Section Linking.
   Qed.
 
   Theorem Top_n_correlate n e1 e2 :
-    (* not_stuck e1 -> *)
     C0.Top_n n e1 e2 ->
     Top_n n 0 0 e1 e2.
   Proof.
@@ -301,16 +274,15 @@ Section Linking.
     intros.
     exists e2; split.
     - destruct (Annotate.trans_complete e2) as [e2' HA].
-      (* + eapply Refl0_Top_n_perserves_not_stuck; eauto. *)
-      + exists e2'; split.
-        * unfold C.Top_n, Cross.
-          exists e2'; split.
-          -- exists e2; split; auto.
-             eapply Annotate.top; eauto.
-          -- eapply C1.Top_n_refl; eauto.
-        * destruct (Erase.trans_complete e2') as [e2'' HE].
-          erewrite Annotate_Erase_id; eauto.
-          eapply Erase.top; eauto.
+      exists e2'; split.
+      + unfold C.Top_n, Cross.
+        exists e2'; split.
+        * exists e2; split; auto.
+          eapply Annotate.top; eauto.
+        * eapply C1.Top_n_refl; eauto.
+      + destruct (Erase.trans_complete e2') as [e2'' HE].
+        erewrite Annotate_Erase_id; eauto.
+        eapply Erase.top; eauto.
     - eapply C0.Top_n_refl; eauto.
   Qed.
 

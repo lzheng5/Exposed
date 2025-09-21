@@ -170,6 +170,8 @@ Proof.
     apply Included_refl.
 Qed.
 
+(* For other non-trivial annotation passes, if e is a stuck program,
+   we can simply annotate the entire program with the trivial annotation. *)
 Theorem trans_complete :
   forall e,
    exists e',
