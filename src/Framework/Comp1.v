@@ -36,17 +36,6 @@ Section Comp.
 
   Definition G_n n m p Γ1 Γ2 := Cross (Cross (C.G_n n m Γ1 Γ2) (fun ρ1 ρ2 => forall k, Erase.G_top k Γ1 ρ1 Γ2 ρ2)) (C0.G_n p Γ1 Γ2).
 
-  (* Inversion Lemmas *)
-  Lemma Erase_R_res_inv_l v1 r2 :
-    (forall k, R k (A1.Res v1) r2) ->
-    exists v2, r2 = A0.Res v2 /\ (forall k, V k v1 v2).
-  Proof.
-    intros.
-    destruct r2.
-    - specialize (H 0); simpl in *; contradiction.
-    - eexists; split; eauto.
-  Qed.
-
   Lemma R_n_V_n n m p v1 v2:
     R_n n m p (A0.Res v1) (A0.Res v2) ->
     V_n n m p v1 v2.
@@ -56,7 +45,7 @@ Section Comp.
     destruct H as [r2' [[r1' [HC HA]] HC1]].
     apply C.R_n_Res_inv in HC.
     destruct HC as [v1' [Heqv1' HC]]; subst.
-    edestruct Erase_R_res_inv_l as [v2' [Heqv2' _]]; eauto; subst.
+    edestruct Erase.R_res_inv_l as [v2' [Heqv2' _]]; eauto; subst.
     eexists; split; eauto.
     eapply C0.R_n_V_n; eauto.
   Qed.
@@ -70,20 +59,11 @@ Section Comp.
     destruct H as [r2' [[r1' [HC HA]] HC0]].
     apply C.R_n_Res_inv in HC.
     destruct HC as [v1' [Heqv1' HC]]; subst.
-    edestruct Erase_R_res_inv_l as [v2' [Heqv2' HV]]; eauto; subst.
+    edestruct Erase.R_res_inv_l as [v2' [Heqv2' HV]]; eauto; subst.
 
     apply C0.R_n_Res_inv in HC0.
     destruct HC0 as [v2'' [Heqv2'' HC1]]; subst.
     eexists; split; eauto.
-  Qed.
-
-  Lemma Erase_trans_correct_top_subset e1 e2 :
-    Erase.trans_correct_top e1 e2 ->
-    A0.occurs_free e2 \subset A1.occurs_free e1.
-  Proof.
-    unfold Annotate.trans_correct_top.
-    intros.
-    inv H; auto.
   Qed.
 
   Lemma Top_n_subset n m p e1 e2 :
@@ -95,7 +75,7 @@ Section Comp.
     destruct H as [e2' [[e1' [HC0 HA]] HC1]].
     apply C.Top_n_subset in HC0.
     apply C0.Top_n_subset in HC1.
-    apply Erase_trans_correct_top_subset in HA.
+    apply Erase.trans_correct_top_subset in HA.
     eapply Included_trans; eauto.
     eapply Included_trans; eauto.
   Qed.
@@ -174,7 +154,7 @@ Section Refinement.
     destruct H as [r2' [[r1' [HC0 HR]] HC1]].
     edestruct C.R_n_Res_inv as [v1' [Heqv1' HV1]]; eauto; subst.
     eapply C.R_n_res_val_ref in HC0; eauto.
-    edestruct Erase_R_res_inv_l as [v2' [Heqv2' HV2]]; eauto; subst.
+    edestruct Erase.R_res_inv_l as [v2' [Heqv2' HV2]]; eauto; subst.
     eapply C0.R_n_res_val_ref in HC1; eauto.
     eexists; split; eauto.
     - eexists; split; eauto.

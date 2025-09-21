@@ -338,6 +338,17 @@ Proof.
   eapply V_wf_val_l; eauto.
 Qed.
 
+(* Inversion Lemmas *)
+Lemma R_res_inv_l v1 r2 :
+  (forall k, R k (A1.Res v1) r2) ->
+  exists v2, r2 = A0.Res v2 /\ (forall k, V k v1 v2).
+Proof.
+  intros.
+  destruct r2.
+  - specialize (H 0); simpl in *; contradiction.
+  - eexists; split; eauto.
+Qed.
+
 (* Environment Relation *)
 Definition G i Γ1 ρ1 Γ2 ρ2 :=
   wf_env ρ1 /\
