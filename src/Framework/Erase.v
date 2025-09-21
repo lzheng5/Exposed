@@ -118,14 +118,53 @@ Lemma trans_exp_inv {Γ e e'} :
   trans Γ e e' ->
   (A0.occurs_free e') \subset (A1.occurs_free e).
 Proof.
-Admitted.
+  unfold Ensembles.Included, Ensembles.In.
+  intros H.
+  induction H; simpl; intros; auto.
+  - inv H0; auto.
+  - inv H1; auto.
+  - inv H1; auto.
+  - inv H2; auto.
+  - inv H1; auto.
+  - inv H1; auto.
+  - inv H0; auto.
+  - inv H2; auto.
+Qed.
 
 Lemma trans_exp_weaken {Γ Γ' e e'} :
   trans Γ e e' ->
   Γ \subset Γ' ->
   trans Γ' e e'.
 Proof.
-Admitted.
+  intros H.
+  revert Γ'.
+  induction H; simpl; intros; auto.
+  - constructor.
+    + eapply IHtrans1; eauto.
+      eapply Included_Union_compat; eauto.
+      apply Included_refl.
+      eapply Included_Union_compat; eauto.
+      apply Included_refl.
+    + eapply IHtrans2; eauto.
+      eapply Included_Union_compat; eauto.
+      apply Included_refl.
+  - constructor; auto.
+    eapply Included_trans; eauto.
+  - constructor; auto.
+    + eapply Included_trans; eauto.
+    + eapply IHtrans; eauto.
+      eapply Included_Union_compat; eauto.
+      apply Included_refl.
+  - constructor.
+    + eapply Included_trans; eauto.
+    + eapply IHtrans; eauto.
+      eapply Included_Union_compat; eauto.
+      apply Included_refl.
+  - constructor; auto.
+    eapply IHtrans; eauto.
+    eapply Included_Union_compat; eauto.
+    apply Included_refl.
+Qed.
 
 Lemma trans_exp_strengthen {Γ e e'} :
   trans Γ e e' ->
