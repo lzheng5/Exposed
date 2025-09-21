@@ -221,7 +221,6 @@ Section Linking.
     apply Annotate.w0_exposed.
   Qed.
 
-  (* Cross Pipeline Linking Preservation *)
   Corollary Top_n_preserves_linking_l f x n n' m p e1 e2 e1' e2' :
     Top_n n 0 0 e1 e2 ->
     Top_n n' m p e1' e2' ->
@@ -268,6 +267,7 @@ Section Linking.
     rename c2 into e2.
   Admitted.
 
+  (* This should hold regardless of the actual Annotate pass *)
   Lemma Annotate_Erase_id e1 e2 e1' :
     Annotate.trans (A0.occurs_free e1) e1 e1' ->
     Erase.trans (A1.occurs_free e1') e1' e2 ->
@@ -329,6 +329,7 @@ Section Linking.
     - eapply C0.Top_n_refl; eauto.
   Qed.
 
+  (* Cross Pipeline Linking Preservation *)
   Theorem Top_n_preserves_linking_cross_l f x n n' m p e1 e2 e1' e2' :
     C0.Top_n n e1 e2 ->
     Top_n n' m p e1' e2' ->
@@ -336,6 +337,16 @@ Section Linking.
   Proof.
     intros.
     eapply Top_n_preserves_linking_l; eauto.
+    eapply Top_n_correlate; eauto.
+  Qed.
+
+  Theorem Top_n_preserves_linking_cross_r f x n n' m p e1 e2 e1' e2' :
+    Top_n n m p e1 e2 ->
+    C0.Top_n n' e1' e2' ->
+    Top_n (n + n') m p (A0.link f x e1 e1') (A0.link f x e2 e2').
+  Proof.
+    intros.
+    eapply Top_n_preserves_linking_r; eauto.
     eapply Top_n_correlate; eauto.
   Qed.
 
