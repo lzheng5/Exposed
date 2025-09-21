@@ -205,7 +205,7 @@ End Refinement.
 Section Linking.
 
   (* Linking Preservation *)
-  Lemma Top_n_preserves_linking f x n n' m m' p p' e1 e2 e1' e2' :
+  Theorem Top_n_preserves_linking f x n n' m m' p p' e1 e2 e1' e2' :
     Top_n n m p e1 e2 ->
     Top_n n' m' p' e1' e2' ->
     Top_n (n + n') (m + m') (p + p') (A0.link f x e1 e1') (A0.link f x e2 e2').
@@ -219,6 +219,124 @@ Section Linking.
     eapply (Erase.preserves_linking f Annotate.w0 x e4 e3 e4' e3') in HA1; eauto.
     eapply (C0.Top_n_preserves_linking f x p p') in HC1; eauto.
     apply Annotate.w0_exposed.
+  Qed.
+
+  (* Cross Pipeline Linking Preservation *)
+  Corollary Top_n_preserves_linking_l f x n n' m p e1 e2 e1' e2' :
+    Top_n n 0 0 e1 e2 ->
+    Top_n n' m p e1' e2' ->
+    Top_n (n + n') m p (A0.link f x e1 e1') (A0.link f x e2 e2').
+  Proof.
+    eapply Top_n_preserves_linking; eauto.
+  Qed.
+
+  Corollary Top_n_preserves_linking_r f x n n' m p e1 e2 e1' e2' :
+    Top_n n m p e1 e2 ->
+    Top_n n' 0 0 e1' e2' ->
+    Top_n (n + n') m p (A0.link f x e1 e1') (A0.link f x e2 e2').
+  Proof.
+    intros.
+    assert (Top_n (n + n') (m + 0) (p + 0) (A0.link f x e1 e1') (A0.link f x e2 e2')).
+    eapply Top_n_preserves_linking; eauto.
+    assert (Hm : m + 0 = m) by lia; rewrite Hm in *.
+    assert (Hp : p + 0 = p) by lia; rewrite Hp in *.
+    auto.
+  Qed.
+
+  (* TODO: Try Unary *)
+  Definition not_stuck (e : A0.exp) :=
+    (forall ρ,
+        (forall x,
+            (x \in (A0.occurs_free e)) ->
+            exists v,
+              ρ ! x = v) ->
+        forall i, exists r, A0.bstep_fuel ρ e i r).
+
+  Lemma Refl0_Top_n_perserves_not_stuck e1 n e2 :
+    not_stuck e1 ->
+    C0.Top_n n e1 e2 ->
+    not_stuck e2.
+  Proof.
+    intros.
+    induction H0; auto.
+    apply IHComp.
+    clear H1 IHComp.
+    unfold not_stuck, Refl0.related_top in *.
+    inv H0.
+    intros.
+    rename c1 into e1.
+    rename c2 into e2.
+  Admitted.
+
+  Lemma Annotate_Erase_id e1 e2 e1' :
+    Annotate.trans (A0.occurs_free e1) e1 e1' ->
+    Erase.trans (A1.occurs_free e1') e1' e2 ->
+    e1 = e2.
+  Proof.
+    intro H.
+    revert e2.
+    induction H; simpl; intros.
+    - inv H0; auto.
+    - inv H1; auto.
+      erewrite IHtrans1 with (e2 := e'0); eauto.
+      + erewrite IHtrans2 with (e2 := k'0); eauto.
+        eapply Erase.trans_exp_weaken; eauto. (* strength *)
+        admit.
+      + eapply Erase.trans_exp_weaken; eauto.
+        admit.
+    - inv H1; auto.
+    - inv H2; auto.
+      erewrite IHtrans with (e2 := k'0); eauto.
+      admit.
+    - inv H1; auto.
+      erewrite IHtrans with (e2 := k'0); eauto.
+      admit.
+    - inv H1; auto.
+      erewrite IHtrans with (e2 := k'0); eauto.
+      admit.
+    - inv H0; auto.
+    - inv H2; auto.
+      erewrite IHtrans1 with (e2 := e'0); eauto.
+      + assert (A0.Ecase x cl = A0.Ecase x cl'0).
+        {
+          erewrite IHtrans2 with (e2 := (A0.Ecase x cl'0)); eauto.
+          admit.
+        }
+        inv H2; auto.
+      + eapply Erase.trans_exp_weaken; eauto.
+        admit.
+  Admitted.
+
+  Theorem Top_n_correlate n e1 e2 :
+    (* not_stuck e1 -> *)
+    C0.Top_n n e1 e2 ->
+    Top_n n 0 0 e1 e2.
+  Proof.
+    unfold Top_n, Cross.
+    intros.
+    exists e2; split.
+    - destruct (Annotate.trans_complete e2) as [e2' HA].
+      (* + eapply Refl0_Top_n_perserves_not_stuck; eauto. *)
+      + exists e2'; split.
+        * unfold C.Top_n, Cross.
+          exists e2'; split.
+          -- exists e2; split; auto.
+             eapply Annotate.top; eauto.
+          -- eapply C1.Top_n_refl; eauto.
+        * destruct (Erase.trans_complete e2') as [e2'' HE].
+          erewrite Annotate_Erase_id; eauto.
+          eapply Erase.top; eauto.
+    - eapply C0.Top_n_refl; eauto.
+  Qed.
+
+  Theorem Top_n_preserves_linking_cross_l f x n n' m p e1 e2 e1' e2' :
+    C0.Top_n n e1 e2 ->
+    Top_n n' m p e1' e2' ->
+    Top_n (n + n') m p (A0.link f x e1 e1') (A0.link f x e2 e2').
+  Proof.
+    intros.
+    eapply Top_n_preserves_linking_l; eauto.
+    eapply Top_n_correlate; eauto.
   Qed.
 
 End Linking.

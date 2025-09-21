@@ -124,6 +124,59 @@ Lemma trans_exp_inv {Γ e e'} :
 Proof.
 Admitted.
 
+Lemma trans_exp_weaken {Γ Γ' e e'} :
+  trans Γ e e' ->
+  Γ \subset Γ' ->
+  trans Γ' e e'.
+Proof.
+Admitted.
+
+Theorem trans_complete :
+  forall e,
+   exists e',
+     Annotate.trans (A0.occurs_free e) e e'.
+Proof.
+  intros e.
+  induction e using A0.exp_ind'.
+  - eexists; eauto.
+  - exists (A1.Eapp x w0 xs).
+    constructor; auto.
+    eapply A0.free_app_xs_subset; eauto.
+  - inv IHe1; inv IHe2.
+    exists (A1.Efun f w0 xs x x0).
+    constructor; auto.
+    eapply trans_exp_weaken; eauto.
+    eapply A0.free_fun_e_subset; eauto.
+    eapply trans_exp_weaken; eauto.
+    eapply A0.free_fun_k_subset; eauto.
+  - inv IHe.
+    exists (A1.Eletapp x f w0 xs x0); constructor; auto.
+    eapply A0.free_letapp_xs_subset; eauto.
+    eapply trans_exp_weaken; eauto.
+    eapply A0.free_letapp_k_subset; eauto.
+  - inv IHe.
+    exists (A1.Econstr x w0 c xs x0); constructor; auto.
+    eapply A0.free_constr_xs_subset; eauto.
+    eapply trans_exp_weaken; eauto.
+    eapply A0.free_constr_k_subset; eauto.
+  - exists (A1.Ecase x w0 []); auto.
+  - inv IHe; inv IHe0.
+    inv H0.
+    + exists (A1.Ecase x w0 ([(c, x0)])); constructor; auto.
+      eapply trans_exp_weaken; eauto.
+      eapply A0.free_case_hd_subset; eauto.
+    + exists (A1.Ecase x w0 ((c, x0) :: (t, e') :: cl')); constructor; auto.
+      eapply trans_exp_weaken; eauto.
+      eapply A0.free_case_hd_subset; eauto.
+
+      eapply trans_exp_weaken; eauto.
+      eapply A0.free_case_tl_subset; eauto.
+  - inv IHe.
+    exists (A1.Eproj x w0 n v0 x0); constructor; auto.
+    eapply trans_exp_weaken; eauto.
+    eapply A0.free_proj_k_subset; eauto.
+Qed.
+
 (* Lemmas about [wf_val], [wf_res], and [wf_env] *)
 Lemma V_wf_val_r {i v1 v2}:
   V i v1 v2 ->
