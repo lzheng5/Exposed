@@ -46,8 +46,6 @@ Module Type Annotate.
       R i (A0.Res v1) r2 ->
       exists v2, r2 = A1.Res v2 /\ V i v1 v2.
 
-  Parameter E : bool -> nat -> A0.env -> A0.exp -> A1.env -> A1.exp -> Prop.
-
   (* Top-level Logical Relations *)
   Parameter G_top : nat -> A0.vars -> A0.env -> A1.vars -> A1.env -> Prop.
 
