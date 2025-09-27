@@ -29,13 +29,13 @@ src/Framework/SemSubst2.v
 src/Framework/ANF0.v
 src/Framework/Refl0.v
 src/Framework/Erase.v
+#src/Framework/Erase1.v
 src/Framework/Annotate.v
 src/Framework/TrivialAnnotate.v
-#src/Framework/Erase1.v
 
 src/Framework/RelComp.v
 src/Framework/IdComp.v
 src/Framework/ReflComp.v
 src/Framework/Refl0Comp.v
-#src/Framework/Comp.v
-#src/Framework/Comp1.v
+src/Framework/Comp.v
+src/Framework/Comp1.v

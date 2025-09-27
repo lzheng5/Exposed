@@ -12,7 +12,7 @@ Module A1 := ANF.
 
 (* Trivial Web Annotation With A Single Exposed Web Id *)
 
-Module TA <: Annotate.
+Module M <: Annotate.
 
   Parameter w0 : web.
   Axiom w0_exposed : w0 \in Exposed.
@@ -1378,4 +1378,4 @@ Module TA <: Annotate.
     eapply letapp_compat_top; eauto.
   Qed.
 
-End TA.
+End M.
