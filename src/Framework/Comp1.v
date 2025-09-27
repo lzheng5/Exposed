@@ -222,50 +222,6 @@ Section Linking.
     auto.
   Qed.
 
-  (* This should hold regardless of the actual Annotate pass *)
-  Lemma Erase_Annotate_id e1 e2 e1' :
-    Annotate.trans (A0.occurs_free e1) e1 e1' ->
-    Erase.trans (A1.occurs_free e1') e1' e2 ->
-    e1 = e2.
-  Proof.
-    intro H.
-    revert e2.
-    induction H; simpl; intros.
-    - inv H0; auto.
-    - inv H1; auto.
-      erewrite IHtrans1 with (e2 := e'0); eauto.
-      + erewrite IHtrans2 with (e2 := k'0); eauto.
-        eapply Erase.trans_exp_strengthen; eauto.
-        eapply A1.free_fun_k_subset; eauto.
-      + eapply Erase.trans_exp_strengthen; eauto.
-        eapply A1.free_fun_e_subset; eauto.
-    - inv H1; auto.
-    - inv H2; auto.
-      erewrite IHtrans with (e2 := k'0); eauto.
-      eapply Erase.trans_exp_strengthen; eauto.
-      eapply A1.free_letapp_k_subset; eauto.
-    - inv H1; auto.
-      erewrite IHtrans with (e2 := k'0); eauto.
-      eapply Erase.trans_exp_strengthen; eauto.
-      eapply A1.free_constr_k_subset; eauto.
-    - inv H1; auto.
-      erewrite IHtrans with (e2 := k'0); eauto.
-      eapply Erase.trans_exp_strengthen; eauto.
-      eapply A1.free_proj_k_subset; eauto.
-    - inv H0; auto.
-    - inv H2; auto.
-      erewrite IHtrans1 with (e2 := e'0); eauto.
-      + assert (A0.Ecase x cl = A0.Ecase x cl'0).
-        {
-          erewrite IHtrans2 with (e2 := (A0.Ecase x cl'0)); eauto.
-          eapply Erase.trans_exp_strengthen; eauto.
-          eapply A1.free_case_tl_subset; eauto.
-        }
-        inv H2; auto.
-      + eapply Erase.trans_exp_strengthen; eauto.
-        eapply A1.free_case_hd_subset; eauto.
-  Qed.
-
   Theorem Top_n_correlate n e1 e2 :
     C0.Top_n n e1 e2 ->
     Top_n n 0 0 e1 e2.
