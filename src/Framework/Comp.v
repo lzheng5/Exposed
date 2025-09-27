@@ -239,20 +239,21 @@ End Refinement.
 Section Linking.
 
   (* Linking Preservation *)
-  Lemma Top_n_preserves_linking f x n n' m m' e1 e2 e1' e2' :
+  Lemma Top_n_preserves_linking f w x n n' m m' e1 e2 e1' e2' :
+    (w \in Exposed) ->
     Top_n n m e1 e2 ->
     Top_n n' m' e1' e2' ->
-    Top_n (n + n') (m + m') (A0.link f x e1 e1') (A1.link f Annotate.w0 x e2 e2').
+    Top_n (n + n') (m + m') (A0.link f x e1 e1') (A1.link f w x e2 e2').
   Proof.
     unfold Top_n, Cross.
+    intro Hw.
     intros.
     destruct H as [e3 [[e4 [HC0 HA1]] HC1]].
     destruct H0 as [e3' [[e4' [HC0' HA1']] HC1']].
 
     eapply (C0.Top_n_preserves_linking f x n n') in HC0; eauto.
-    eapply (Annotate.preserves_linking f x e4 e3 e4' e3') in HA1; eauto.
-    eapply (C1.Top_n_preserves_linking f Annotate.w0 x m m') in HC1; eauto.
-    apply Annotate.w0_exposed.
+    eapply (Annotate.preserves_linking f w x e4 e3 e4' e3') in HA1; eauto.
+    eapply (C1.Top_n_preserves_linking f w x m m') in HC1; eauto.
   Qed.
 
 End Linking.

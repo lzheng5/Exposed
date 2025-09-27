@@ -10,10 +10,13 @@ From Framework Require Import Util ANF0 ANF Refl0 Refl Id.
 Module A0 := ANF0.
 Module A1 := ANF.
 
+(* For any Annotate pass, it should produce at least one exposed web ids *)
+Axiom Exposed_nonempty : exists w, w \in Exposed.
+
 (* Trivial Web Annotation With A Single Exposed Web Id *)
 Parameter w0 : web.
 Axiom w0_exposed : w0 \in Exposed.
-Axiom Exposed_Singleton : forall w, w \in Exposed -> w = w0.
+Axiom Exposed_singleton : forall w, w \in Exposed -> w = w0.
 
 (* Specification *)
 Inductive trans (Γ : Ensemble var) : A0.exp -> A1.exp -> Prop :=
@@ -718,7 +721,7 @@ Proof.
     assert (Hw : w = w0).
     {
       inv Hex.
-      apply Exposed_Singleton; eauto.
+      apply Exposed_singleton; eauto.
     }
     subst.
 
@@ -779,7 +782,7 @@ Proof.
     + assert (Hw : w = w0).
       {
         inv Hex.
-        apply Exposed_Singleton; eauto.
+        apply Exposed_singleton; eauto.
       }
       subst.
 
@@ -971,7 +974,7 @@ Proof.
     symmetry in Hlen.
     apply length_zero_iff_nil in Hlen; subst; auto.
     inv Hex.
-    apply Exposed_Singleton in H1; subst; auto.
+    apply Exposed_singleton in H1; subst; auto.
   - destruct v2.
     pose proof (H 0) as H0; simpl in *.
     destruct H0 as [Hw [Hex HV]].
@@ -980,7 +983,7 @@ Proof.
 
     destruct l0; simpl in *; inv Hlen.
     inv Hex.
-    apply Exposed_Singleton in H3; subst.
+    apply Exposed_singleton in H3; subst.
 
     assert (HV' : forall i, V i v1 t /\ V i (A0.Vconstr c l) (Tag w0 (A1.Vconstr c l0))).
     {
@@ -1013,7 +1016,7 @@ Proof.
     destruct v2; try contradiction; auto.
     destruct v; try contradiction.
     inv He.
-    apply Exposed_Singleton in H0; subst; auto.
+    apply Exposed_singleton in H0; subst; auto.
 Qed.
 
 Corollary R_res_val_ref {v1 v2} :
@@ -1278,7 +1281,7 @@ Proof.
       rewrite <- (set_lists_length_eq _ _ _ _ H11); auto.
 
       inv Hw.
-      apply Exposed_Singleton in H3; subst.
+      apply Exposed_singleton in H3; subst.
 
       unfold E' in HV.
       edestruct (HV i vs vs2 ρ'' ρ4) with (j1 := c0) as [j2 [r2 [He0 HR]]]; eauto; try lia.
@@ -1307,13 +1310,15 @@ Proof.
 Qed.
 
 (* Linking Preservation *)
-Lemma preserves_linking f x e1 e2 e1' e2' :
+Lemma preserves_linking f w x e1 e2 e1' e2' :
+  (w \in Exposed) ->
   trans_correct_top e1 e2 ->
   trans_correct_top e1' e2' ->
-  trans_correct_top (A0.link f x e1 e1') (A1.link f Annotate.w0 x e2 e2').
+  trans_correct_top (A0.link f x e1 e1') (A1.link f w x e2 e2').
 Proof.
   unfold A0.link, A1.link.
   intros.
+  apply Exposed_singleton in H; subst.
   eapply fun_compat_top; eauto.
   eapply letapp_compat_top; eauto.
 Qed.

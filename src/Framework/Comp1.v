@@ -194,11 +194,11 @@ Section Linking.
     intros.
     destruct H as [e3 [[e4 [HC0 HA1]] HC1]].
     destruct H0 as [e3' [[e4' [HC0' HA1']] HC1']].
+    destruct Annotate.Exposed_nonempty as [w0 Hw].
 
-    eapply (C.Top_n_preserves_linking f x n n') in HC0; eauto.
-    eapply (Erase.preserves_linking f Annotate.w0 x e4 e3 e4' e3') in HA1; eauto.
+    eapply (C.Top_n_preserves_linking f w0 x n n') in HC0; eauto.
+    eapply (Erase.preserves_linking f w0 x e4 e3 e4' e3') in HA1; eauto.
     eapply (C0.Top_n_preserves_linking f x p p') in HC1; eauto.
-    apply Annotate.w0_exposed.
   Qed.
 
   Corollary Top_n_preserves_linking_l f x n n' m p e1 e2 e1' e2' :
