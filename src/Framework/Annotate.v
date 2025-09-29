@@ -1,10 +1,4 @@
-From Coq Require Import ZArith.ZArith Sets.Ensembles Lists.List.
-From compcert.lib Require Export Maps.
-From CertiCoq.LambdaANF Require Import Ensembles_util map_util set_util List_util tactics.
-From CertiCoq.Libraries Require Import maps_util.
-Import ListNotations.
-Require Import Lia.
-
+From CertiCoq.LambdaANF Require Import Ensembles_util.
 From Framework Require Import Util ANF0 ANF Refl0 Refl Erase.
 
 Module A0 := ANF0.
@@ -12,9 +6,10 @@ Module A1 := ANF.
 
 Module Type Annotate.
 
-  (* For any Annotate pass, it should produce at least one exposed web ids *)
+  (* For any Annotate passes, it should produce at least one exposed web ids *)
   Parameter Exposed_nonempty : exists w, w \in Exposed.
 
+  (* Specification *)
   Parameter trans : A0.vars -> A0.exp -> A1.exp -> Prop.
 
   (* For any Annotate passes, if e is an invalid program,
