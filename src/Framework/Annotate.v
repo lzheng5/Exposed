@@ -6,13 +6,13 @@ Module A1 := ANF.
 
 Module Type Annotate.
 
-  (* For any Annotate passes, it should produce at least one exposed web ids *)
+  (* For any Annotate pass, it should produce at least one exposed web ids *)
   Parameter Exposed_nonempty : exists w, w \in Exposed.
 
   (* Specification *)
   Parameter trans : A0.vars -> A0.exp -> A1.exp -> Prop.
 
-  (* For any Annotate passes, if e is an invalid program,
+  (* For any Annotate pass, if e is an invalid program,
      we can always annotate the entire program with the trivial annotation to make trans complete. *)
   Parameter trans_complete :
     forall e1,
