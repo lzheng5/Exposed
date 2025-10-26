@@ -873,14 +873,14 @@ Module M <: Annotate.
   (* Top Level *)
   Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
     wf_env ρ2 /\
-      Γ2 \subset Γ1 /\
-      forall x,
-        (x \in Γ1) ->
-        exists v1 v2,
-          M.get x ρ1 = Some v1 /\
-            M.get x ρ2 = Some v2 /\
-            exposed v2 /\
-            V i v1 v2.
+    Γ2 \subset Γ1 /\
+    forall x,
+      (x \in Γ1) ->
+      exists v1 v2,
+        M.get x ρ1 = Some v1 /\
+        M.get x ρ2 = Some v2 /\
+        exposed v2 /\
+        V i v1 v2.
 
   Lemma G_top_wf_env_r i Γ1 ρ1 Γ2 ρ2 :
     G_top i Γ1 ρ1 Γ2 ρ2 ->
