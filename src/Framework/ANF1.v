@@ -14,6 +14,8 @@ Definition var := M.elt.
 Definition vars := Ensemble var.
 Definition ctor_tag := M.elt.
 Definition label := M.elt.
+Definition labels := Ensemble label.
+(* Definition next_label l : label := Pos.succ l. *)
 
 (* Syntax *)
 Inductive exp : Type :=
@@ -528,3 +530,116 @@ Proof.
   - apply H; auto.
   - apply IHcl; auto.
 Qed.
+
+(* Labels *)
+Inductive has_label : exp -> labels :=
+| Lab_fun1 :
+  forall f l xs e k,
+    has_label (Efun f l xs e k) l
+
+| Lab_fun2 :
+  forall f l0 l1 xs e k,
+    has_label e l1 ->
+    has_label (Efun f l0 xs e k) l1
+
+| Lab_fun3 :
+  forall f l0 l1 xs e k,
+    has_label k l1 ->
+    has_label (Efun f l0 xs e k) l1
+
+| Lab_app1 :
+  forall f l xs,
+    has_label (Eapp f l xs) l
+
+| Lab_letapp1 :
+  forall x f l xs k,
+    has_label (Eletapp x f l xs k) l
+
+| Lab_letapp2 :
+  forall x f l0 l1 xs k,
+    has_label k l1 ->
+    has_label (Eletapp x f l0 xs k) l1
+
+| Lab_constr1 :
+  forall x xs t l k,
+    has_label (Econstr x l t xs k) l
+
+| Lab_constr2 :
+  forall x xs t l0 l1 k,
+    has_label k l1 ->
+    has_label (Econstr x l0 t xs k) l1
+
+| Lab_proj1 :
+  forall x l i y e,
+    has_label (Eproj x l i y e) l
+
+| Lab_proj2 :
+  forall x l0 l1 i y e,
+    has_label e l1 ->
+    has_label (Eproj x l0 i y e) l1
+
+| Lab_case1 :
+  forall y l cl,
+    has_label (Ecase y l cl) l
+
+| Lab_case2 :
+  forall y l0 l1 cl c e,
+    has_label e l1 ->
+    has_label (Ecase y l0 ((c, e) :: cl)) l1
+
+| Lab_case3 :
+  forall y l0 l1 cl c e,
+    has_label (Ecase y l0 cl) l1 ->
+    has_label (Ecase y l0 ((c, e) :: cl)) l1.
+
+Hint Constructors has_label : core.
+
+Inductive unique_label : exp -> Prop :=
+| Unique_ret :
+  forall {x},
+    unique_label (Eret x)
+
+| Unique_fun :
+  forall {f xs e k l},
+    (~ l \in has_label e) ->
+    (~ l \in has_label k) ->
+    Disjoint _ (has_label e) (has_label k) ->
+    unique_label e ->
+    unique_label k ->
+    unique_label (Efun f l xs e k)
+
+| Unique_app :
+  forall {f xs l},
+    unique_label (Eapp f l xs)
+
+| Unique_letapp :
+  forall {f x xs l k},
+    (~ l \in has_label k) ->
+    unique_label k ->
+    unique_label (Eletapp x f l xs k)
+
+| Unique_constr :
+  forall {x t xs k l},
+    (~ l \in has_label k) ->
+    unique_label k ->
+    unique_label (Econstr x l t xs k)
+
+| Unique_proj :
+  forall {x y k n l},
+    (~ l \in has_label k) ->
+    unique_label k ->
+    unique_label (Eproj x l n y k)
+
+| Unique_case_nil :
+  forall {x l},
+    unique_label (Ecase x l [])
+
+| Unique_case_tl :
+  forall {x l c e cl},
+    (~ l \in has_label e) ->
+    Disjoint _ (has_label e) (has_label (Ecase x l cl)) ->
+    unique_label e ->
+    unique_label (Ecase x l cl) ->
+    unique_label (Ecase x l ((c , e) :: cl)).
+
+Hint Constructors unique_label : core.

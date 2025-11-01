@@ -28,6 +28,9 @@ src/Framework/SemSubst2.v
 
 src/Framework/ANF0.v
 src/Framework/Refl0.v
+src/Framework/Label.v
+
+src/Framework/ANF1.v
 src/Framework/Erase.v
 src/Framework/Annotate.v
 src/Framework/TrivialAnnotate.v
