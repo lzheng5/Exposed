@@ -15,7 +15,19 @@ Definition vars := Ensemble var.
 Definition ctor_tag := M.elt.
 Definition label := M.elt.
 Definition labels := Ensemble label.
-(* Definition next_label l : label := Pos.succ l. *)
+Definition next_label l : label := Pos.succ l.
+
+Lemma next_label_lt l : Pos.lt l (next_label l).
+Proof.
+  unfold next_label.
+  eapply Pos.lt_succ_diag_r; eauto.
+Qed.
+
+Lemma next_label_le l : Pos.le l (next_label l).
+Proof.
+  eapply Pos.lt_le_incl; eauto.
+  eapply next_label_lt; eauto.
+Qed.
 
 (* Syntax *)
 Inductive exp : Type :=
@@ -593,6 +605,56 @@ Inductive has_label : exp -> labels :=
     has_label (Ecase y l0 ((c, e) :: cl)) l1.
 
 Hint Constructors has_label : core.
+
+Lemma has_label_dec e :
+  Decidable (has_label e).
+Proof.
+  induction e using exp_ind'; constructor; intros.
+  - right.
+    intro Hc; inv Hc.
+  - destruct (M.elt_eq x0 w) eqn:Hx; subst.
+    + left; auto.
+    + right; intro Hc; inv Hc; contradiction.
+  - destruct (M.elt_eq x w) eqn:Hx; subst.
+    + left; auto.
+    + inv IHe1; inv IHe2.
+      specialize (Dec x).
+      specialize (Dec0 x).
+      inv Dec.
+      * left; auto.
+      * inv Dec0.
+        -- left; auto.
+        -- right; intro Hc; inv Hc; contradiction.
+  - destruct (M.elt_eq x0 w) eqn:Hx; subst.
+    + left; auto.
+    + inv IHe.
+      destruct (Dec x0).
+      * left; auto.
+      * right; intro Hc; inv Hc; contradiction.
+  - destruct (M.elt_eq x0 w) eqn:Hx; subst.
+    + left; auto.
+    + inv IHe.
+      destruct (Dec x0).
+      * left; auto.
+      * right; intro Hc; inv Hc; contradiction.
+  - destruct (M.elt_eq x0 w) eqn:Hx; subst.
+    + left; auto.
+    + right; intro Hc; inv Hc; contradiction.
+  - destruct (M.elt_eq x0 w) eqn:Hx; subst.
+    + left; auto.
+    + inv IHe; inv IHe0.
+      destruct (Dec x0).
+      * left; auto.
+      * destruct (Dec0 x0).
+        -- left; auto.
+        -- right; intro Hc; inv Hc; contradiction.
+  - destruct (M.elt_eq x0 w) eqn:Hx; subst.
+    + left; auto.
+    + inv IHe.
+      destruct (Dec x0).
+      * left; auto.
+      * right; intro Hc; inv Hc; contradiction.
+Qed.
 
 Inductive unique_label : exp -> Prop :=
 | Unique_ret :
