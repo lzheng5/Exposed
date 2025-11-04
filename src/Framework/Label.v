@@ -20,45 +20,45 @@ Inductive trans (Γ : A0.vars) : label -> A0.exp -> label -> A1.exp -> Prop :=
     trans Γ l0 (A0.Eret x) l0 (A1.Eret x)
 
 | Trans_fun :
-  forall l2 {f xs e0 k0 e1 k1 l0 l3},
-    let l1 := next_label l0 in
+  forall l2 {f xs e0 k0 e1 k1 l0 l1 l3},
+    l1 = next_label l0 ->
     trans (FromList xs :|: (f |: Γ)) l1 e0 l2 e1 ->
     trans (f |: Γ) l2 k0 l3 k1 ->
     trans Γ l0 (A0.Efun f xs e0 k0) l3 (A1.Efun f l0 xs e1 k1)
 
 | Trans_app :
-  forall {f xs l0},
+  forall {f xs l0 l1},
     (f \in Γ) ->
     (FromList xs \subset Γ) ->
-    let l1 := next_label l0 in
+    l1 = next_label l0 ->
     trans Γ l0 (A0.Eapp f xs) l1 (A1.Eapp f l0 xs)
 
 | Trans_letapp :
-  forall {x f xs k0 k1 l0 l2},
+  forall {x f xs k0 k1 l0 l1 l2},
     (f \in Γ) ->
     (FromList xs \subset Γ) ->
-    let l1 := next_label l0 in
+    l1 = next_label l0 ->
     trans (x |: Γ) l1 k0 l2 k1 ->
     trans Γ l0 (A0.Eletapp x f xs k0) l2 (A1.Eletapp x f l0 xs k1)
 
 | Trans_constr :
-  forall {x t xs k0 k1 l0 l2},
+  forall {x t xs k0 k1 l0 l1 l2},
     (FromList xs \subset Γ) ->
-    let l1 := next_label l0 in
+    l1 = next_label l0 ->
     trans (x |: Γ) l1 k0 l2 k1 ->
     trans Γ l0 (A0.Econstr x t xs k0) l2 (A1.Econstr x l0 t xs k1)
 
 | Trans_proj :
-  forall {x y k0 k1 n l0 l2},
+  forall {x y k0 k1 n l0 l1 l2},
     (y \in Γ) ->
-    let l1 := next_label l0 in
+    l1 = next_label l0 ->
     trans (x |: Γ) l1 k0 l2 k1 ->
     trans Γ l0 (A0.Eproj x n y k0) l2 (A1.Eproj x l0 n y k1)
 
 | Trans_case :
-  forall l2 {x cl0 cl1 l0},
+  forall l2 {x cl0 cl1 l0 l1},
     (x \in Γ) ->
-    let l1 := next_label l0 in
+    l1 = next_label l0 ->
     trans_case Γ l1 cl0 l2 cl1 ->
     trans Γ l0 (A0.Ecase x cl0) l2 (A1.Ecase x l0 cl1)
 
@@ -140,13 +140,13 @@ Proof.
       apply trans_label_le in H;
       apply trans_label_le in H0.
     + split; try (eapply Pos.le_refl; eauto).
-      pose proof (next_label_lt l); subst l1.
+      pose proof (next_label_lt l).
       Pos.order.
-    + pose proof (next_label_lt l0); subst l1.
+    + pose proof (next_label_lt l0).
       split;
         eapply IHtrans1 in H8; eauto; inv H8;
         Pos.order.
-    + pose proof (next_label_lt l0); subst l1.
+    + pose proof (next_label_lt l0).
       split;
         eapply IHtrans2 in H8; eauto; inv H8;
         Pos.order.
@@ -156,35 +156,35 @@ Proof.
   - eapply trans_label_le in H; eauto.
     inv H0.
     + split; try Pos.order.
-      pose proof (next_label_lt l); subst l1.
+      pose proof (next_label_lt l).
       Pos.order.
     + eapply IHtrans in H7; eauto; inv H7.
-      pose proof (next_label_lt l0); subst l1.
+      pose proof (next_label_lt l0).
       split; Pos.order.
   - eapply trans_label_le in H; eauto.
     inv H0.
     + split; try Pos.order.
-      pose proof (next_label_lt l); subst l1.
+      pose proof (next_label_lt l).
       Pos.order.
     + eapply IHtrans in H7; eauto; inv H7.
-      pose proof (next_label_lt l0); subst l1.
+      pose proof (next_label_lt l0).
       split; Pos.order.
   - eapply trans_label_le in H; eauto.
     inv H0.
     + split; try Pos.order.
-      pose proof (next_label_lt l); subst l1.
+      pose proof (next_label_lt l).
       Pos.order.
     + eapply IHtrans in H7; eauto; inv H7.
-      pose proof (next_label_lt l0); subst l1.
+      pose proof (next_label_lt l0).
       split; Pos.order.
   - inv H.
     + split; try Pos.order.
       eapply trans_case_label_le in t; eauto.
-      pose proof (next_label_lt l); subst l1.
+      pose proof (next_label_lt l).
       Pos.order.
-    + assert (Hl : (l1 <= l < l2)%positive) by (eapply IHtrans; eauto).
+    + assert (Hl : (next_label l0 <= l < l2)%positive) by (eapply IHtrans; eauto).
       inv Hl.
-      pose proof (next_label_lt l0); subst l1.
+      pose proof (next_label_lt l0).
       split; Pos.order.
     + eapply has_label_case in H4; eauto.
       inv H4.
@@ -192,7 +192,7 @@ Proof.
         eapply trans_case_label_le in t; eauto.
         eapply Pos.lt_le_trans; eauto.
         eapply next_label_lt; eauto.
-      * assert (Hl : (l1 <= l < l2)%positive) by (eapply IHtrans; eauto).
+      * assert (Hl : (next_label l0 <= l < l2)%positive) by (eapply IHtrans; eauto).
         inv Hl.
         split; auto.
         eapply Pos.le_trans; eauto.
@@ -343,11 +343,11 @@ Proof.
   - econstructor; eauto.
     + intro Hc.
       eapply trans_label_inv in H; eauto; inv H.
-      pose proof (next_label_lt l0); subst l1.
+      pose proof (next_label_lt l0).
       Pos.order.
     + intros Hc.
       eapply trans_label_inv in H0; eauto; inv H0.
-      pose proof (next_label_lt l0); subst l1.
+      pose proof (next_label_lt l0).
       eapply trans_label_le in H.
       Pos.order.
     + constructor; intros.
@@ -359,27 +359,29 @@ Proof.
   - econstructor; eauto.
     intros Hc.
     eapply trans_label_inv in H; eauto; inv H.
-    pose proof (next_label_lt l0); subst l1.
+    pose proof (next_label_lt l0).
     Pos.order.
   - econstructor; eauto.
     intros Hc.
     eapply trans_label_inv in H; eauto; inv H.
-    pose proof (next_label_lt l0); subst l1.
+    pose proof (next_label_lt l0).
     Pos.order.
   - econstructor; eauto.
     intros Hc.
     eapply trans_label_inv in H; eauto; inv H.
-    pose proof (next_label_lt l0); subst l1.
+    pose proof (next_label_lt l0).
     Pos.order.
   - generalize dependent l0.
-    induction t; simpl; eauto.
+    induction t; intros; simpl; eauto.
     inv IHtrans.
     econstructor; eauto.
     + intros Hc.
-      eapply trans_label_inv in H0; eauto; inv H0.
+      eapply trans_label_inv in H; eauto; inv H.
+      pose proof (next_label_lt l3).
       Pos.order.
     + admit.
-    +
+    + eapply IHt; eauto.
+      subst.
 
 
     generalize dependent cl0.
