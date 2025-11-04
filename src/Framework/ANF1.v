@@ -692,16 +692,25 @@ Inductive unique_label : exp -> Prop :=
     unique_label k ->
     unique_label (Eproj x l n y k)
 
+| Unique_case :
+  forall {x l cl L},
+    (~ l \in L) ->
+    unique_label_case cl L ->
+    unique_label (Ecase x l cl)
+
+with unique_label_case : list (ctor_tag * exp) -> labels -> Prop :=
 | Unique_case_nil :
-  forall {x l},
-    unique_label (Ecase x l [])
+  unique_label_case [] (Empty_set _)
 
 | Unique_case_tl :
-  forall {x l c e cl},
-    (~ l \in has_label e) ->
-    Disjoint _ (has_label e) (has_label (Ecase x l cl)) ->
+  forall {c e cl L},
+    Disjoint _ (has_label e) L ->
     unique_label e ->
-    unique_label (Ecase x l cl) ->
-    unique_label (Ecase x l ((c , e) :: cl)).
+    unique_label_case cl L ->
+    unique_label_case ((c , e) :: cl) ((has_label e) :|: L).
 
 Hint Constructors unique_label : core.
+Hint Constructors unique_label_case : core.
+
+Scheme unique_label_mut := Induction for unique_label Sort Prop
+with unique_label_case_mut := Induction for unique_label_case Sort Prop.

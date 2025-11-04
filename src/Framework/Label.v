@@ -68,7 +68,7 @@ with trans_case (Γ : A0.vars) : label -> list (A0.ctor_tag * A0.exp) -> label -
     trans_case Γ l0 [] l0 []
 
 | Trans_case_cons :
-  forall l1 l2 {l0 e0 e1 t cl0 cl1},
+  forall l1 {l0 l2 e0 e1 t cl0 cl1},
     trans Γ l0 e0 l1 e1 ->
     trans_case Γ l1 cl0 l2 cl1 ->
     trans_case Γ l0 ((t, e0) :: cl0) l2 ((t, e1) :: cl1).
@@ -228,118 +228,39 @@ Proof.
       Pos.order.
 Qed.
 
-(*
-Lemma trans_label_inv_r Γ l1 e1 l2 e2 :
-  trans Γ l1 e1 l2 e2 ->
-  forall l,
-    (Pos.le l1 l /\ Pos.lt l l2) ->
-    (l \in has_label e2).
-Proof.
-    intro H.
-    induction H using trans_mut with (P0 := fun Γ l0 cl0 l1 cl1 tr =>
-                                              forall l,
-                                                (Pos.le l0 l /\ Pos.lt l l1) ->
-                                                Exists (fun '(t, e) => (l \in has_label e)) cl1);
-      simpl; intros.
-    -
-Admitted.
-*)
-(*
-Lemma not_has_label_case cl l0 l x:
-  l0 <> l ->
-  Forall (fun '(_, e) => ~ (l \in (has_label e))) cl ->
-  ~ (has_label (Ecase x l0 cl) l).
-Proof.
-  intros.
-  generalize dependent l0.
-  revert x.
-  induction H0; simpl; intros; intros Hc; inv Hc; eauto.
-  eapply IHForall; eauto.
-Qed.
-
-Lemma trans_label_inv Γ l1 e1 l2 e2 :
-  trans Γ l1 e1 l2 e2 ->
-  forall l,
-    Pos.lt l l1 ->
-    ~ (l \in has_label e2).
+Lemma trans_case_unique_label_case_inv Γ l1 cl0 l2 cl1:
+  trans_case Γ l1 cl0 l2 cl1 ->
+  forall L,
+    unique_label_case cl1 L ->
+    forall l,
+      (l \in L) ->
+      (Pos.le l1 l /\ Pos.lt l l2).
 Proof.
   intro H.
-  induction H using trans_mut with (P0 := fun Γ l0 cl0 l1 cl1 tr =>
-                                            forall l,
-                                              Pos.lt l l0 ->
-                                              Forall (fun '(t, e) => ~ (l \in has_label e)) cl1);
-  simpl; intros; eauto.
-  - intros Hc.
-    inv Hc.
-  - intros Hc.
-    inv Hc.
-    + eapply Pos.lt_irrefl; eauto.
-    + eapply (IHtrans1 l); eauto.
-      eapply Pos.lt_trans; eauto.
-      eapply next_label_lt; eauto.
-    + eapply (IHtrans2 l); eauto.
-      eapply Pos.lt_trans; eauto.
-      apply trans_label_le in H.
-      eapply Pos.lt_le_trans; eauto.
-      eapply next_label_lt; eauto.
-  - intro Hc.
-    inv Hc.
-    eapply Pos.lt_irrefl; eauto.
-  - intros Hc.
-    inv Hc.
-    + eapply Pos.lt_irrefl; eauto.
-    + eapply IHtrans; eauto.
-      eapply Pos.lt_trans; eauto.
-      eapply next_label_lt; eauto.
-  - intros Hc.
-    inv Hc.
-    + eapply Pos.lt_irrefl; eauto.
-    + eapply IHtrans; eauto.
-      eapply Pos.lt_trans; eauto.
-      eapply next_label_lt; eauto.
-  - intros Hc.
-    inv Hc.
-    + eapply Pos.lt_irrefl; eauto.
-    + eapply IHtrans; eauto.
-      eapply Pos.lt_trans; eauto.
-      eapply next_label_lt; eauto.
-  - intros Hc.
-    inv Hc.
-    + eapply Pos.lt_irrefl; eauto.
-    + assert (Hl: Pos.lt l l1).
-      {
-        eapply Pos.lt_trans; eauto.
-        eapply next_label_lt; eauto.
-      }
-      eapply IHtrans in Hl; eauto.
+  induction H; simpl; intros.
+  - inv H.
+    inv H0.
+  - inv H1.
+    inv H2.
+    + eapply trans_label_inv in H; eauto; inv H.
+      eapply trans_case_label_le in H0; eauto.
+      split; Pos.order.
+    + assert (Hl : (l1 <= l < l2)%positive) by (eapply IHtrans_case; eauto).
       inv Hl.
-      eapply H2; eauto.
-    + assert (Hl: Pos.lt l l1).
-      {
-        eapply Pos.lt_trans; eauto.
-        eapply next_label_lt; eauto.
-      }
-      eapply IHtrans in Hl; eauto.
-      inv Hl.
-      eapply not_has_label_case; eauto.
-      intros Hc; subst.
-      eapply Pos.lt_irrefl; eauto.
-  - constructor; auto.
-    eapply IHtrans0; eauto.
-    eapply Pos.lt_le_trans; eauto.
-    eapply trans_label_le; eauto.
+      apply trans_label_le in H; eauto.
+      split; Pos.order.
 Qed.
- *)
 
 Lemma trans_unique_label Γ l1 e1 l2 e2 :
   trans Γ l1 e1 l2 e2 ->
   unique_label e2.
 Proof.
   intro H.
-
+  Check trans_mut.
   induction H using trans_mut with (P0 := fun Γ l0 cl0 l1 cl1 tr =>
-                                            Forall (fun '(t, e) => unique_label e) cl1);
-  simpl; intros; eauto.
+                                            exists L,
+                                              unique_label_case cl1 L);
+  simpl; intros; auto.
   - econstructor; eauto.
     + intro Hc.
       eapply trans_label_inv in H; eauto; inv H.
@@ -371,71 +292,21 @@ Proof.
     eapply trans_label_inv in H; eauto; inv H.
     pose proof (next_label_lt l0).
     Pos.order.
-  - generalize dependent l0.
-    induction t; intros; simpl; eauto.
-    inv IHtrans.
+  - destruct IHtrans as [L HU].
     econstructor; eauto.
-    + intros Hc.
-      eapply trans_label_inv in H; eauto; inv H.
-      pose proof (next_label_lt l3).
-      Pos.order.
-    + admit.
-    + eapply IHt; eauto.
-      subst.
-
-
-    generalize dependent cl0.
-    revert l0 l1 l2 x i.
-    induction IHtrans; intros; eauto.
-    destruct x.
+    intros Hc.
+    eapply trans_case_unique_label_case_inv in t; eauto; inv t.
+    pose proof (next_label_lt l0); Pos.order.
+  - eexists; eauto.
+  - destruct IHtrans0 as [L HU].
+    exists ((has_label e1) :|: L).
     econstructor; eauto.
-    + intros Hc.
-      eapply trans_case_label_inv in t; eauto; inv t.
-      pose proof (next_label_lt l0); subst l1.
-      Pos.order.
-    + admit.
-    + inv t.
-      eapply IHIHtrans; eauto.
-      inv t.
-Abort.
-
-        assert (Hl : ~ (l0 <= l < l1)%positive).
-        {
-          intros Hc.
-          apply H1.
-          eapply trans_label_inv_r; eauto.
-        }
-        split; auto.
-
-
-        assert (Hl' : ~ (l0 <= l)%positive).
-        {
-          intros Hc.
-          apply Hl.
-          split; auto.
-
-        }
-
-        split; auto.
-
-
-      }
-      inv Hl.
-      split; auto.
-      eapply Pos.le_trans; eauto.
-      eapply next_label_le; eauto.
-    +
-Abort.
-
-      eapply trans_label_le in t; eauto.
-      eapply Pos.lt_le_trans; eauto.
-      eapply next_label_lt; eauto.
-    + eapply IHtrans in H7; eauto.
-      inv H7.
-      split; auto.
-      eapply Pos.le_trans; eauto.
-      eapply next_label_le; eauto.
-  -
+    constructor; intros; intro Hc.
+    inv Hc.
+    eapply trans_label_inv in H; eauto; inv H.
+    eapply trans_case_unique_label_case_inv in t0; eauto; inv t0.
+    Pos.order.
+Qed.
 
 (*
 (* Note this is directly based on `unique_label`
