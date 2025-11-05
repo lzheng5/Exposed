@@ -970,11 +970,8 @@ Module M <: Annotate.
     assert (HE' : E true (j1 + k) ρ1 e1 ρ2 e2) by (eapply HT; eauto).
     edestruct (HE' j1) as [j2' [r2' [Hstep2' HR']]]; eauto; try lia.
 
-    assert (Hm : j1 + k - j1 = k) by lia. (* TODO: REFACTOR *)
-    rewrite Hm in *; clear Hm.
-
-    assert (Hm : j1 - j1 = 0) by lia.
-    rewrite Hm in *; clear Hm.
+    rewrite_math (j1 + k - j1 = k).
+    rewrite_math (j1 - j1 = 0).
 
     destruct r2; destruct r2'; destruct r1;
       simpl in *; auto; try contradiction.

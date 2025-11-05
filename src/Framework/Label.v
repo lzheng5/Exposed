@@ -1179,3 +1179,37 @@ Proof.
   - eapply H0; eauto.
     eapply G_top_G; eauto.
 Qed.
+
+(* Cross-language Compositionality *)
+
+(* Adequacy *)
+Theorem adequacy e1 e2:
+  trans_correct_top e1 e2 ->
+  forall ρ1 ρ2,
+    (forall k, G_top k (A0.occurs_free e1) ρ1 (A1.occurs_free e2) ρ2) ->
+    forall j1 r1,
+      A0.bstep_fuel ρ1 e1 j1 r1 ->
+      exists j2 r2,
+        A1.bstep_fuel ρ2 e2 j2 r2 /\
+        (forall k, R k r1 r2).
+Proof.
+  intros.
+  unfold trans_correct_top in H.
+  destruct H as [HS HT].
+
+  assert (HE : E j1 ρ1 e1 ρ2 e2) by (eapply (HT j1); eauto).
+  edestruct (HE j1) as [j2 [r2 [Hstep2 HR]]]; eauto.
+  eexists; eexists; split; eauto.
+
+  intros.
+  assert (HE' : E (j1 + k) ρ1 e1 ρ2 e2) by (eapply HT; eauto).
+  edestruct (HE' j1) as [j2' [r2' [Hstep2' HR']]]; eauto; try lia.
+
+  rewrite_math (j1 + k - j1 = k).
+  rewrite_math (j1 - j1 = 0).
+
+  destruct r2; destruct r2'; destruct r1;
+    simpl in *; auto; try contradiction.
+
+  edestruct (A1.bstep_fuel_deterministic w w0 Hstep2 Hstep2'); subst; eauto.
+Qed.

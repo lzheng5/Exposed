@@ -3,6 +3,11 @@ From CertiCoq.Libraries Require Import maps_util.
 From CertiCoq.LambdaANF Require Import Ensembles_util map_util tactics.
 Require Import Lia.
 
+Ltac rewrite_math t :=
+  let H := fresh "Hmath" in
+  assert (H : t) by lia;
+  rewrite H in *; clear H.
+
 Lemma normalize_step : forall i j, j <= i -> i - (i - j) = j.
 Proof. intros; lia. Qed.
 
