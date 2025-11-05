@@ -12,7 +12,6 @@ Module A1 := ANF1.
 
 (* Attach Unique Labels *)
 
-
 (*
 (* Note this is directly based on `unique_label`
    However, this isn't sufficient to show linking compat *)
@@ -319,7 +318,7 @@ Proof.
       split; Pos.order.
 Qed.
 
-Lemma trans_unique_label Γ l1 e1 l2 e2 :
+Theorem trans_unique_label Γ l1 e1 l2 e2 :
   trans Γ l1 e1 l2 e2 ->
   unique_label e2.
 Proof.
@@ -374,3 +373,450 @@ Proof.
     eapply trans_case_unique_label_case_inv in t0; eauto; inv t0.
     Pos.order.
 Qed.
+
+(* Cross-language Logical Relations *)
+Definition R' (P : nat -> A0.val -> A1.wval -> Prop) (i : nat) (r1 : A0.res) (r2 : A1.res) :=
+  match r1, r2 with
+  | A0.OOT, A1.OOT => True
+  | A0.Res v1, A1.Res v2 => P i v1 v2
+  | _, _ => False
+  end.
+
+Definition E' (P : nat -> A0.val -> A1.wval -> Prop) (i : nat) (ρ1 : A0.env) (e1 :A0.exp) (ρ2 : A1.env) (e2 : A1.exp) : Prop :=
+  forall j1 r1,
+    j1 <= i ->
+    A0.bstep_fuel ρ1 e1 j1 r1 ->
+    exists j2 r2,
+      A1.bstep_fuel ρ2 e2 j2 r2 /\
+      R' P (i - j1) r1 r2.
+
+Fixpoint V (i : nat) (v1 : A0.val) (wv2 : A1.wval) {struct i} : Prop :=
+  match wv2 with
+  | A1.TAG _ l2 v2 =>
+      match v1, v2 with
+      | A0.Vconstr c1 vs1, A1.Vconstr c2 vs2 =>
+        c1 = c2 /\
+        match i with
+        | 0 => length vs1 = length vs2
+        | S i0 => Forall2 (V i0) vs1 vs2
+        end
+
+      | A0.Vfun f1 ρ1 xs1 e1, A1.Vfun f2 ρ2 xs2 e2 =>
+          length xs1 = length xs2 /\
+          match i with
+          | 0 => True
+          | S i0 =>
+              forall j vs1 vs2 ρ3 ρ4,
+                j <= i0 ->
+                Forall2 (V (i0 - (i0 - j))) vs1 vs2 ->
+                set_lists xs1 vs1 (M.set f1 (A0.Vfun f1 ρ1 xs1 e1) ρ1) = Some ρ3 ->
+                set_lists xs2 vs2 (M.set f2 (Tag l2 (A1.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
+                E' V (i0 - (i0 - j)) ρ3 e1 ρ4 e2
+          end
+
+      | _, _ => False
+      end
+  end.
+
+Definition R := (R' V).
+
+Definition E := (E' V).
+
+(* Inversion Lemmas *)
+Lemma R_res_inv_l i v1 r2 :
+  R i (A0.Res v1) r2 ->
+  exists v2, r2 = A1.Res v2 /\ V i v1 v2.
+Proof.
+  intros.
+  destruct r2; simpl in *; try contradiction.
+  eexists; split; eauto.
+Qed.
+
+(* Environment Relation *)
+Definition G i Γ1 ρ1 Γ2 ρ2 :=
+  forall x,
+    (x \in Γ1) ->
+    forall v1,
+      M.get x ρ1 = Some v1 ->
+      ((x \in Γ2) ->
+       exists v2,
+         M.get x ρ2 = Some v2 /\
+         V i v1 v2).
+
+(* Environment Lemmas *)
+Lemma G_get {Γ1 Γ2 i ρ1 ρ2}:
+  G i Γ1 ρ1 Γ2 ρ2 ->
+  forall x v1,
+    (x \in Γ1) ->
+    (x \in Γ2) ->
+    M.get x ρ1 = Some v1 ->
+    exists v2,
+      M.get x ρ2 = Some v2 /\
+      V i v1 v2.
+Proof.
+  unfold G.
+  intros.
+  edestruct H as [Hr1 HG]; eauto.
+Qed.
+
+Lemma G_get_list {i Γ1 ρ1 Γ2 ρ2} :
+  G i Γ1 ρ1 Γ2 ρ2 ->
+  forall xs vs1,
+    (FromList xs) \subset Γ1 ->
+    (FromList xs) \subset Γ2 ->
+    get_list xs ρ1 = Some vs1 ->
+    exists vs2,
+      get_list xs ρ2 = Some vs2 /\
+      Forall2 (V i) vs1 vs2.
+Proof.
+  unfold G.
+  intros HG xs.
+  induction xs; simpl; intros.
+  - inv H1; eauto.
+  - destruct (ρ1 ! a) eqn:Heq1; try discriminate.
+    destruct (get_list xs ρ1) eqn:Heq3; try discriminate.
+    inv H1.
+    unfold Ensembles.Included, Ensembles.In, FromList in *.
+    edestruct (G_get HG) as [v2 [Heqv2 HV]]; eauto.
+    eapply (H a).
+    apply in_eq.
+    apply H0.
+    apply in_eq.
+    edestruct IHxs as [vs2 [Heqvs2 Vvs]]; eauto.
+    + intros.
+      apply H.
+      apply in_cons; auto.
+    + intros.
+      apply H0.
+      apply in_cons; auto.
+    + rewrite Heqvs2.
+      exists (v2 :: vs2); split; auto.
+      rewrite Heqv2; auto.
+Qed.
+
+Lemma G_set {i Γ1 ρ1 Γ2 ρ2}:
+  G i Γ1 ρ1 Γ2 ρ2 ->
+  forall {x v1 v2},
+    V i v1 v2 ->
+    G i (x |: Γ1) (M.set x v1 ρ1) (x |: Γ2) (M.set x v2 ρ2).
+Proof.
+  unfold G.
+  intros.
+  destruct (M.elt_eq x0 x); subst.
+  - repeat rewrite M.gss in *.
+    inv H2.
+    eexists; split; eauto; intros.
+  - rewrite M.gso in *; auto.
+    inv H1.
+    inv H4; try contradiction.
+    inv H3.
+    inv H1; try contradiction.
+    edestruct H as [v1' [Heqv1' Hv2]]; eauto.
+Qed.
+
+Lemma G_set_lists {i Γ1 ρ1 Γ2 ρ2}:
+  G i Γ1 ρ1 Γ2 ρ2 ->
+  forall {xs vs1 vs2 ρ3 ρ4},
+    Forall2 (V i) vs1 vs2 ->
+    set_lists xs vs1 ρ1 = Some ρ3 ->
+    set_lists xs vs2 ρ2 = Some ρ4 ->
+    G i (FromList xs :|: Γ1) ρ3 (FromList xs :|: Γ2) ρ4.
+Proof.
+  intros HG xs.
+  induction xs; simpl; intros.
+  - destruct vs1; try discriminate.
+    destruct vs2; try discriminate.
+    inv H0; inv H1.
+    unfold G.
+    intros.
+
+    eapply (G_get HG); eauto.
+    inv H0; auto.
+    inv H3.
+
+    inv H2; auto.
+    inv H3.
+  - destruct vs1; try discriminate.
+    destruct vs2; try discriminate.
+    destruct (set_lists xs vs1 ρ1) eqn:Heq1; try discriminate.
+    destruct (set_lists xs vs2 ρ2) eqn:Heq2; try discriminate.
+    inv H; inv H0; inv H1.
+    unfold G.
+    intros.
+    destruct (M.elt_eq x a); subst.
+    + repeat rewrite M.gss in *; eauto.
+      inv H0.
+      eexists; split; eauto.
+    + rewrite M.gso in *; auto.
+      eapply IHxs; eauto.
+      eapply not_In_cons_Union; eauto.
+      eapply not_In_cons_Union; eauto.
+Qed.
+
+Lemma G_subset Γ1 Γ2 {i ρ1 Γ3 ρ2 Γ4}:
+  G i Γ1 ρ1 Γ2 ρ2 ->
+  Γ3 \subset Γ1 ->
+  Γ4 \subset Γ2 ->
+  G i Γ3 ρ1 Γ4 ρ2.
+Proof.
+  unfold G.
+  intros; eauto.
+Qed.
+
+(* Monotonicity Lemmas *)
+Lemma V_mono_Forall_aux :
+  forall i j (V : nat -> A0.val -> A1.wval -> Prop) vs1 vs2,
+    (forall k : nat,
+        k < S i ->
+        forall (j : nat) v1 v2, V k v1 v2 -> j <= k -> V j v1 v2) ->
+    Forall2 (V i) vs1 vs2 ->
+    j <= i ->
+    Forall2 (V j) vs1 vs2.
+Proof.
+  intros.
+  revert vs2 H0.
+  induction vs1; intros; inv H0; auto.
+  rename l' into vs2.
+  constructor; auto.
+  eapply H; eauto; lia.
+Qed.
+
+Lemma V_mono i :
+  forall {j v1 v2},
+    V i v1 v2 ->
+    j <= i ->
+    V j v1 v2.
+Proof.
+  induction i using lt_wf_rec; intros.
+  destruct v2.
+  destruct i; simpl in H0;
+    destruct j; simpl; intros.
+  - destruct v1; destruct v; try contradiction; eauto.
+  - inv H1.
+  - destruct v1; destruct v; try contradiction.
+    + destruct H0.
+      split; auto.
+    + destruct H0 as [Hc HV]; subst.
+      repeat split; auto.
+      eapply Forall2_length; eauto.
+  - repeat (split; auto).
+    destruct v1; destruct v; try contradiction;
+      destruct H0 as [Hlen HV]; subst.
+    + split; auto; intros.
+      specialize (HV j0 vs1 vs2 ρ3 ρ4).
+      rewrite normalize_step in *; try lia.
+      apply HV; eauto; lia.
+    + repeat split; auto.
+      eapply V_mono_Forall_aux; eauto; lia.
+Qed.
+
+Lemma V_mono_Forall {vs1 vs2} i j :
+  Forall2 (V i) vs1 vs2 ->
+  j <= i ->
+  Forall2 (V j) vs1 vs2.
+Proof.
+  intros H.
+  revert j.
+  induction H; simpl; intros; auto.
+  constructor; eauto.
+  eapply V_mono; eauto.
+Qed.
+
+Lemma R_mono {r1 r2} i j :
+  R i r1 r2 ->
+  j <= i ->
+  R j r1 r2.
+Proof.
+  unfold R.
+  intros.
+  destruct r1; auto.
+  destruct r2; auto.
+  eapply V_mono; eauto.
+Qed.
+
+Lemma E_mono {ρ1 ρ2 e1 e2} i j:
+  E i ρ1 e1 ρ2 e2 ->
+  j <= i ->
+  E j ρ1 e1 ρ2 e2.
+Proof.
+  unfold E, R, E', R'.
+  intros.
+  destruct (H j1 r1) as [j2 [r2 [Hr2 HR]]]; auto; try lia.
+  exists j2, r2; split; eauto.
+  apply R_mono with (i - j1); try lia; auto.
+Qed.
+
+Lemma G_mono {Γ1 Γ2 ρ1 ρ2} i j:
+  G i Γ1 ρ1 Γ2 ρ2 ->
+  j <= i ->
+  G j Γ1 ρ1 Γ2 ρ2.
+Proof.
+  unfold G.
+  intros.
+  edestruct H as [v2 [Heqv2 HV]]; eauto.
+  eexists; eexists; repeat split; eauto.
+  apply V_mono with i; eauto.
+Qed.
+
+(* Compatibility Lemmas *)
+Definition trans_correct Γ e1 e2 :=
+  forall i ρ1 ρ2,
+    G i Γ ρ1 (A1.occurs_free e2) ρ2 ->
+    E i ρ1 e1 ρ2 e2.
+
+Fixpoint trans_correct_case (Γ : A0.vars) (cl1 : list (A0.ctor_tag * A0.exp)) (cl2 : list (A1.ctor_tag * A1.exp)) :=
+  match cl1, cl2 with
+  | [], [] => True
+  | ((c1, e1) :: cl1'), ((c2, e2) :: cl2') =>
+      c1 = c2 /\
+      trans_correct Γ e1 e2 /\
+      trans_correct_case Γ cl1' cl2'
+  | _, _ => False
+  end.
+
+Lemma ret_compat Γ x :
+  (x \in Γ) ->
+  trans_correct Γ (A0.Eret x) (A1.Eret x).
+Proof.
+  unfold trans_correct, G, E, E', R, R', Ensembles.Included, Ensembles.In, Dom_map.
+  intros.
+  inv H2.
+  - exists 0, A1.OOT; split; auto.
+  - inv H3.
+    edestruct (G_get H0) as [v2 [Heqv2 HV]]; eauto.
+    exists 1, (A1.Res v2); split; auto.
+    apply V_mono with i; try lia; auto.
+Qed.
+
+Lemma constr_compat Γ x l t xs k k' :
+  (FromList xs \subset Γ) ->
+  trans_correct (x |: Γ) k k' ->
+  trans_correct Γ (A0.Econstr x t xs k) (A1.Econstr x l t xs k').
+Proof.
+  unfold trans_correct, E, E'.
+  intros.
+  inv H3.
+  - exists 0, A1.OOT; split; simpl; auto.
+  - inv H4.
+    destruct (G_get_list H1 xs vs) as [vs' [Heqvs' Hvs]]; auto.
+    + eapply A1.free_constr_xs_subset; eauto.
+    + assert (length vs = length vs').
+      {
+        unfold wval in *.
+        rewrite <- (get_list_length_eq _ _ _ H10).
+        rewrite <- (get_list_length_eq _ _ _ Heqvs'); auto.
+      }
+
+      edestruct (H0 i (M.set x (A0.Vconstr t vs) ρ1) (M.set x (Tag l (A1.Vconstr t vs')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk' Rr]]]; eauto; try lia.
+      * eapply G_subset with (Γ2 := (x |: (A1.occurs_free (A1.Econstr x l t xs k')))).
+        eapply G_set; eauto.
+        -- destruct i; simpl; repeat (split; eauto).
+           eapply V_mono_Forall; eauto; lia.
+        -- apply Included_refl.
+        -- apply A1.free_constr_k_subset.
+      * exists (S j2), r2; split; eauto.
+        apply R_mono with (i - c); try lia; auto.
+Qed.
+
+Lemma case_nil_compat Γ x l0:
+  (x \in Γ) ->
+  trans_correct Γ (A0.Ecase x []) (A1.Ecase x l0 []).
+Proof.
+  unfold trans_correct, E, E'.
+  intros.
+  inv H2.
+  - exists 0, A1.OOT; split; simpl; auto.
+  - inv H3.
+    inv H6.
+Qed.
+
+Lemma case_cons_compat Γ x l t e e' cl cl':
+  (x \in Γ) ->
+  trans_correct Γ e e' ->
+  trans_correct Γ (A0.Ecase x cl) (A1.Ecase x l cl') ->
+  trans_correct Γ (A0.Ecase x ((t, e) :: cl)) (A1.Ecase x l ((t, e') :: cl')).
+Proof.
+  unfold trans_correct, E, E'.
+  intros.
+  inv H4.
+  - exists 0, OOT; split; simpl; eauto.
+  - inv H5.
+    edestruct (G_get H2) as [v2 [Heqv2 HV]]; eauto.
+    destruct v2.
+    destruct i.
+    inv H3.
+    destruct v; simpl in HV;
+      subst; try contradiction.
+    destruct HV as [Heqt HFvs]; subst.
+    inv H8.
+    + edestruct (H0 i ρ1 ρ2) with (j1 := c) as [j2 [r2 [He' HR]]]; eauto; try lia.
+      eapply G_subset with (Γ2 := (occurs_free (Ecase x l ((c0, e') :: cl')))); eauto.
+      eapply G_mono; eauto.
+      apply Included_refl.
+      eapply A1.free_case_hd_subset; eauto.
+      exists (S j2), r2; split; eauto.
+    + edestruct (H1 (S i) ρ1 ρ2) with (j1 := S c) (r1 := r1) as [j2 [r2 [He' HR]]]; eauto; try lia.
+      eapply G_subset; eauto.
+      apply Included_refl.
+      apply A1.free_case_tl_subset; auto.
+      exists j2, r2; split; eauto.
+      inv He'; auto.
+      inv H4.
+      rewrite Heqv2 in H9; inv H9; eauto.
+Qed.
+
+Lemma case_compat cl0:
+  forall Γ x l0 cl1,
+    (x \in Γ) ->
+    trans_correct_case Γ cl0 cl1 ->
+    trans_correct Γ (A0.Ecase x cl0) (A1.Ecase x l0 cl1).
+Proof.
+  induction cl0; simpl; intros.
+  - destruct cl1; try contradiction.
+    eapply case_nil_compat; eauto.
+  - destruct a.
+    destruct cl1; try contradiction.
+    destruct p.
+    rename c0 into c1, e0 into e1.
+    rename c into c0, e into e0.
+    destruct H0 as [Heqc [He Hcl]]; subst.
+    eapply case_cons_compat; eauto.
+Qed.
+
+Lemma case_nil_compat' Γ:
+  trans_correct_case Γ [] [].
+Proof. simpl. auto. Qed.
+
+Lemma case_cons_compat' cl0:
+  forall Γ cl1 c e0 e1,
+    trans_correct Γ e0 e1 ->
+    trans_correct_case Γ cl0 cl1 ->
+    trans_correct_case Γ ((c, e0) :: cl0) ((c, e1) :: cl1).
+Proof.
+  induction cl0; simpl; intros.
+  - destruct cl1; try contradiction.
+    repeat split; auto.
+  - destruct a.
+    destruct cl1; try contradiction.
+    destruct p.
+    destruct H0 as [Heqc [He Hcl]]; subst.
+    repeat split; auto.
+Qed.
+
+(* Fundamental Property *)
+Lemma fundamental_property {Γ l e l' e'}:
+  trans Γ l e l' e' -> trans_correct Γ e e'.
+Proof.
+  intros H.
+  induction H using trans_mut with (P0 := fun Γ l0 cl0 l1 cl1 tr =>
+                                            trans_correct_case Γ cl0 cl1).
+  - eapply ret_compat; auto.
+  - admit. (* eapply fun_compat; eauto. *)
+  - admit. (* eapply app_compat; eauto.*)
+  - admit.
+  - eapply constr_compat; eauto.
+  - admit. (* eapply proj_compat; eauto. *)
+  - eapply case_compat; eauto.
+  - eapply case_nil_compat'; eauto.
+  - eapply case_cons_compat'; eauto.
+Admitted.

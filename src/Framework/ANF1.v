@@ -127,27 +127,27 @@ Inductive bstep (ρ : env) : exp -> fuel -> res -> Prop :=
     bstep ρ (Efun f w xs e k) c r
 
 | BStep_app :
-  forall {f f' w xs ρ' xs' e vs ρ'' c r},
-    M.get f ρ = Some (Tag w (Vfun f' ρ' xs' e)) ->
+  forall {f f' w w' xs ρ' xs' e vs ρ'' c r},
+    M.get f ρ = Some (Tag w' (Vfun f' ρ' xs' e)) ->
     get_list xs ρ = Some vs ->
-    set_lists xs' vs (M.set f' (Tag w (Vfun f' ρ' xs' e)) ρ') = Some ρ'' ->
+    set_lists xs' vs (M.set f' (Tag w' (Vfun f' ρ' xs' e)) ρ') = Some ρ'' ->
     bstep_fuel ρ'' e c r ->
     bstep ρ (Eapp f w xs) c r
 
 | BStep_letapp_Res :
-  forall {x f f' w xs k ρ' xs' e vs ρ'' c c' v r},
-    M.get f ρ = Some (Tag w (Vfun f' ρ' xs' e)) ->
+  forall {x f f' w w' xs k ρ' xs' e vs ρ'' c c' v r},
+    M.get f ρ = Some (Tag w' (Vfun f' ρ' xs' e)) ->
     get_list xs ρ = Some vs ->
-    set_lists xs' vs (M.set f' (Tag w (Vfun f' ρ' xs' e)) ρ') = Some ρ'' ->
+    set_lists xs' vs (M.set f' (Tag w' (Vfun f' ρ' xs' e)) ρ') = Some ρ'' ->
     bstep_fuel ρ'' e c (Res v) ->
     bstep_fuel (M.set x v ρ) k c' r ->
     bstep ρ (Eletapp x f w xs k) (c + c') r
 
 | BStep_letapp_OOT :
-  forall {x f f' w xs k ρ' xs' e vs ρ'' c},
-    M.get f ρ = Some (Tag w (Vfun f' ρ' xs' e)) ->
+  forall {x f f' w w' xs k ρ' xs' e vs ρ'' c},
+    M.get f ρ = Some (Tag w' (Vfun f' ρ' xs' e)) ->
     get_list xs ρ = Some vs ->
-    set_lists xs' vs (M.set f' (Tag w (Vfun f' ρ' xs' e)) ρ') = Some ρ'' ->
+    set_lists xs' vs (M.set f' (Tag w' (Vfun f' ρ' xs' e)) ρ') = Some ρ'' ->
     bstep_fuel ρ'' e c OOT ->
     bstep ρ (Eletapp x f w xs k) c OOT
 
@@ -158,15 +158,15 @@ Inductive bstep (ρ : env) : exp -> fuel -> res -> Prop :=
     bstep ρ (Econstr x w t xs e) c r
 
 | BStep_proj :
-  forall {x w t i y e c r v vs},
-    M.get y ρ = Some (Tag w (Vconstr t vs)) ->
+  forall {x w w' t i y e c r v vs},
+    M.get y ρ = Some (Tag w' (Vconstr t vs)) ->
     nth_error vs i = Some v ->
     bstep_fuel (M.set x v ρ) e c r ->
     bstep ρ (Eproj x w i y e) c r
 
 | BStep_case :
-  forall {x w cl t e r c vs},
-    M.get x ρ = Some (Tag w (Vconstr t vs)) ->
+  forall {x w w' cl t e r c vs},
+    M.get x ρ = Some (Tag w' (Vconstr t vs)) ->
     find_tag cl t e ->
     bstep_fuel ρ e c r ->
     bstep ρ (Ecase x w cl) c r
