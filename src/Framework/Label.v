@@ -688,6 +688,138 @@ Proof.
     apply V_mono with i; try lia; auto.
 Qed.
 
+Lemma Vfun_V Γ1 f l xs e e' :
+  trans_correct (FromList xs :|: (f |: Γ1)) e e' ->
+  forall {i Γ2 ρ1 ρ2},
+    G i Γ1 ρ1 Γ2 ρ2 ->
+    A1.occurs_free e' \subset (FromList xs :|: (f |: Γ2)) ->
+    V i (A0.Vfun f ρ1 xs e) (Tag l (A1.Vfun f ρ2 xs e')).
+Proof.
+  unfold trans_correct.
+  intros He i.
+  induction i; simpl; intros; auto;
+    repeat (split; auto); intros.
+
+  apply (He (i - (i - j)) ρ3 ρ4); auto.
+  - eapply G_subset with (Γ2 := (FromList xs :|: (f |: Γ2))).
+    eapply G_set_lists; eauto.
+    eapply G_set; eauto.
+    + apply G_mono with (S i); eauto; lia.
+    + apply V_mono with i; try lia.
+      eapply IHi with (Γ2 := Γ2); eauto.
+      apply G_mono with (S i); eauto; lia.
+    + apply Included_refl.
+    + auto.
+Qed.
+
+Lemma fun_compat Γ e e' l k k' f xs :
+  trans_correct (FromList xs :|: (f |: Γ)) e e' ->
+  trans_correct (f |: Γ) k k' ->
+  trans_correct Γ (A0.Efun f xs e k) (A1.Efun f l xs e' k').
+Proof.
+  unfold trans_correct, E, E'.
+  intros.
+  inv H3.
+  - exists 0, A1.OOT; split; simpl; eauto.
+  - inv H4.
+    edestruct (H0 (i - 1) (M.set f (A0.Vfun f ρ1 xs e) ρ1) (M.set f (Tag l (A1.Vfun f ρ2 xs e')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+    + eapply G_subset with (Γ2 := (f |: A1.occurs_free (A1.Efun f l xs e' k'))).
+      eapply G_set; eauto.
+      apply G_mono with i; eauto; lia.
+      * eapply Vfun_V; eauto.
+        -- apply G_mono with i; eauto; lia.
+        -- apply A1.free_fun_e_subset.
+      * apply Included_refl.
+      * apply A1.free_fun_k_subset.
+    + exists (S j2), r2; split; auto.
+      apply R_mono with ((i - 1) - c); try lia; auto.
+Qed.
+
+Lemma app_compat Γ xs f l :
+  (f \in Γ) ->
+  (FromList xs \subset Γ) ->
+  trans_correct Γ (A0.Eapp f xs) (A1.Eapp f l xs).
+Proof.
+  unfold trans_correct, G, E, E'.
+  intros.
+  inv H3.
+  - exists 0, A1.OOT; split; simpl; auto.
+  - inv H4.
+    edestruct (G_get H1 f) as [fv2 [Heqfv2 HV]]; eauto.
+    destruct i.
+    inv H2.
+    destruct fv2; simpl in HV;
+      destruct v; try contradiction.
+    destruct HV as [Hlen HV].
+
+    edestruct (G_get_list H1 xs vs) as [vs2 [Heqvs2 Vvs]]; eauto.
+    eapply A1.free_app_xs_subset; eauto.
+
+    destruct (set_lists_length3 (M.set v (Tag l0 (A1.Vfun v t l1 e0)) t) l1 vs2) as [ρ4 Heqρ4].
+    unfold wval in *.
+    rewrite <- (Forall2_length _ _ _ Vvs).
+    rewrite <- (set_lists_length_eq _ _ _ _ H8); auto.
+
+    assert (HE : E (i - (i - i)) ρ'' e ρ4 e0).
+    {
+      eapply (HV i vs vs2); eauto.
+      apply V_mono_Forall with (S i); auto; lia.
+    }
+
+    apply (E_mono _ i) in HE; try lia.
+    unfold E in HE.
+    destruct (HE c r1) as [j2 [r2 [He0 Rr]]]; try lia; auto.
+
+    exists (S j2), r2; split; eauto.
+Qed.
+
+Lemma letapp_compat Γ k k' l xs x f :
+  (f \in Γ) ->
+  (FromList xs \subset Γ) ->
+  trans_correct (x |: Γ) k k' ->
+  trans_correct Γ (A0.Eletapp x f xs k) (A1.Eletapp x f l xs k').
+Proof.
+  intros.
+  specialize (app_compat Γ xs f l H H0); intros Ha.
+  unfold trans_correct, E, E' in *.
+  intros.
+
+  assert (HG' : G i Γ ρ1 (occurs_free (A1.Eapp f l xs)) ρ2).
+  {
+    eapply G_subset with (Γ2 := (occurs_free (Eletapp x f l xs k'))); eauto.
+    apply Included_refl.
+    eapply A1.free_app_letapp; eauto.
+  }
+
+  inv H4.
+  - exists 0, OOT; split; simpl; auto.
+  - inv H5.
+    + destruct (Ha i ρ1 ρ2) with (j1 := (S c0)) (r1 := (A0.Res v)) as [j2 [r2 [Hr1 HR]]]; try lia; eauto.
+      * simpl in HR.
+        destruct r2; try contradiction.
+        rename w into v0.
+        inv Hr1.
+        edestruct (H1 (i - (S c0)) (M.set x v ρ1) (M.set x v0 ρ2)) with (j1 := c') as [j2 [r2 [Hk Rr]]]; eauto; try lia.
+        -- eapply G_subset with (Γ2 := (x |: (occurs_free (Eletapp x f l xs k')))).
+           eapply G_set; eauto.
+           apply G_mono with i; try lia; eauto.
+           apply Included_refl.
+           apply free_letapp_k_subset.
+        -- exists ((S c) + j2), r2; split.
+           ++ inv H4.
+              assert (Hc : (S c + j2) = S (c + j2)) by lia.
+              rewrite Hc.
+              constructor; auto.
+              eapply BStep_letapp_Res; eauto.
+           ++ apply R_mono with (i - S c0 - c'); try lia; auto.
+    + destruct (Ha i ρ1 ρ2) with (j1 := (S c)) (r1 := A0.OOT) as [j2 [r2 [Hr1 HR]]]; try lia; eauto.
+      exists j2, r2.
+      destruct r2; try contradiction.
+      split; auto.
+      inv Hr1; eauto.
+      inv H4; eauto.
+Qed.
+
 Lemma constr_compat Γ x l t xs k k' :
   (FromList xs \subset Γ) ->
   trans_correct (x |: Γ) k k' ->
@@ -716,6 +848,34 @@ Proof.
         -- apply A1.free_constr_k_subset.
       * exists (S j2), r2; split; eauto.
         apply R_mono with (i - c); try lia; auto.
+Qed.
+
+Lemma proj_compat Γ x i y l e e' :
+  (y \in Γ) ->
+  trans_correct (x |: Γ) e e' ->
+  trans_correct Γ (A0.Eproj x i y e) (A1.Eproj x l i y e').
+Proof.
+  unfold trans_correct, E, E'.
+  intros.
+  inv H3.
+  - exists 0, A1.OOT; split; simpl; auto.
+  - inv H4.
+    edestruct (G_get H1 y) as [v2 [Heqv2 HV]]; eauto.
+    destruct i0.
+    inv H2.
+    destruct v2;
+      simpl in HV;
+      destruct v0; try contradiction.
+    rename c0 into t'.
+    destruct HV as [Heqt HFvs]; subst.
+    destruct (Forall2_nth_error H11 HFvs) as [v' [Heqv' HFv]].
+    edestruct (H0 i0 (M.set x v ρ1) (M.set x v' ρ2)) with (j1 := c) as [j2 [r2 [He' HR]]]; eauto; try lia.
+    + eapply G_subset with (Γ2 := (x |: (A1.occurs_free (A1.Eproj x l i y e')))).
+      eapply G_set; eauto.
+      eapply G_mono with (S i0); eauto; try lia.
+      apply Included_refl.
+      apply A1.free_proj_k_subset.
+    + exists (S j2), r2; split; eauto.
 Qed.
 
 Lemma case_nil_compat Γ x l0:
@@ -811,12 +971,12 @@ Proof.
   induction H using trans_mut with (P0 := fun Γ l0 cl0 l1 cl1 tr =>
                                             trans_correct_case Γ cl0 cl1).
   - eapply ret_compat; auto.
-  - admit. (* eapply fun_compat; eauto. *)
-  - admit. (* eapply app_compat; eauto.*)
-  - admit.
+  - eapply fun_compat; eauto.
+  - eapply app_compat; eauto.
+  - eapply letapp_compat; eauto.
   - eapply constr_compat; eauto.
-  - admit. (* eapply proj_compat; eauto. *)
+  - eapply proj_compat; eauto.
   - eapply case_compat; eauto.
   - eapply case_nil_compat'; eauto.
   - eapply case_cons_compat'; eauto.
-Admitted.
+Qed.
