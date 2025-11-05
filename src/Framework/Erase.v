@@ -252,7 +252,7 @@ Proof.
       eapply A1.free_case_tl_subset; eauto.
 Qed.
 
-Theorem trans_complete :
+Theorem trans_total :
   forall e,
    exists e',
     trans (A1.occurs_free e) e e'.

@@ -14,7 +14,7 @@ Module Type Annotate.
 
   (* For any Annotate pass, if e is an invalid program,
      we can always annotate the entire program with the trivial annotation to make trans complete. *)
-  Parameter trans_complete :
+  Parameter trans_total :
     forall e1,
       exists e2,
         Annotate.trans (A0.occurs_free e1) e1 e2.

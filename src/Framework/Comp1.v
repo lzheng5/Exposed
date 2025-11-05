@@ -232,14 +232,14 @@ Module M (AM : Annotate).
       unfold Top_n, Cross.
       intros.
       exists e2; split.
-      - destruct (AM.trans_complete e2) as [e2' HA].
+      - destruct (AM.trans_total e2) as [e2' HA].
         exists e2'; split.
         + unfold C.Top_n, Cross.
           exists e2'; split.
           * exists e2; split; auto.
             eapply AM.top; eauto.
           * eapply C1.Top_n_refl; eauto.
-        + destruct (Erase.trans_complete e2') as [e2'' HE].
+        + destruct (Erase.trans_total e2') as [e2'' HE].
           erewrite AM.Erase_Annotate_id; eauto.
           eapply Erase.top; eauto.
       - eapply C0.Top_n_refl; eauto.

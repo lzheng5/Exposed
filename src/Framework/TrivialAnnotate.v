@@ -12,8 +12,6 @@ Module A1 := ANF.
 
 (* Trivial Web Annotation With A Single Exposed Web Id *)
 
-(* TODO: symmetric G *)
-
 Module M <: Annotate.
 
   Parameter w0 : web.
@@ -183,7 +181,7 @@ Module M <: Annotate.
       apply Included_refl.
   Qed.
 
-  Theorem trans_complete :
+  Theorem trans_total :
     forall e,
      exists e',
       trans (A0.occurs_free e) e e'.
