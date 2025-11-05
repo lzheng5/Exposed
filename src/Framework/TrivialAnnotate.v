@@ -803,6 +803,55 @@ Module M <: Annotate.
       destruct ex; auto.
   Qed.
 
+  Lemma letapp_compat Γ k k' xs x f :
+    (f \in Γ) ->
+    (FromList xs \subset Γ) ->
+    trans_correct (x |: Γ) k k' ->
+    trans_correct Γ (A0.Eletapp x f xs k) (A1.Eletapp x f w0 xs k').
+  Proof.
+    intros.
+    specialize (app_compat Γ xs f H H0); intros Ha.
+    unfold trans_correct, E, E' in *.
+    intros.
+
+    assert (HG' : G i Γ ρ1 (occurs_free (A1.Eapp f w0 xs)) ρ2).
+    {
+      eapply G_subset with (Γ2 := (occurs_free (A1.Eletapp x f w0 xs k'))); eauto.
+      apply Included_refl.
+      eapply free_app_letapp; eauto.
+    }
+
+    inv H4.
+    - exists 0, OOT; split; simpl; auto.
+    - inv H5.
+      + destruct (Ha true i ρ1 ρ2) with (j1 := (S c0)) (r1 := (A0.Res v)) as [j2 [r2 [Hr1 HR]]]; try lia; eauto.
+        * simpl in HR.
+          destruct r2; try contradiction.
+          rename w into v0.
+          inv Hr1.
+
+          edestruct (H1 ex (i - (S c0)) (M.set x v ρ1) (M.set x v0 ρ2)) with (j1 := c') as [j2 [r2 [Hk Rr]]]; eauto; try lia.
+          -- eapply G_subset with (Γ2 := (x |: (A1.occurs_free (A1.Eletapp x f w0 xs k')))).
+             eapply G_set; eauto.
+             apply G_mono with i; try lia; eauto.
+             apply Included_refl.
+             apply free_letapp_k_subset.
+          -- exists ((S c) + j2), r2; split.
+             ++ inv H4.
+                rewrite_math ((S c + j2) = S (c + j2)).
+                constructor; auto.
+                ** eapply BStep_letapp_Res; eauto.
+                   intros.
+                   destruct H20; auto.
+                   inv H7.
+                   split; auto.
+                ** destruct ex; auto.
+                   eapply R_exposed_res_r; eauto.
+             ++ apply R_mono with (i - S c0 - c'); try lia; auto.
+      + eexists; eexists; repeat split; eauto.
+        simpl; auto.
+  Qed.
+
   Lemma proj_compat Γ x i y e e' :
     (y \in Γ) ->
     trans_correct (x |: Γ) e e' ->
@@ -856,6 +905,54 @@ Module M <: Annotate.
       inv H6.
   Qed.
 
+  Lemma case_cons_compat Γ x t e e' cl cl':
+    (x \in Γ) ->
+    trans_correct Γ e e' ->
+    trans_correct Γ (A0.Ecase x cl) (A1.Ecase x w0 cl') ->
+    trans_correct Γ (A0.Ecase x ((t, e) :: cl)) (A1.Ecase x w0 ((t, e') :: cl')).
+  Proof.
+    unfold trans_correct, E, E'.
+    intros.
+    inv H4.
+    - exists 0, OOT; split; simpl; eauto.
+    - inv H5.
+      edestruct (G_get H2) as [v2 [Heqv2 HV]]; eauto.
+      destruct v2.
+      destruct i.
+      inv H3.
+      destruct v; simpl in HV;
+        destruct HV as [Hv2 [Hex HV]]; subst;
+        subst; try contradiction.
+      destruct HV as [Heqt HFvs]; subst.
+      assert (Hw : w = w0).
+      {
+        inv Hex.
+        apply Exposed_singleton; eauto.
+      }
+      subst.
+
+      inv H8.
+      + edestruct (H0 ex i ρ1 ρ2) with (j1 := c) as [j2 [r2 [He' HR]]]; eauto; try lia.
+        eapply G_subset with (Γ2 := (A1.occurs_free (A1.Ecase x w0 ((c0, e') :: cl')))); eauto.
+        eapply G_mono; eauto.
+        apply Included_refl.
+        apply A1.free_case_hd_subset.
+
+        exists (S j2), r2; split; eauto.
+        econstructor; eauto.
+        destruct ex; auto.
+        eapply R_exposed_res_r; eauto.
+      + edestruct (H1 ex (S i) ρ1 ρ2) with (j1 := S c) (r1 := r1) as [j2 [r2 [He' HR]]]; eauto; try lia.
+        eapply G_subset; eauto.
+        apply Included_refl.
+        apply A1.free_case_tl_subset; auto.
+
+        exists j2, r2; split; eauto.
+        inv He'; auto.
+        inv H4.
+        rewrite Heqv2 in H10; inv H10; eauto.
+  Qed.
+
   (* Fundamental Property *)
   Lemma fundamental_property {Γ e e'}:
     trans Γ e e' -> trans_correct Γ e e'.
@@ -865,12 +962,12 @@ Module M <: Annotate.
     - eapply ret_compat; auto.
     - eapply fun_compat; eauto.
     - eapply app_compat; eauto.
-    - admit.
+    - eapply letapp_compat; eauto.
     - eapply constr_compat; eauto.
     - eapply proj_compat; eauto.
     - eapply case_nil_compat; eauto.
-    - admit.
-  Admitted.
+    - eapply case_cons_compat; eauto.
+  Qed.
 
   (* Top Level *)
   Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
