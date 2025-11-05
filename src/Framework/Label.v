@@ -12,6 +12,8 @@ Module A1 := ANF1.
 
 (* Attach Unique Labels *)
 
+(* TODO: symmetric G *)
+
 (* Specification *)
 Inductive trans (Γ : A0.vars) : label -> A0.exp -> label -> A1.exp -> Prop :=
 | Trans_ret :
@@ -1212,4 +1214,85 @@ Proof.
     simpl in *; auto; try contradiction.
 
   edestruct (A1.bstep_fuel_deterministic w w0 Hstep2 Hstep2'); subst; eauto.
+Qed.
+
+(* Behavioral Refinement *)
+Inductive val_ref_ : A0.val -> A1.wval -> Prop :=
+| Ref_Vfun :
+  forall f1 ρ1 xs1 e1 l0 f2 ρ2 xs2 e2,
+    val_ref_ (A0.Vfun f1 ρ1 xs1 e1) (Tag l0 (A1.Vfun f2 ρ2 xs2 e2))
+
+| Ref_Vconstr_nil :
+  forall c l0,
+    val_ref_ (A0.Vconstr c []) (Tag l0 (A1.Vconstr c []))
+
+| Ref_Vconstr_cons :
+  forall c v1 v2 l0 vs1 vs2,
+    val_ref_ v1 v2 ->
+    val_ref_ (A0.Vconstr c vs1) (Tag l0 (A1.Vconstr c vs2)) ->
+    val_ref_ (A0.Vconstr c (v1 :: vs1)) (Tag l0 (A1.Vconstr c (v2 :: vs2))).
+
+Hint Constructors val_ref_ : core.
+
+Definition val_ref := val_ref_.
+
+Hint Unfold val_ref : core.
+
+Lemma val_ref_Vconstr c l0 vs1 vs2 :
+  Forall2 val_ref vs1 vs2 ->
+  val_ref (A0.Vconstr c vs1) (Tag l0 (A1.Vconstr c vs2)).
+Proof.
+  intros.
+  induction H; simpl; auto.
+Qed.
+
+Theorem V_val_ref {v1 v2} :
+  (forall i, V i v1 v2) ->
+  val_ref v1 v2.
+Proof.
+  unfold val_ref.
+  revert v2.
+  induction v1 using val_ind'; intros; simpl.
+  - specialize (H 0).
+    destruct v2.
+    rename H into HV.
+    destruct v; try contradiction.
+    destruct HV as [Hc Hlen]; subst.
+
+    symmetry in Hlen.
+    apply length_zero_iff_nil in Hlen; subst; auto.
+  - destruct v2.
+    pose proof (H 0) as H0; simpl in *.
+    rename H0 into HV.
+    destruct v; try contradiction.
+    destruct HV as [Hc Hlen]; subst.
+
+    destruct l1; simpl in *; inv Hlen.
+
+    assert (HV' : forall i, V i v1 t /\ V i (A0.Vconstr c l) (Tag l0 (A1.Vconstr c l1))).
+    {
+      intros.
+      specialize (H (S i)); simpl in *.
+      destruct H as [_ HFV]; subst.
+      inv HFV.
+      split; auto.
+      destruct i; simpl in *;
+        repeat (split; auto);
+        try (eapply V_mono_Forall with (S i); eauto).
+    }
+
+    assert (HV0 : forall i, V i v1 t) by (intros; destruct (HV' i); auto).
+    assert (HV1 : forall i, V i (A0.Vconstr c l) (Tag l0 (A1.Vconstr c l1))) by (intros; destruct (HV' i); auto).
+
+    auto.
+  - specialize (H 0); simpl in *.
+    destruct v2; try contradiction; auto.
+    destruct v; try contradiction; auto.
+Qed.
+
+Corollary R_res_val_ref {v1 v2} :
+  (forall i, R i (A0.Res v1) (A1.Res v2)) ->
+  val_ref v1 v2.
+Proof.
+  intros; eapply V_val_ref; eauto.
 Qed.

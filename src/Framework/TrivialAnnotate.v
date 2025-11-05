@@ -12,6 +12,8 @@ Module A1 := ANF.
 
 (* Trivial Web Annotation With A Single Exposed Web Id *)
 
+(* TODO: symmetric G *)
+
 Module M <: Annotate.
 
   Parameter w0 : web.
