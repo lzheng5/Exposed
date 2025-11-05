@@ -307,6 +307,45 @@ Proof.
     Pos.order.
 Qed.
 
+Lemma trans_exp_inv {Γ l e l' e'} :
+  trans Γ l e l' e' ->
+  (A1.occurs_free e') \subset (A0.occurs_free e).
+Proof.
+  intros H.
+  induction H using trans_mut with (P0 := fun Γ l0 cl0 l1 cl1 tr =>
+                                            (A1.occurs_free_case cl1) \subset (A0.occurs_free_case cl0));
+    unfold Ensembles.Included, Ensembles.In in *;
+    simpl; intros; auto.
+  - inv H; auto.
+  - inv H1; auto.
+  - inv H; auto.
+  - inv H0; auto.
+  - inv H0; auto.
+  - inv H0; auto.
+  - inv H; auto.
+    + inv t.
+      assert (A0.occurs_free_case ((c, e1) :: cl1) x0).
+      {
+        eapply IHtrans; simpl; eauto.
+        eapply Union_introl; eauto.
+      }
+      eapply A0.occurs_free_case_compat; eauto.
+    + inv t.
+      eapply A1.occurs_free_case_inv in H4; eauto.
+      inv H4; subst; auto.
+      assert (A0.occurs_free_case ((c, e1) :: cl1) x0).
+      {
+        eapply IHtrans; simpl; eauto.
+        eapply Union_intror; eauto.
+      }
+      eapply A0.occurs_free_case_compat; eauto.
+  - inv H0.
+    + eapply IHtrans in H1; eauto.
+      left; auto.
+    + eapply IHtrans0 in H1; eauto.
+      right; auto.
+Qed.
+
 (* Alternative Simpler Specification
    Note this is directly based on `unique_label` *)
 Inductive trans' (Γ : A0.vars) : A0.exp -> A1.exp -> Prop :=
@@ -1076,4 +1115,67 @@ Proof.
   - eapply case_compat; eauto.
   - eapply case_nil_compat'; eauto.
   - eapply case_cons_compat'; eauto.
+Qed.
+
+(* Top Level *)
+Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
+  Γ2 \subset Γ1 /\
+  forall x,
+    (x \in Γ1) ->
+    exists v1 v2,
+      M.get x ρ1 = Some v1 /\
+      M.get x ρ2 = Some v2 /\
+      V i v1 v2.
+
+Lemma G_top_subset i Γ1 ρ1 Γ2 ρ2 Γ3 Γ4 :
+  G_top i Γ1 ρ1 Γ2 ρ2 ->
+  Γ3 \subset Γ1 ->
+  Γ4 \subset Γ3 ->
+  G_top i Γ3 ρ1 Γ4 ρ2.
+Proof.
+  unfold G_top.
+  intros.
+  destruct H as [Hs HG].
+  repeat (split; auto).
+Qed.
+
+Lemma G_top_G : forall {i Γ1 ρ1 Γ2 ρ2},
+    G_top i Γ1 ρ1 Γ2 ρ2 ->
+    G i Γ1 ρ1 Γ2 ρ2.
+Proof.
+  unfold G_top, G.
+  intros.
+  destruct H as [HΓ HG].
+  unfold Ensembles.Included, Ensembles.In, Dom_map in *.
+  edestruct HG as [v1' [v2 [Heqv1 [Heqv2 HV]]]]; eauto.
+  rewrite Heqv1 in H1; inv H1; eauto.
+Qed.
+
+Definition trans_correct_top etop etop' :=
+  A1.occurs_free etop' \subset A0.occurs_free etop /\
+  forall i ρ1 ρ2,
+    G_top i (A0.occurs_free etop) ρ1 (A1.occurs_free etop') ρ2 ->
+    E i ρ1 etop ρ2 etop'.
+
+Lemma trans_correct_top_subset e1 e2 :
+  trans_correct_top e1 e2 ->
+  A1.occurs_free e2 \subset A0.occurs_free e1.
+Proof.
+  unfold trans_correct_top.
+  intros.
+  inv H; auto.
+Qed.
+
+Theorem top l etop l' etop':
+  trans (A0.occurs_free etop) l etop l' etop' ->
+  trans_correct_top etop etop'.
+Proof.
+  unfold trans_correct_top.
+  intros H.
+  specialize (fundamental_property H);
+    unfold trans_correct; intros.
+  split; intros.
+  - eapply trans_exp_inv; eauto.
+  - eapply H0; eauto.
+    eapply G_top_G; eauto.
 Qed.

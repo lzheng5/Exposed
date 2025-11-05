@@ -543,6 +543,46 @@ Proof.
   - apply IHcl; auto.
 Qed.
 
+Fixpoint occurs_free_case (cl : list (ctor_tag * exp)) : vars :=
+  match cl with
+  | [] => (Empty_set _)
+  | ((c, e) :: cl) => (occurs_free e) :|: (occurs_free_case cl)
+  end.
+
+Lemma occurs_free_case_compat cl :
+  forall y x l,
+    (y \in (occurs_free_case cl)) ->
+    (y \in (occurs_free (Ecase x l cl))).
+Proof.
+  unfold Ensembles.In.
+  induction cl; simpl; intros; auto.
+  - inv H.
+  - destruct a.
+    inv H; auto.
+Qed.
+
+Lemma occurs_free_case_inv cl :
+  forall y x l,
+    (y \in (occurs_free (Ecase x l cl))) ->
+    (y = x \/ (y \in (occurs_free_case cl))).
+Proof.
+  unfold Ensembles.In.
+  induction cl; simpl; intros; auto.
+  - inv H.
+    left; auto.
+  - destruct a.
+    inv H; auto.
+    + right; left; auto.
+    + eapply IHcl in H6; eauto; inv H6.
+      * left; auto.
+      * right; right; auto.
+Qed.
+
+(* Linking *)
+Definition link f x l1 e1 l2 e2 : exp :=
+  Efun f l1 [] e1
+    (Eletapp x f l2 [] e2).
+
 (* Labels *)
 Inductive has_label : exp -> labels :=
 | Lab_fun1 :
