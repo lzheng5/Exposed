@@ -909,8 +909,7 @@ Proof.
 
         -- exists ((S c) + j2), r2; split.
            ++ inv H4.
-              assert (Hc : (S c + j2) = S (c + j2)) by lia.
-              rewrite Hc.
+              rewrite_math ((S c + j2) = S (c + j2)).
               constructor; auto.
               eapply BStep_letapp_Res; eauto.
            ++ apply R_mono with (i - S c0 - c'); try lia; auto.

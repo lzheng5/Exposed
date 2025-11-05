@@ -860,8 +860,7 @@ Module Exposed (LM : LSig) (VT : VTrans LM).
              apply free_letapp_k_subset.
           -- exists ((S c) + j2), r2; split.
              ++ inv H5.
-                assert (Hc : (S c + j2) = S (c + j2)) by lia.
-                rewrite Hc.
+                rewrite_math ((S c + j2) = S (c + j2)).
                 constructor; auto.
                 ** eapply BStep_letapp_Res; eauto.
                    intros.

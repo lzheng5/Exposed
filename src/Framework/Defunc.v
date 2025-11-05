@@ -984,8 +984,7 @@ Proof.
            }
            constructor; auto.
 
-           assert (Hj : (S (j2 + j3)) = j2 + (S j3)) by lia.
-           rewrite Hj.
+           rewrite_math ((S (j2 + j3)) = j2 + (S j3)).
            econstructor; eauto.
            rewrite M.gss; auto.
            rewrite get_list_set_neq; auto.

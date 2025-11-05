@@ -349,8 +349,7 @@ Section Refinement.
             inv H4; inv H7.
             repeat (split; auto).
             + destruct v; destruct y.
-              assert (i - i = 0) by lia.
-              rewrite H0 in *.
+              rewrite_math (i - i = 0).
               simpl in H3.
               destruct H3 as [Hv [Hv0 [Hw HV]]]; subst.
               split; auto.
@@ -366,8 +365,7 @@ Section Refinement.
               apply H6 in H0.
               inv H0.
               inv H13; auto.
-            + assert (i - i = 0) by lia.
-              rewrite H0 in *.
+            + rewrite_math (i - i = 0).
               eapply V_mono_Forall with (S i); eauto; lia.
         }
 

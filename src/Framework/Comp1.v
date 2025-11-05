@@ -220,8 +220,8 @@ Module M (AM : Annotate).
       intros.
       assert (Top_n (n + n') (m + 0) (p + 0) (A0.link f x e1 e1') (A0.link f x e2 e2')).
       eapply Top_n_preserves_linking; eauto.
-      assert (Hm : m + 0 = m) by lia; rewrite Hm in *.
-      assert (Hp : p + 0 = p) by lia; rewrite Hp in *.
+      rewrite_math (m + 0 = m).
+      rewrite_math (p + 0 = p).
       auto.
     Qed.
 

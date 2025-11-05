@@ -653,8 +653,7 @@ Proof.
     eapply V_wf_val_Forall_l; eauto.
   }
 
-  assert (Hmath : (i - (i - j) - (S (S (c + c')))) = (((i - (i - j) - 2 - c) - c'))) by lia.
-  rewrite Hmath; clear Hmath.
+  rewrite_math ((i - (i - j) - (S (S (c + c')))) = (((i - (i - j) - 2 - c) - c'))).
 
   eapply (He false ((i - (i - j) - 2 - c)) ρ3' ρ4) with (j1 := c'); eauto; try lia.
   eapply G_subset with (Γ1 := (FromList (live_args ys bs) :|: (f_work |: Γ1))) (Γ2 := (FromList (live_args ys bs) :|: (f_work |: Γ2))); eauto.
@@ -926,8 +925,7 @@ Proof.
   edestruct (HE c r1) as [j2 [r2 [He HR]]]; eauto; try lia.
 
   rewrite normalize_step in *; try lia.
-  assert (Hmath : S i - S c = i - c) by lia.
-  rewrite Hmath; clear Hmath.
+  rewrite_math (S i - S c = i - c).
 
   assert (if ex then exposed_res r2 else True).
   {
@@ -945,8 +943,7 @@ Proof.
   constructor; auto.
   constructor; auto.
   constructor; auto.
-  assert (Hmath : S (S (S (S j2))) = 2 + (S (S j2))) by lia.
-  rewrite Hmath; clear Hmath.
+  rewrite_math (S (S (S (S j2))) = 2 + (S (S j2))).
 
   eapply BStep_letapp_Res with (v := (Tag w_wrap
                                         (Vfun f_wrap

@@ -618,8 +618,7 @@ Proof.
         -- exists (j1 + j2), r2; split.
            ++ inv Hap.
               inv H6.
-              assert (Hcj : (S c + j2) = S (c + j2)) by lia.
-              rewrite Hcj.
+              rewrite_math ((S c + j2) = S (c + j2)).
               constructor; auto.
               ** eapply BStep_letapp_Res; eauto.
                  intros.

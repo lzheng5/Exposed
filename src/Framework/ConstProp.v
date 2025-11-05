@@ -1228,13 +1228,12 @@ Proof.
         -- exists (j1 + j2), r2; split.
            ++ inv Hap.
               inv H9.
-              assert ((S c + j2) = S (c + j2)) by lia.
-              rewrite H9.
+              rewrite_math ((S c + j2) = S (c + j2)).
               constructor; auto.
               ** eapply BStep_letapp_Res; eauto.
                  intros.
                  destruct H27; auto.
-                 inv H14.
+                 inv H13.
                  split; auto.
               ** destruct ex; auto.
                  eapply R_exposed; eauto.
@@ -1296,8 +1295,7 @@ Proof.
            apply free_letapp_k_subset.
         -- exists ((S c) + j2), r2; split.
            ++ inv H7.
-              assert (Hc : (S c + j2) = S (c + j2)) by lia.
-              rewrite Hc.
+              rewrite_math ((S c + j2) = S (c + j2)).
               constructor; auto.
               ** eapply BStep_letapp_Res; eauto.
                  intros.

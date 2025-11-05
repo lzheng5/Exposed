@@ -435,8 +435,7 @@ Proof.
         -- exists (j1 + j2), r2; split.
            ++ inv Hap.
               inv H2.
-              assert (Hj : (S c + j2) = S (c + j2)) by lia.
-              rewrite Hj; eauto.
+              rewrite_math ((S c + j2) = S (c + j2)); eauto.
            ++ apply R_mono with (i - S c0 - c'); try lia; auto.
     + destruct (Ha (S c) OOT) as [j1 [ra [Hap Rra]]]; try lia; eauto.
       exists j1, ra.

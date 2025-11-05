@@ -253,8 +253,7 @@ Module SemSubstDPE <: SemSubstSig DPEWrap.
     eapply live_args_length; eauto.
     rewrite (set_lists_length_eq _ _ _ _ H6); auto.
 
-    assert (Hmath : (i - (i - j) - S c) = (i - (i - (j - 1)) - c)) by lia.
-    rewrite Hmath.
+    rewrite_math ((i - (i - j) - S c) = (i - (i - (j - 1)) - c)).
 
     edestruct (HV_work (j - 1) vs (live_args vs2 bs) ρ'' ρ0') with (j1 := c) as [j2 [r2 [He0 HR]]]; eauto; try lia.
     - intros; contradiction.
