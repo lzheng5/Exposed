@@ -1087,6 +1087,16 @@ Proof.
   eapply G_subset; eauto.
 Qed.
 
+Lemma G_G_top i Γ1 ρ1 Γ2 ρ2 :
+  G i Γ1 ρ1 ρ2 ->
+  Γ2 \subset Γ1 ->
+  G_top i Γ1 ρ1 Γ2 ρ2.
+Proof.
+  unfold G, G_top.
+  intros.
+  repeat (split; auto); intros.
+Qed.
+
 Lemma G_top_G : forall {i Γ1 ρ1 Γ2 ρ2},
     G_top i Γ1 ρ1 Γ2 ρ2 ->
     G i Γ1 ρ1 ρ2.
@@ -1111,6 +1121,40 @@ Proof.
   unfold trans_correct_top.
   intros.
   inv H; auto.
+Qed.
+
+Lemma trans_correct_subset Γ1 Γ2 e1 e2 :
+  trans_correct Γ1 e1 e2 ->
+  Γ1 \subset Γ2 ->
+  trans_correct Γ2 e1 e2.
+Proof.
+  unfold trans_correct.
+  intros.
+  eapply H; eauto.
+  eapply G_subset; eauto.
+Qed.
+
+Lemma trans_correct_top_trans_correct e1 e2 :
+  trans_correct_top e1 e2 ->
+  trans_correct (A0.occurs_free e1) e1 e2.
+Proof.
+  unfold trans_correct_top, trans_correct.
+  intros.
+  destruct H as [HS H].
+  eapply H; eauto.
+  eapply G_G_top; eauto.
+Qed.
+
+Lemma trans_correct_trans_correct_top e1 e2 :
+  A1.occurs_free e2 \subset A0.occurs_free e1 ->
+  trans_correct (A0.occurs_free e1) e1 e2 ->
+  trans_correct_top e1 e2.
+Proof.
+  unfold trans_correct_top, trans_correct.
+  intros.
+  split; auto; intros.
+  eapply H0; eauto.
+  eapply G_top_G; eauto.
 Qed.
 
 Theorem top l etop l' etop':
@@ -1240,4 +1284,52 @@ Corollary R_res_val_ref {v1 v2} :
   val_ref v1 v2.
 Proof.
   intros; eapply V_val_ref; eauto.
+Qed.
+
+(* Linking Preservation *)
+Lemma preserves_linking f l1 l2 x e1 e2 e1' e2' :
+  trans_correct (A0.occurs_free e1) e1 e2 ->
+  trans_correct (A0.occurs_free e1') e1' e2' ->
+  trans_correct (A0.occurs_free (A0.link f x e1 e1')) (A0.link f x e1 e1') (A1.link f x l1 e2 l2 e2').
+Proof.
+  unfold A0.link, A1.link.
+  intros.
+  eapply fun_compat; eauto.
+  - eapply trans_correct_subset; eauto.
+    eapply A0.free_fun_e_subset; eauto.
+  - eapply letapp_compat; eauto.
+    + rewrite FromList_nil.
+      eapply Included_Empty_set; eauto.
+    + eapply trans_correct_subset; eauto.
+      eapply Included_trans with (s2 := (x |: (A0.occurs_free (A0.Eletapp x f [] e1')))); eauto.
+      * eapply A0.free_letapp_k_subset; eauto.
+      * eapply Included_Union_compat; eauto.
+        apply Included_refl.
+        eapply A0.free_fun_k_subset; eauto.
+Qed.
+
+Lemma free_link_subset_compat f x e1 e1' e2 e2' l1 l2:
+  A1.occurs_free e2 \subset A0.occurs_free e1 ->
+  A1.occurs_free e2' \subset A0.occurs_free e1' ->
+  A1.occurs_free (A1.link f x l1 e2 l2 e2') \subset A0.occurs_free (A0.link f x e1 e1').
+Proof.
+  unfold A1.link, A0.link.
+  unfold Ensembles.Included, Ensembles.In.
+  intros.
+  inv H1; auto.
+  inv H9; eauto.
+Qed.
+
+Lemma preserves_linking_top f l1 l2 x e1 e2 e1' e2' :
+  trans_correct_top e1 e2 ->
+  trans_correct_top e1' e2' ->
+  trans_correct_top (A0.link f x e1 e1') (A1.link f x l1 e2 l2 e2').
+Proof.
+  intros.
+  eapply trans_correct_trans_correct_top; eauto.
+  - eapply free_link_subset_compat; eauto;
+      eapply trans_correct_top_subset; eauto.
+  - eapply trans_correct_top_trans_correct in H; eauto.
+    eapply trans_correct_top_trans_correct in H0; eauto.
+    eapply preserves_linking; eauto.
 Qed.
