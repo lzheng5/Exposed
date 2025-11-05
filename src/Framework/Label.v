@@ -12,73 +12,6 @@ Module A1 := ANF1.
 
 (* Attach Unique Labels *)
 
-(*
-(* Note this is directly based on `unique_label`
-   However, this isn't sufficient to show linking compat *)
-Inductive trans (Γ : A0.vars) : A0.exp -> A1.exp -> Prop :=
-| Trans_ret :
-  forall {x},
-    (x \in Γ) ->
-    trans Γ (A0.Eret x) (A1.Eret x)
-
-| Trans_fun :
-  forall {f xs e0 k0 e1 k1 l},
-    (~ l \in has_label e1) ->
-    (~ l \in has_label k1) ->
-    Disjoint _ (has_label e1) (has_label k1) ->
-    trans (FromList xs :|: (f |: Γ)) e0 e1 ->
-    trans (f |: Γ) k0 k1 ->
-    trans Γ (A0.Efun f xs e0 k0) (A1.Efun f l xs e1 k1)
-
-| Trans_app :
-  forall {f xs l},
-    trans Γ (A0.Eapp f xs) (A1.Eapp f l xs)
-
-| Trans_letapp :
-  forall {x f xs k0 k1 l},
-    (~ l \in has_label k1) ->
-    (FromList xs \subset Γ) ->
-    trans (x |: Γ) k0 k1 ->
-    trans Γ (A0.Eletapp x f xs k0) (A1.Eletapp x f l xs k1)
-
-| Trans_constr :
-  forall {x t xs k0 k1 l},
-    (~ l \in has_label k1) ->
-    (FromList xs \subset Γ) ->
-    trans (x |: Γ) k0 k1 ->
-    trans Γ (A0.Econstr x t xs k0) (A1.Econstr x l t xs k1)
-
-| Trans_proj :
-  forall {x y k0 k1 n l},
-    (~ l \in has_label k1) ->
-    (y \in Γ) ->
-    trans (x |: Γ) k0 k1 ->
-    trans Γ (A0.Eproj x n y k0) (A1.Eproj x l n y k1)
-
-| Trans_case_nil :
-  forall {x l},
-    trans Γ (A0.Ecase x []) (A1.Ecase x l [])
-
-| Trans_case_cons :
-  forall {x e0 e1 c cl0 cl1 l},
-    (~ l \in has_label e1) ->
-    Disjoint _ (has_label e1) (has_label (A1.Ecase x l cl1)) ->
-    (x \in Γ) ->
-    trans Γ e0 e1 ->
-    trans Γ (A0.Ecase x cl0) (A1.Ecase x l cl1) ->
-    trans Γ (A0.Ecase x ((c, e0) :: cl0)) (A1.Ecase x l ((c, e1) :: cl1)).
-
-Hint Constructors trans : core.
-
-Lemma trans_unique_label Γ e0 e1 :
-  trans Γ e0 e1 ->
-  unique_label e1.
-Proof.
-  intro H.
-  induction H; intros; eauto.
-Qed.
-*)
-
 (* Specification *)
 Inductive trans (Γ : A0.vars) : label -> A0.exp -> label -> A1.exp -> Prop :=
 | Trans_ret :
@@ -373,6 +306,170 @@ Proof.
     eapply trans_case_unique_label_case_inv in t0; eauto; inv t0.
     Pos.order.
 Qed.
+
+(* Alternative Simpler Specification
+   Note this is directly based on `unique_label` *)
+Inductive trans' (Γ : A0.vars) : A0.exp -> A1.exp -> Prop :=
+| Trans'_ret :
+  forall {x},
+    (x \in Γ) ->
+    trans' Γ (A0.Eret x) (A1.Eret x)
+
+| Trans'_fun :
+  forall {f xs e0 k0 e1 k1 l},
+    (~ l \in has_label e1) ->
+    (~ l \in has_label k1) ->
+    Disjoint _ (has_label e1) (has_label k1) ->
+    trans' (FromList xs :|: (f |: Γ)) e0 e1 ->
+    trans' (f |: Γ) k0 k1 ->
+    trans' Γ (A0.Efun f xs e0 k0) (A1.Efun f l xs e1 k1)
+
+| Trans'_app :
+  forall {f xs l},
+    trans' Γ (A0.Eapp f xs) (A1.Eapp f l xs)
+
+| Trans'_letapp :
+  forall {x f xs k0 k1 l},
+    (~ l \in has_label k1) ->
+    (FromList xs \subset Γ) ->
+    trans' (x |: Γ) k0 k1 ->
+    trans' Γ (A0.Eletapp x f xs k0) (A1.Eletapp x f l xs k1)
+
+| Trans'_constr :
+  forall {x t xs k0 k1 l},
+    (~ l \in has_label k1) ->
+    (FromList xs \subset Γ) ->
+    trans' (x |: Γ) k0 k1 ->
+    trans' Γ (A0.Econstr x t xs k0) (A1.Econstr x l t xs k1)
+
+| Trans'_proj :
+  forall {x y k0 k1 n l},
+    (~ l \in has_label k1) ->
+    (y \in Γ) ->
+    trans' (x |: Γ) k0 k1 ->
+    trans' Γ (A0.Eproj x n y k0) (A1.Eproj x l n y k1)
+
+| Trans'_case :
+  forall {x cl0 cl1 l L},
+    (~ l \in L) ->
+    (x \in Γ) ->
+    trans_case' Γ cl0 cl1 L ->
+    trans' Γ (A0.Ecase x cl0) (A1.Ecase x l cl1)
+
+with trans_case' (Γ : A0.vars) : list (A0.ctor_tag * A0.exp) -> list (A1.ctor_tag * A1.exp) -> labels -> Prop :=
+| Trans_case'_nil :
+  trans_case' Γ [] [] (Empty_set _)
+
+| Trans_case'_cons :
+  forall {e0 e1 c cl0 cl1 L},
+    Disjoint _ (has_label e1) L ->
+    trans' Γ e0 e1 ->
+    trans_case' Γ cl0 cl1 L ->
+    trans_case' Γ ((c, e0) :: cl0) ((c, e1) :: cl1) ((has_label e1) :|: L).
+
+Hint Constructors trans' : core.
+Hint Constructors trans_case' : core.
+
+Scheme trans'_mut := Induction for trans' Sort Prop
+with trans_case'_mut := Induction for trans_case' Sort Prop.
+
+Lemma trans_case_trans_case'_inv Γ l1 cl1 l2 cl2:
+  trans_case Γ l1 cl1 l2 cl2 ->
+  forall L,
+    trans_case' Γ cl1 cl2 L ->
+    forall l,
+      (l \in L) ->
+      (Pos.le l1 l /\ Pos.lt l l2).
+Proof.
+  intro H.
+  induction H; simpl; intros.
+  - inv H.
+    inv H0.
+  - inv H1.
+    inv H2.
+    + eapply trans_inv in H; eauto; inv H.
+      eapply trans_case_le in H0; eauto.
+      split; Pos.order.
+    + assert (Hl : (l1 <= l < l2)%positive) by (eapply IHtrans_case; eauto).
+      inv Hl.
+      apply trans_le in H; eauto.
+      split; Pos.order.
+Qed.
+
+Lemma trans_trans' Γ l0 e0 l1 e1 :
+  trans Γ l0 e0 l1 e1 ->
+  trans' Γ e0 e1.
+Proof.
+  intro H.
+  induction H using trans_mut with (P0 := fun Γ l0 cl0 l1 cl1 tr =>
+                                            exists L,
+                                              trans_case' Γ cl0 cl1 L); eauto.
+  - econstructor; eauto.
+    + intro Hc.
+      eapply trans_inv in H; eauto; inv H.
+      pose proof (next_label_lt l0).
+      Pos.order.
+    + intros Hc.
+      eapply trans_inv in H0; eauto; inv H0.
+      pose proof (next_label_lt l0).
+      eapply trans_le in H.
+      Pos.order.
+    + constructor; intros.
+      intros Hc.
+      inv Hc.
+      eapply trans_inv in H; eauto; inv H.
+      eapply trans_inv in H0; eauto; inv H0.
+      Pos.order.
+  - econstructor; eauto.
+    intros Hc.
+    eapply trans_inv in H; eauto; inv H.
+    pose proof (next_label_lt l0).
+    Pos.order.
+  - econstructor; eauto.
+    intros Hc.
+    eapply trans_inv in H; eauto; inv H.
+    pose proof (next_label_lt l0).
+    Pos.order.
+  - econstructor; eauto.
+    intros Hc.
+    eapply trans_inv in H; eauto; inv H.
+    pose proof (next_label_lt l0).
+    Pos.order.
+  - destruct IHtrans as [L HU].
+    econstructor; eauto.
+    intros Hc.
+    eapply trans_case_trans_case'_inv in t; eauto; inv t.
+    pose proof (next_label_lt l0); Pos.order.
+  - destruct IHtrans0 as [L HU].
+    exists ((has_label e1) :|: L).
+    econstructor; eauto.
+    constructor; intros; intro Hc.
+    inv Hc.
+    eapply trans_inv in H; eauto; inv H.
+    eapply trans_case_trans_case'_inv in t0; eauto; inv t0.
+    Pos.order.
+Qed.
+
+Lemma trans'_unique_label Γ e0 e1 :
+  trans' Γ e0 e1 ->
+  unique_label e1.
+Proof.
+  intro H.
+  induction H using trans'_mut with (P0 := fun Γ cl0 cl1 L tr =>
+                                             unique_label_case cl1 L);
+    intros; eauto.
+Qed.
+
+Theorem trans_unique_label' Γ l1 e1 l2 e2 :
+  trans Γ l1 e1 l2 e2 ->
+  unique_label e2.
+Proof.
+  intros.
+  eapply trans'_unique_label; eauto.
+  eapply trans_trans'; eauto.
+Qed.
+
+(* TODO: use trans' as default spec *)
 
 (* Cross-language Logical Relations *)
 Definition R' (P : nat -> A0.val -> A1.wval -> Prop) (i : nat) (r1 : A0.res) (r2 : A1.res) :=
