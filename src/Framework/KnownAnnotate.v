@@ -144,7 +144,29 @@ Section Spec.
       (FromList xs \subset Γ) ->
       trans_ Γ (A0.Eapp f xs) (A1.Eapp f w0 xs)
 
-  (* TODO: letapp *)
+  | Trans_letapp_known :
+    forall {x f w xs k k'},
+      K ! f = Some w ->
+      (~ w \in Exposed) ->
+      Disjoint _ (FromList xs) (Dom_map K) ->
+      K ! x = None ->
+
+      (f \in Γ) ->
+      (FromList xs \subset Γ) ->
+      trans_ (x |: Γ) k k' ->
+      trans_ Γ (A0.Eletapp x f xs k) (A1.Eletapp x f w xs k')
+
+  | Trans_letapp_unknown :
+    forall {x f xs k k'},
+      K ! f = None ->
+      Disjoint _ (FromList xs) (Dom_map K) ->
+      K ! x = None ->
+
+      (f \in Γ) ->
+      (FromList xs \subset Γ) ->
+      trans_ (x |: Γ) k k' ->
+      trans_ Γ (A0.Eletapp x f xs k) (A1.Eletapp x f w0 xs k')
+
   (* data webs are all exposed *)
 
   | Trans_constr :
@@ -197,6 +219,8 @@ Section Spec.
     - inv H3; auto.
     - inv H4; auto.
     - inv H3; auto.
+    - inv H6; auto.
+    - inv H5; auto.
     - inv H3; auto.
     - inv H3; auto.
     - inv H1; auto.
@@ -948,6 +972,117 @@ Section Spec.
         destruct (exposed_reflect w0); try contradiction; auto.
   Qed.
 
+  Lemma letapp_known_compat Γ k k' xs x w f :
+    K ! f = Some w ->
+    (~ w \in Exposed) ->
+    Disjoint _ (FromList xs) (Dom_map K) ->
+    K ! x = None ->
+
+    (f \in Γ) ->
+    (FromList xs \subset Γ) ->
+    trans_correct (x |: Γ) k k' ->
+    trans_correct Γ (A0.Eletapp x f xs k) (A1.Eletapp x f w xs k').
+  Proof.
+    intros HKf Hw HKxs HKx.
+    intros.
+    specialize (app_known_compat Γ xs f w HKf Hw HKxs H H0); intros Ha.
+    unfold trans_correct, E, E' in *.
+    intros.
+
+    assert (HG' : G i Γ ρ1 (occurs_free (A1.Eapp f w xs)) ρ2).
+    {
+      eapply G_subset with (Γ2 := (occurs_free (A1.Eletapp x f w xs k'))); eauto.
+      apply Included_refl.
+      eapply free_app_letapp; eauto.
+    }
+
+    inv H5.
+    - exists 0, OOT; split; simpl; auto.
+    - inv H6.
+      + destruct (Ha i ρ1 ρ2) with (j1 := (S c0)) (r1 := (A0.Res v)) as [j2 [r2 [Hr1 HR]]]; try lia; eauto.
+        * simpl in HR.
+          destruct r2; try contradiction.
+          rename w1 into v0.
+          inv Hr1.
+
+          edestruct (H1 (i - (S c0)) (M.set x v ρ1) (M.set x v0 ρ2)) with (j1 := c') as [j2 [r2 [Hk Rr]]]; eauto; try lia.
+          -- eapply G_subset with (Γ2 := (x |: (A1.occurs_free (A1.Eletapp x f w xs k')))).
+             eapply G_set; eauto.
+             apply G_mono with i; try lia; eauto.
+             eapply binding_inv_exposed; eauto.
+             inv H6; auto.
+             apply Included_refl.
+             apply free_letapp_k_subset.
+          -- exists ((S c) + j2), r2; split.
+             ++ inv H5.
+                rewrite_math ((S c + j2) = S (c + j2)).
+                constructor; auto.
+                ** eapply BStep_letapp_Res; eauto.
+                   intros.
+                   destruct H21; auto.
+                   inv H8.
+                   split; auto.
+                ** eapply bstep_fuel_exposed_inv; eauto.
+             ++ apply R_mono with (i - S c0 - c'); try lia; auto.
+      + eexists; eexists; repeat split; eauto.
+        simpl; auto.
+  Qed.
+
+  Lemma letapp_unknown_compat Γ k k' xs x f :
+    K ! f = None ->
+    Disjoint _ (FromList xs) (Dom_map K) ->
+    K ! x = None ->
+
+    (f \in Γ) ->
+    (FromList xs \subset Γ) ->
+    trans_correct (x |: Γ) k k' ->
+    trans_correct Γ (A0.Eletapp x f xs k) (A1.Eletapp x f w0 xs k').
+  Proof.
+    intros HKf HKxs HKx.
+    intros.
+    specialize (app_unknown_compat Γ xs f HKf HKxs H H0); intros Ha.
+    unfold trans_correct, E, E' in *.
+    intros.
+
+    assert (HG' : G i Γ ρ1 (occurs_free (A1.Eapp f w0 xs)) ρ2).
+    {
+      eapply G_subset with (Γ2 := (occurs_free (A1.Eletapp x f w0 xs k'))); eauto.
+      apply Included_refl.
+      eapply free_app_letapp; eauto.
+    }
+
+    inv H5.
+    - exists 0, OOT; split; simpl; auto.
+    - inv H6.
+      + destruct (Ha i ρ1 ρ2) with (j1 := (S c0)) (r1 := (A0.Res v)) as [j2 [r2 [Hr1 HR]]]; try lia; eauto.
+        * simpl in HR.
+          destruct r2; try contradiction.
+          rename w into v0.
+          inv Hr1.
+
+          edestruct (H1 (i - (S c0)) (M.set x v ρ1) (M.set x v0 ρ2)) with (j1 := c') as [j2 [r2 [Hk Rr]]]; eauto; try lia.
+          -- eapply G_subset with (Γ2 := (x |: (A1.occurs_free (A1.Eletapp x f w0 xs k')))).
+             eapply G_set; eauto.
+             apply G_mono with i; try lia; eauto.
+             eapply binding_inv_exposed; eauto.
+             inv H6; auto.
+             apply Included_refl.
+             apply free_letapp_k_subset.
+          -- exists ((S c) + j2), r2; split.
+             ++ inv H5.
+                rewrite_math ((S c + j2) = S (c + j2)).
+                constructor; auto.
+                ** eapply BStep_letapp_Res; eauto.
+                   intros.
+                   destruct H21; auto.
+                   inv H8.
+                   split; auto.
+                ** eapply bstep_fuel_exposed_inv; eauto.
+             ++ apply R_mono with (i - S c0 - c'); try lia; auto.
+      + eexists; eexists; repeat split; eauto.
+        simpl; auto.
+  Qed.
+
   Lemma constr_compat Γ x t xs k k' :
     K ! x = None ->
     Disjoint _ (FromList xs) (Dom_map K) ->
@@ -1116,6 +1251,8 @@ Section Spec.
     - eapply fun_unknown_compat; eauto.
     - eapply app_known_compat; eauto.
     - eapply app_unknown_compat; eauto.
+    - eapply letapp_known_compat; eauto.
+    - eapply letapp_unknown_compat; eauto.
     - eapply constr_compat; eauto.
     - eapply proj_compat; eauto.
     - eapply case_nil_compat; eauto.
