@@ -110,6 +110,7 @@ Section Spec.
     forall {f w xs e k e' k'},
       K ! f = Some w ->
       (~ w \in Exposed) ->
+      Disjoint _ (FromList xs) (Dom_map K) ->
 
       trans_ (FromList xs :|: (f |: Γ)) e e' ->
       trans_ (f |: Γ) k k' ->
@@ -118,6 +119,7 @@ Section Spec.
   | Trans_fun_unknown :
     forall {f xs e k e' k'},
       K ! f = None ->
+      Disjoint _ (FromList xs) (Dom_map K) ->
 
       trans_ (FromList xs :|: (f |: Γ)) e e' ->
       trans_ (f |: Γ) k k' ->
@@ -210,6 +212,7 @@ Section Spec.
             end
 
         | A0.Vfun f1 ρ1 xs1 e1, A1.Vfun f2 ρ2 xs2 e2 =>
+            (* note function arguments and result are always exposed regardless of whether a function is known or unknown *)
             f1 = f2 /\
             length xs1 = length xs2 /\
             match K ! f1 with
@@ -234,10 +237,11 @@ Section Spec.
                 | S i0 =>
                     forall j vs1 vs2 ρ3 ρ4,
                       j <= i0 ->
+                      Forall exposed vs2 ->
                       Forall2 (V (i0 - (i0 - j))) vs1 vs2 ->
                       set_lists xs1 vs1 (M.set f1 (A0.Vfun f1 ρ1 xs1 e1) ρ1) = Some ρ3 ->
                       set_lists xs2 vs2 (M.set f2 (Tag w2 (A1.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
-                      E' V false (i0 - (i0 - j)) ρ3 e1 ρ4 e2
+                      E' V true (i0 - (i0 - j)) ρ3 e1 ρ4 e2
                 end
             end
         | _, _ => False
@@ -256,8 +260,8 @@ Section Spec.
     intros H.
     induction H; simpl; intros; auto.
     - inv H1; auto.
+    - inv H4; auto.
     - inv H3; auto.
-    - inv H2; auto.
     - inv H4; auto.
     - inv H3; auto.
     - inv H2; auto.
@@ -351,6 +355,46 @@ Section Spec.
     same_id f (TAG val w (Vfun f1 t l e)) -> f1 = f.
   Proof. unfold same_id; simpl; auto. Qed.
 
+  Definition binding_inv x v :=
+    (forall w, K ! x = Some w -> same_id x v) /\
+    (K ! x = None -> exposed v).
+
+  Lemma binding_inv_exposed x v :
+    (K ! x = None) ->
+    exposed v ->
+    binding_inv x v.
+  Proof.
+    unfold binding_inv.
+    intros.
+    split; intros; auto.
+    rewrite H in H1; discriminate.
+  Qed.
+
+  Lemma binding_inv_exposed_Forall xs :
+    forall vs,
+      Disjoint _ (FromList xs) (Dom_map K) ->
+      length xs = length vs ->
+      Forall exposed vs ->
+      Forall2 binding_inv xs vs.
+  Proof.
+    induction xs; simpl; intros;
+      destruct vs; try discriminate; auto.
+    inv H1.
+    apply Disjoint_FromList_cons_inv in H.
+    inv H.
+    constructor; auto.
+    apply binding_inv_exposed; auto.
+  Qed.
+
+  Lemma binding_inv_known_fun f w ρ xs e :
+    K ! f = Some w ->
+    binding_inv f (Tag w (A1.Vfun f ρ xs e)).
+  Proof.
+    intros.
+    split; intros; simpl; auto.
+    rewrite H in H0; discriminate.
+  Qed.
+
   Definition G i Γ1 ρ1 Γ2 ρ2 :=
     wf_env ρ2 /\
     forall x,
@@ -360,8 +404,7 @@ Section Spec.
         ((x \in Γ2) ->
          exists v2,
            M.get x ρ2 = Some v2 /\
-           (forall w, K ! x = Some w -> same_id x v2) /\
-           (K ! x = None -> exposed v2) /\
+           binding_inv x v2 /\
            V i v1 v2).
 
   (* Environment Lemmas *)
@@ -381,8 +424,7 @@ Section Spec.
       M.get x ρ1 = Some v1 ->
       exists v2,
         M.get x ρ2 = Some v2 /\
-        (forall w, K ! x = Some w -> same_id x v2) /\
-        (K ! x = None -> exposed v2) /\
+        binding_inv x v2 /\
         V i v1 v2.
   Proof.
     unfold G.
@@ -410,7 +452,7 @@ Section Spec.
       destruct (get_list xs ρ1) eqn:Heq3; try discriminate.
       inv H2.
       unfold Ensembles.Included, Ensembles.In in *.
-      edestruct (G_get HG) as [v2 [Heqv2 [Hid [HK HV]]]]; eauto.
+      edestruct (G_get HG) as [v2 [Heqv2 [[Hid HK] HV]]]; eauto.
       eapply (H a).
       apply in_eq.
       apply H0.
@@ -437,8 +479,7 @@ Section Spec.
     G i Γ1 ρ1 Γ2 ρ2 ->
     forall {x v1 v2},
       V i v1 v2 ->
-      (forall w, K ! x = Some w -> same_id x v2) ->
-      (K ! x = None -> exposed v2) ->
+      binding_inv x v2 ->
       G i (x |: Γ1) (M.set x v1 ρ1) (x |: Γ2) (M.set x v2 ρ2).
   Proof.
     intro HG.
@@ -454,23 +495,22 @@ Section Spec.
     intros.
     destruct (M.elt_eq x0 x); subst.
     - repeat rewrite M.gss in *.
-      inv H5.
+      inv H4.
       eexists; repeat (split; intros; eauto).
     - rewrite M.gso in *; auto.
       eapply G_get; eauto.
 
-      inv H4; auto.
-      inv H7; try contradiction; auto.
-      inv H6; auto.
-      inv H7; try contradiction; auto.
+      inv H3; auto.
+      inv H6; try contradiction; auto.
+      inv H5; auto.
+      inv H6; try contradiction; auto.
   Qed.
 
-
-  (*
   Lemma G_set_lists {i Γ1 ρ1 Γ2 ρ2}:
     G i Γ1 ρ1 Γ2 ρ2 ->
     forall {xs vs1 vs2 ρ3 ρ4},
       Forall2 (V i) vs1 vs2 ->
+      Forall2 binding_inv xs vs2 ->
       set_lists xs vs1 ρ1 = Some ρ3 ->
       set_lists xs vs2 ρ2 = Some ρ4 ->
       G i (FromList xs :|: Γ1) ρ3 (FromList xs :|: Γ2) ρ4.
@@ -479,22 +519,22 @@ Section Spec.
     induction xs; simpl; intros.
     - destruct vs1; try discriminate.
       destruct vs2; try discriminate.
-      inv H0; inv H1.
+      inv H1; inv H2.
       unfold G.
       split; intros.
       eapply G_wf_env_r; eauto.
 
       eapply (G_get HG); eauto.
-      inv H0; auto.
-      inv H3.
+      inv H1; auto.
+      inv H4.
 
-      inv H2; auto.
-      inv H3.
+      inv H3; auto.
+      inv H4.
     - destruct vs1; try discriminate.
       destruct vs2; try discriminate.
       destruct (set_lists xs vs1 ρ1) eqn:Heq1; try discriminate.
       destruct (set_lists xs vs2 ρ2) eqn:Heq2; try discriminate.
-      inv H; inv H0; inv H1.
+      inv H; inv H0; inv H1; inv H2.
       unfold G.
 
       split.
@@ -509,13 +549,13 @@ Section Spec.
       destruct (M.elt_eq x a); subst.
       + repeat rewrite M.gss in *; eauto.
         inv H0.
-        eexists; split; eauto.
+        eexists; repeat (split; eauto).
       + rewrite M.gso in *; auto.
         eapply IHxs; eauto.
         eapply not_In_cons_Union; eauto.
         eapply not_In_cons_Union; eauto.
   Qed.
-*)
+
   Lemma G_subset Γ1 Γ2 {i ρ1 Γ3 ρ2 Γ4}:
     G i Γ1 ρ1 Γ2 ρ2 ->
     Γ3 \subset Γ1 ->
@@ -634,34 +674,17 @@ Section Spec.
     intros.
     inv H.
     split; auto; intros.
-    edestruct H2 as [v2 [Heqv2 [Hid [HK HV]]]]; eauto.
+    edestruct H2 as [v2 [Heqv2 [[Hid HK] HV]]]; eauto.
     eexists; eexists; repeat split; eauto.
     apply V_mono with i; eauto.
   Qed.
 
   (* Compatibility Lemmas *)
-  Fixpoint unknownb (e : A1.exp) : bool :=
-    match e with
-    | A1.Eret x => true
-    | A1.Efun f w xs e k => unknownb k
-    | A1.Eapp f w xs => exposedb w
-    | A1.Eletapp x f w xs k => unknownb k
-    | A1.Econstr x w c ys k => unknownb k
-    | A1.Eproj x w n y k => unknownb k
-    | A1.Ecase x w cl =>
-        let fix unknown_caseb (cl : list (A1.ctor_tag * A1.exp)) :=
-          match cl with
-          | [] => false
-          | ((t, k) :: cl') => orb (unknownb k) (unknown_caseb cl')
-          end
-        in unknown_caseb cl
-    end.
-
   Definition trans_correct Γ e1 e2 :=
     forall i ρ1 ρ2,
       known_map_inv K ->
       G i Γ ρ1 (A1.occurs_free e2) ρ2 ->
-      E (unknownb e2) i ρ1 e1 ρ2 e2.
+      E true i ρ1 e1 ρ2 e2.
 
   Lemma ret_compat Γ x :
     (x \in Γ) ->
@@ -673,46 +696,78 @@ Section Spec.
     inv H4.
     - exists 0, A1.OOT; split; auto.
     - inv H5.
-      edestruct (G_get H2) as [v2 [Heqv2 [Hid [HK HV]]]]; eauto.
-      exists 1, (A1.Res v2); split; auto.
+      edestruct (G_get H2) as [v2 [Heqv2 [[Hid HK] HV]]]; eauto.
+      exists 1, (A1.Res v2); split; simpl; auto.
       apply V_mono with i; try lia; auto.
   Qed.
 
-  Lemma fun_unknown_compat Γ e e' k k' f xs :
-    K ! f = None ->
+  Lemma Vfun_V_known Γ1 f w xs e e' :
+    known_map_inv K ->
+    K ! f = Some w ->
+    Disjoint _ (FromList xs) (Dom_map K) ->
+    trans_correct (FromList xs :|: (f |: Γ1)) e e' ->
+    forall {i Γ2 ρ1 ρ2},
+      wf_env ρ2 ->
+      G i Γ1 ρ1 Γ2 ρ2 ->
+      A1.occurs_free e' \subset (FromList xs :|: (f |: Γ2)) ->
+      V i (A0.Vfun f ρ1 xs e) (Tag w (A1.Vfun f ρ2 xs e')).
+  Proof.
+    unfold trans_correct.
+    intros HK HKf HKxs He i.
+    assert (~ Ensembles.In web Exposed w) by (eapply HK; eauto).
+    induction i; simpl; intros; auto;
+      rewrite HKf;
+      repeat (split; auto); intros.
+
+    apply (He (i - (i - j)) ρ3 ρ4); auto.
+    - eapply G_subset with (Γ2 := (FromList xs :|: (f |: Γ2))); eauto.
+      eapply G_set_lists; eauto.
+      eapply G_set; eauto.
+      + apply G_mono with (S i); eauto; lia.
+      + apply V_mono with i; try lia.
+        eapply IHi with (Γ2 := Γ2); eauto.
+        apply G_mono with (S i); eauto; lia.
+      + eapply binding_inv_known_fun; eauto.
+      + eapply binding_inv_exposed_Forall; eauto.
+        eapply set_lists_length_eq; eauto.
+      + apply Included_refl.
+  Qed.
+
+  Lemma fun_known_compat Γ e e' k k' f w xs :
+    K ! f = Some w ->
+    Disjoint _ (FromList xs) (Dom_map K) ->
+
     trans_correct (FromList xs :|: (f |: Γ)) e e' ->
     trans_correct (f |: Γ) k k' ->
-    trans_correct Γ (A0.Efun f xs e k) (A1.Efun f w0 xs e' k').
+    trans_correct Γ (A0.Efun f xs e k) (A1.Efun f w xs e' k').
   Proof.
     unfold trans_correct, E, E'.
+    intros HKf HKxs.
     intros.
-    inv H5.
+    inv H4.
     - exists 0, A1.OOT; split; simpl; eauto.
-    - inv H6.
-      edestruct (H1 (i - 1) (M.set f (A0.Vfun f ρ1 xs e) ρ1) (M.set f (Tag w0 (A1.Vfun f ρ2 xs e')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
-      + eapply G_subset with (Γ2 := (f |: A1.occurs_free (A1.Efun f w0 xs e' k'))).
+    - inv H5.
+      edestruct (H0 (i - 1) (M.set f (A0.Vfun f ρ1 xs e) ρ1) (M.set f (Tag w (A1.Vfun f ρ2 xs e')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+      + eapply G_subset with (Γ2 := (f |: A1.occurs_free (A1.Efun f w xs e' k'))).
         eapply G_set; eauto.
         apply G_mono with i; eauto; lia.
-        * admit.
-          (* eapply Vfun_V; eauto.
+        * eapply Vfun_V_known; eauto.
           -- eapply G_wf_env_r; eauto.
           -- apply G_mono with i; eauto; lia.
-          -- apply A1.free_fun_e_subset. *)
-        * intros; simpl; auto.
-        * intros; constructor.
-          apply w0_exposed.
+          -- apply A1.free_fun_e_subset.
+        * eapply binding_inv_known_fun; eauto.
         * apply Included_refl.
         * apply A1.free_fun_k_subset.
       + exists (S j2), r2; split; auto.
         * constructor; simpl; auto.
-          destruct (unknownb k') eqn:Heqk'; auto.
           eapply bstep_fuel_exposed_inv; eauto.
         * apply R_mono with ((i - 1) - c); try lia; auto.
-  Admitted.
+  Qed.
 
-(*
   Lemma Vfun_V_unknown Γ1 f xs e e' :
+    known_map_inv K ->
     K ! f = None ->
+    Disjoint _ (FromList xs) (Dom_map K) ->
     trans_correct (FromList xs :|: (f |: Γ1)) e e' ->
     forall {i Γ2 ρ1 ρ2},
       wf_env ρ2 ->
@@ -721,24 +776,58 @@ Section Spec.
       V i (A0.Vfun f ρ1 xs e) (Tag w0 (A1.Vfun f ρ2 xs e')).
   Proof.
     unfold trans_correct.
-    intros HKf He i.
+    intros HK HKf HKxs He i.
     induction i; simpl; intros; auto;
       rewrite HKf;
       repeat (split; auto); intros;
       try (constructor; apply w0_exposed).
 
     apply (He (i - (i - j)) ρ3 ρ4); auto.
-    - eapply G_subset with (Γ2 := (FromList xs :|: (f |: Γ2))).
+    - eapply G_subset with (Γ2 := (FromList xs :|: (f |: Γ2))); eauto.
       eapply G_set_lists; eauto.
       eapply G_set; eauto.
       + apply G_mono with (S i); eauto; lia.
       + apply V_mono with i; try lia.
         eapply IHi with (Γ2 := Γ2); eauto.
         apply G_mono with (S i); eauto; lia.
+      + split; intros; simpl; auto.
+        constructor; apply w0_exposed.
+      + eapply binding_inv_exposed_Forall; eauto.
+        eapply set_lists_length_eq; eauto.
       + apply Included_refl.
-      + auto.
   Qed.
 
+  Lemma fun_unknown_compat Γ e e' k k' f xs :
+    K ! f = None ->
+    Disjoint _ (FromList xs) (Dom_map K) ->
+
+    trans_correct (FromList xs :|: (f |: Γ)) e e' ->
+    trans_correct (f |: Γ) k k' ->
+    trans_correct Γ (A0.Efun f xs e k) (A1.Efun f w0 xs e' k').
+  Proof.
+    unfold trans_correct, E, E'.
+    intros HKf HKxs.
+    intros.
+    inv H4.
+    - exists 0, A1.OOT; split; simpl; eauto.
+    - inv H5.
+      edestruct (H0 (i - 1) (M.set f (A0.Vfun f ρ1 xs e) ρ1) (M.set f (Tag w0 (A1.Vfun f ρ2 xs e')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+      + eapply G_subset with (Γ2 := (f |: A1.occurs_free (A1.Efun f w0 xs e' k'))).
+        eapply G_set; eauto.
+        apply G_mono with i; eauto; lia.
+        * eapply Vfun_V_unknown; eauto.
+          -- eapply G_wf_env_r; eauto.
+          -- apply G_mono with i; eauto; lia.
+          -- apply A1.free_fun_e_subset.
+        * eapply binding_inv_exposed; eauto.
+          constructor; apply w0_exposed.
+        * apply Included_refl.
+        * apply A1.free_fun_k_subset.
+      + exists (S j2), r2; split; auto.
+        * constructor; simpl; auto.
+          eapply bstep_fuel_exposed_inv; eauto.
+        * apply R_mono with ((i - 1) - c); try lia; auto.
+  Qed.
 
   Lemma app_known_compat Γ xs f w :
     (K ! f = Some w) ->
@@ -756,7 +845,7 @@ Section Spec.
     inv H4.
     - exists 0, A1.OOT; split; simpl; auto.
     - inv H5.
-      edestruct (G_get H2 f) as [fv2 [Heqfv2 [Hid [HK HV]]]]; eauto.
+      edestruct (G_get H2 f) as [fv2 [Heqfv2 [[Hid HK] HV]]]; eauto.
       destruct i.
       inv H3.
       destruct fv2; simpl in HV;
@@ -778,7 +867,7 @@ Section Spec.
         rewrite <- (Forall2_length _ _ _ Vvs).
         rewrite <- (set_lists_length_eq _ _ _ _ H9); auto.
 
-        assert (HE : E false (i - (i - i)) ρ'' e ρ4 e0).
+        assert (HE : E true (i - (i - i)) ρ'' e ρ4 e0).
         {
           eapply (HV i vs vs2); eauto.
           apply V_mono_Forall with (S i); auto; lia.
@@ -791,13 +880,15 @@ Section Spec.
         constructor; auto.
         * econstructor; eauto.
           destruct (exposed_reflect w); try contradiction; auto.
-          intros; contradiction.
-        * destruct (exposed_reflect w); try contradiction; auto.
+          -- pose proof He0 as Hr2.
+             apply bstep_fuel_exposed_inv in Hr2.
+             eapply bstep_fuel_exposed; eauto.
+          -- intros; contradiction.
+        * eapply bstep_fuel_exposed_inv; eauto.
       + destruct HV as [Hex HV].
         inv Hex.
         rewrite HKf in Heqk; discriminate.
   Qed.
- *)
 
   Lemma app_unknown_compat Γ xs f :
     (K ! f = None) ->
@@ -813,7 +904,7 @@ Section Spec.
     inv H4.
     - exists 0, A1.OOT; split; simpl; auto.
     - inv H5.
-      edestruct (G_get H2 f) as [fv2 [Heqfv2 [Hid [HK HV]]]]; eauto.
+      edestruct (G_get H2 f) as [fv2 [Heqfv2 [[Hid HK] HV]]]; eauto.
       destruct i.
       inv H3.
       destruct fv2; simpl in HV;
@@ -849,19 +940,18 @@ Section Spec.
         assert (exposed_res r2) by (eapply bstep_fuel_exposed_inv; eauto).
         exists (S j2), r2; split; eauto; simpl.
         constructor; auto.
-      * econstructor; eauto.
+        econstructor; eauto.
         destruct (exposed_reflect w0); try contradiction; auto.
-      * destruct (exposed_reflect w0); try contradiction; auto.
   Qed.
 
   (* Fundamental Property *)
   Lemma fundamental_property {Γ e e'}:
     trans Γ e e' -> trans_correct Γ e e'.
   Proof.
-    intros H.
-    induction H.
+    intros.
+    induction H; intros.
     - eapply ret_compat; eauto.
-    - admit.
+    - eapply fun_known_compat; eauto.
     - eapply fun_unknown_compat; eauto.
     - eapply app_known_compat; eauto.
     - eapply app_unknown_compat; eauto.
