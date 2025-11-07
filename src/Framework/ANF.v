@@ -809,8 +809,7 @@ Proof.
     eapply wf_env_set; eauto.
     eapply wf_env_get in H; eauto.
     destruct (wf_val_Vconstr_inv H).
-    edestruct (Forall_nth_error H0 H2) as [v' [Heqv' H']]; eauto.
-    rewrite Heqv' in H0; inv H0; auto.
+    eapply Forall_nth_error; eauto.
 Qed.
 
 Lemma bstep_fuel_wf_res ρ ex e c r :

@@ -31,9 +31,7 @@ Qed.
 Lemma Forall_nth_error {A P i vs} {v : A}:
   nth_error vs i = Some v ->
   Forall P vs ->
-  exists (v : A),
-    nth_error vs i = Some v /\
-    P v.
+  P v.
 Proof.
   intros.
   revert i v H.
@@ -41,6 +39,7 @@ Proof.
   - apply nth_error_In in H.
     inv H.
   - destruct i; simpl in *; eauto.
+    inv H1; auto.
 Qed.
 
 Lemma Forall_monotonic {A} (R R' : A -> Prop) (l : list A):

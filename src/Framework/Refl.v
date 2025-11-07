@@ -652,13 +652,8 @@ Proof.
     rename l into vs'.
 
     assert (Hvs' : Forall wf_val vs') by (destruct (wf_val_Vconstr_inv Hv2); eauto).
-
     destruct (Forall2_nth_error H12 HV) as [v' [Heqv' HFv']].
-    destruct (Forall_nth_error Heqv' Hvs') as [v'' [Heqv'' Hv'']].
-    rewrite Heqv' in Heqv''; inv Heqv''.
-    rename v'' into v'.
-    rename Hv'' into Hv'.
-
+    pose proof (Forall_nth_error Heqv' Hvs') as Hv''.
     edestruct (H ex i0 (M.set x v ρ1) (M.set x v' ρ2)) with (j1 := c) as [j2 [r2 [He' HR]]]; eauto; try lia.
     + eapply (G_subset (x |: (occurs_free (Eproj x w0 i y e)))); eauto.
       apply G_set; auto.
