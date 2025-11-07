@@ -433,17 +433,20 @@ Section Spec.
         apply not_Dom_map_eq in H2; auto.
   Qed.
 
-  (*
   Lemma G_set {i Γ1 ρ1 Γ2 ρ2}:
     G i Γ1 ρ1 Γ2 ρ2 ->
     forall {x v1 v2},
       V i v1 v2 ->
+      (forall w, K ! x = Some w -> same_id x v2) ->
+      (K ! x = None -> exposed v2) ->
       G i (x |: Γ1) (M.set x v1 ρ1) (x |: Γ2) (M.set x v2 ρ2).
   Proof.
-    unfold G.
+    intro HG.
+    pose proof HG as HG'.
+    unfold G in HG.
     intros.
 
-    inv H.
+    inv HG.
     split.
     eapply wf_env_set; eauto.
     eapply V_wf_val_r; eauto.
@@ -451,16 +454,19 @@ Section Spec.
     intros.
     destruct (M.elt_eq x0 x); subst.
     - repeat rewrite M.gss in *.
-      inv H3.
-      eexists; split; eauto; intros.
+      inv H5.
+      eexists; repeat (split; intros; eauto).
     - rewrite M.gso in *; auto.
-      inv H.
-      inv H5; try contradiction.
-      inv H4.
-      inv H; try contradiction.
-      edestruct H2 as [v1' [Heqv1' Hv2]]; eauto.
+      eapply G_get; eauto.
+
+      inv H4; auto.
+      inv H7; try contradiction; auto.
+      inv H6; auto.
+      inv H7; try contradiction; auto.
   Qed.
 
+
+  (*
   Lemma G_set_lists {i Γ1 ρ1 Γ2 ρ2}:
     G i Γ1 ρ1 Γ2 ρ2 ->
     forall {xs vs1 vs2 ρ3 ρ4},
@@ -634,12 +640,21 @@ Section Spec.
   Qed.
 
   (* Compatibility Lemmas *)
-  Definition unknownb (e : A1.exp) :=
+  Fixpoint unknownb (e : A1.exp) : bool :=
     match e with
-    | A1.Efun f w xs e k => exposedb w
+    | A1.Eret x => true
+    | A1.Efun f w xs e k => unknownb k
     | A1.Eapp f w xs => exposedb w
-    | A1.Eletapp x f w xs k => exposedb w
-    | _ => true
+    | A1.Eletapp x f w xs k => unknownb k
+    | A1.Econstr x w c ys k => unknownb k
+    | A1.Eproj x w n y k => unknownb k
+    | A1.Ecase x w cl =>
+        let fix unknown_caseb (cl : list (A1.ctor_tag * A1.exp)) :=
+          match cl with
+          | [] => false
+          | ((t, k) :: cl') => orb (unknownb k) (unknown_caseb cl')
+          end
+        in unknown_caseb cl
     end.
 
   Definition trans_correct Γ e1 e2 :=
@@ -662,6 +677,68 @@ Section Spec.
       exists 1, (A1.Res v2); split; auto.
       apply V_mono with i; try lia; auto.
   Qed.
+
+  Lemma fun_unknown_compat Γ e e' k k' f xs :
+    K ! f = None ->
+    trans_correct (FromList xs :|: (f |: Γ)) e e' ->
+    trans_correct (f |: Γ) k k' ->
+    trans_correct Γ (A0.Efun f xs e k) (A1.Efun f w0 xs e' k').
+  Proof.
+    unfold trans_correct, E, E'.
+    intros.
+    inv H5.
+    - exists 0, A1.OOT; split; simpl; eauto.
+    - inv H6.
+      edestruct (H1 (i - 1) (M.set f (A0.Vfun f ρ1 xs e) ρ1) (M.set f (Tag w0 (A1.Vfun f ρ2 xs e')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+      + eapply G_subset with (Γ2 := (f |: A1.occurs_free (A1.Efun f w0 xs e' k'))).
+        eapply G_set; eauto.
+        apply G_mono with i; eauto; lia.
+        * admit.
+          (* eapply Vfun_V; eauto.
+          -- eapply G_wf_env_r; eauto.
+          -- apply G_mono with i; eauto; lia.
+          -- apply A1.free_fun_e_subset. *)
+        * intros; simpl; auto.
+        * intros; constructor.
+          apply w0_exposed.
+        * apply Included_refl.
+        * apply A1.free_fun_k_subset.
+      + exists (S j2), r2; split; auto.
+        * constructor; simpl; auto.
+          destruct (unknownb k') eqn:Heqk'; auto.
+          eapply bstep_fuel_exposed_inv; eauto.
+        * apply R_mono with ((i - 1) - c); try lia; auto.
+  Admitted.
+
+(*
+  Lemma Vfun_V_unknown Γ1 f xs e e' :
+    K ! f = None ->
+    trans_correct (FromList xs :|: (f |: Γ1)) e e' ->
+    forall {i Γ2 ρ1 ρ2},
+      wf_env ρ2 ->
+      G i Γ1 ρ1 Γ2 ρ2 ->
+      A1.occurs_free e' \subset (FromList xs :|: (f |: Γ2)) ->
+      V i (A0.Vfun f ρ1 xs e) (Tag w0 (A1.Vfun f ρ2 xs e')).
+  Proof.
+    unfold trans_correct.
+    intros HKf He i.
+    induction i; simpl; intros; auto;
+      rewrite HKf;
+      repeat (split; auto); intros;
+      try (constructor; apply w0_exposed).
+
+    apply (He (i - (i - j)) ρ3 ρ4); auto.
+    - eapply G_subset with (Γ2 := (FromList xs :|: (f |: Γ2))).
+      eapply G_set_lists; eauto.
+      eapply G_set; eauto.
+      + apply G_mono with (S i); eauto; lia.
+      + apply V_mono with i; try lia.
+        eapply IHi with (Γ2 := Γ2); eauto.
+        apply G_mono with (S i); eauto; lia.
+      + apply Included_refl.
+      + auto.
+  Qed.
+
 
   Lemma app_known_compat Γ xs f w :
     (K ! f = Some w) ->
@@ -720,6 +797,7 @@ Section Spec.
         inv Hex.
         rewrite HKf in Heqk; discriminate.
   Qed.
+ *)
 
   Lemma app_unknown_compat Γ xs f :
     (K ! f = None) ->
@@ -784,7 +862,7 @@ Section Spec.
     induction H.
     - eapply ret_compat; eauto.
     - admit.
-    - admit.
+    - eapply fun_unknown_compat; eauto.
     - eapply app_known_compat; eauto.
     - eapply app_unknown_compat; eauto.
     - admit.
