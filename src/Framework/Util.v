@@ -68,6 +68,20 @@ Proof.
   apply in_cons; auto.
 Qed.
 
+Lemma Disjoint_FromList_cons_inv {A} :
+  forall {xs a S},
+    Disjoint A (FromList (a :: xs)) S ->
+    (~ a \in S) /\ Disjoint A (FromList xs) S.
+Proof.
+  intros; split.
+  - intro Hc.
+    inv H.
+    apply (H0 a).
+    constructor; auto.
+    apply in_eq.
+  - eapply Disjoint_FromList_cons_l; eauto.
+Qed.
+
 Lemma Disjoint_FromList_cons_r {A} : forall {xs a S},
   ~ (In a xs) ->
   Disjoint A (FromList xs) S ->

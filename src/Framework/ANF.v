@@ -372,6 +372,15 @@ Proof.
   destruct ex'; auto.
 Qed.
 
+Lemma bstep_fuel_exposed_inv ρ e k r :
+  bstep_fuel true ρ e k r ->
+  exposed_res r.
+Proof.
+  intro H.
+  induction H; auto.
+Qed.
+
+
 (* Free Variables *)
 Inductive occurs_free : exp -> vars :=
 | Free_ret :
