@@ -149,6 +149,7 @@ Section Spec.
 
   | Trans_constr :
     forall {x t xs k k'},
+      K ! x = None ->
       Disjoint _ (FromList xs) (Dom_map K) ->
 
       (FromList xs \subset Γ) ->
@@ -158,6 +159,7 @@ Section Spec.
   | Trans_proj :
     forall {x y k k' n},
       K ! x = None ->
+      K ! y = None ->
 
       (y \in Γ) ->
       trans_ (x |: Γ) k k' ->
@@ -165,11 +167,13 @@ Section Spec.
 
   | Trans_case_nil :
     forall {x},
+      K ! x = None ->
       (x \in Γ) ->
       trans_ Γ (A0.Ecase x []) (A1.Ecase x w0 [])
 
   | Trans_case_cons :
     forall {x e e' t cl cl'},
+      K ! x = None ->
       (x \in Γ) ->
       trans_ Γ e e' ->
       trans_ Γ (A0.Ecase x cl) (A1.Ecase x w0 cl') ->
@@ -180,6 +184,45 @@ Section Spec.
   Definition trans := trans_.
 
   Hint Unfold trans : core.
+
+  Lemma trans_exp_inv {Γ e e'} :
+    trans Γ e e' ->
+    (A1.occurs_free e') \subset (A0.occurs_free e).
+  Proof.
+    unfold Ensembles.Included, Ensembles.In.
+    intros H.
+    induction H; simpl; intros; auto.
+    - inv H1; auto.
+    - inv H4; auto.
+    - inv H3; auto.
+    - inv H4; auto.
+    - inv H3; auto.
+    - inv H3; auto.
+    - inv H3; auto.
+    - inv H1; auto.
+    - inv H3; auto.
+  Qed.
+
+  Lemma trans_exp_weaken {Γ Γ' e e'} :
+    trans Γ e e' ->
+    Γ \subset Γ' ->
+    trans Γ' e e'.
+  Proof.
+  Admitted.
+
+  Theorem trans_total :
+    forall e,
+    exists e',
+      trans (A0.occurs_free e) e e'.
+  Proof.
+  Admitted.
+
+  Lemma Erase_Annotate_id e1 e2 e1' :
+    trans (A0.occurs_free e1) e1 e1' ->
+    Erase.trans (A1.occurs_free e1') e1' e2 ->
+    e1 = e2.
+  Proof.
+  Admitted.
 
   (* Cross-language Logical Relations *)
   (* Note these are parameterized by the known_map, `K` *)
@@ -251,45 +294,6 @@ Section Spec.
   Definition R := (R' V).
 
   Definition E := (E' V).
-
-  Lemma trans_exp_inv {Γ e e'} :
-    trans Γ e e' ->
-    (A1.occurs_free e') \subset (A0.occurs_free e).
-  Proof.
-    unfold Ensembles.Included, Ensembles.In.
-    intros H.
-    induction H; simpl; intros; auto.
-    - inv H1; auto.
-    - inv H4; auto.
-    - inv H3; auto.
-    - inv H4; auto.
-    - inv H3; auto.
-    - inv H2; auto.
-    - inv H2; auto.
-    - inv H0; auto.
-    - inv H2; auto.
-  Qed.
-
-  Lemma trans_exp_weaken {Γ Γ' e e'} :
-    trans Γ e e' ->
-    Γ \subset Γ' ->
-    trans Γ' e e'.
-  Proof.
-  Admitted.
-
-  Theorem trans_total :
-    forall e,
-    exists e',
-      trans (A0.occurs_free e) e e'.
-  Proof.
-  Admitted.
-
-  Lemma Erase_Annotate_id e1 e2 e1' :
-    trans (A0.occurs_free e1) e1 e1' ->
-    Erase.trans (A1.occurs_free e1') e1' e2 ->
-    e1 = e2.
-  Proof.
-  Admitted.
 
   (* Lemmas about [wf_val], [wf_res], and [wf_env] *)
   Lemma V_wf_val_r {i v1 v2}:
@@ -944,6 +948,163 @@ Section Spec.
         destruct (exposed_reflect w0); try contradiction; auto.
   Qed.
 
+  Lemma constr_compat Γ x t xs k k' :
+    K ! x = None ->
+    Disjoint _ (FromList xs) (Dom_map K) ->
+
+    (FromList xs \subset Γ) ->
+    trans_correct (x |: Γ) k k' ->
+    trans_correct Γ (A0.Econstr x t xs k) (A1.Econstr x w0 t xs k').
+  Proof.
+    unfold trans_correct, E, E'.
+    intros.
+    inv H6.
+    - exists 0, A1.OOT; split; simpl; auto.
+    - inv H7.
+      destruct (G_get_list H4 xs vs) as [vs' [Heqvs' Hvs]]; auto.
+      + eapply A1.free_constr_xs_subset; eauto.
+      + inv Hvs.
+        assert (wf_val (Tag w0 (A1.Vconstr t vs'))).
+        {
+          apply wf_val_Vconstr; auto.
+          eapply V_wf_val_Forall_r; eauto.
+        }
+
+        assert (exposed (Tag w0 (A1.Vconstr t vs'))).
+        {
+          constructor; auto.
+          apply w0_exposed.
+        }
+
+        assert (length vs = length vs').
+        {
+          unfold wval in *.
+          rewrite <- (get_list_length_eq _ _ _ H13).
+          rewrite <- (get_list_length_eq _ _ _ Heqvs'); auto.
+        }
+
+        edestruct (H2 i (M.set x (A0.Vconstr t vs) ρ1) (M.set x (Tag w0 (A1.Vconstr t vs')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk' Rr]]]; eauto; try lia.
+        * eapply G_subset with (Γ2 := (x |: (A1.occurs_free (A1.Econstr x w0 t xs k')))).
+          eapply G_set; eauto.
+          -- destruct i; simpl; repeat (split; eauto).
+             eapply V_mono_Forall; eauto; lia.
+          -- eapply binding_inv_exposed; eauto.
+          -- apply Included_refl.
+          -- apply A1.free_constr_k_subset.
+        * exists (S j2), r2; split; eauto.
+          -- econstructor.
+             econstructor; eauto.
+             eapply bstep_fuel_exposed_inv in Hk'; eauto.
+          -- apply R_mono with (i - c); try lia; auto.
+  Qed.
+
+  Lemma proj_compat Γ x i y e e' :
+    K ! x = None ->
+    K ! y = None ->
+
+    (y \in Γ) ->
+    trans_correct (x |: Γ) e e' ->
+    trans_correct Γ (A0.Eproj x i y e) (A1.Eproj x w0 i y e').
+  Proof.
+    unfold trans_correct, E, E'.
+    intros.
+    inv H6.
+    - exists 0, A1.OOT; split; simpl; auto.
+    - inv H7.
+      edestruct (G_get H4 y) as [v2 [Heqv2 HV]]; eauto.
+      destruct i0.
+      inv H5.
+      destruct v2;
+        simpl in HV;
+        destruct HV as [Hb [Hv HV]]; subst;
+        destruct v0; try contradiction.
+      rename l into vs'.
+      rename c0 into t'.
+      destruct HV as [Hex [Heqt HFvs]]; subst.
+      destruct (Forall2_nth_error H14 HFvs) as [v' [Heqv' HFv]].
+      edestruct (H2 i0 (M.set x v ρ1) (M.set x v' ρ2)) with (j1 := c) as [j2 [r2 [He' HR]]]; eauto; try lia.
+      + eapply G_subset with (Γ2 := (x |: (A1.occurs_free (A1.Eproj x w0 i y e')))).
+        eapply G_set; eauto.
+        eapply G_mono with (S i0); eauto; try lia.
+        eapply binding_inv_exposed; eauto.
+        eapply Forall_nth_error; eauto.
+        inv Hex; auto.
+        apply Included_refl.
+        apply A1.free_proj_k_subset.
+      + assert (Hw : w = w0).
+        {
+          inv Hex.
+          apply Exposed_singleton; eauto.
+        }
+        subst.
+
+        exists (S j2), r2; split; eauto.
+        constructor.
+        econstructor; eauto.
+        eapply bstep_fuel_exposed_inv; eauto.
+  Qed.
+
+  Lemma case_nil_compat Γ x:
+    K ! x = None ->
+    (x \in Γ) ->
+    trans_correct Γ (A0.Ecase x []) (A1.Ecase x w0 []).
+  Proof.
+    unfold trans_correct, E, E'.
+    intros.
+    inv H4.
+    - exists 0, A1.OOT; split; simpl; auto.
+    - inv H5.
+      inv H8.
+  Qed.
+
+  Lemma case_cons_compat Γ x t e e' cl cl':
+    K ! x = None ->
+    (x \in Γ) ->
+    trans_correct Γ e e' ->
+    trans_correct Γ (A0.Ecase x cl) (A1.Ecase x w0 cl') ->
+    trans_correct Γ (A0.Ecase x ((t, e) :: cl)) (A1.Ecase x w0 ((t, e') :: cl')).
+  Proof.
+    unfold trans_correct, E, E'.
+    intros.
+    inv H6.
+    - exists 0, OOT; split; simpl; eauto.
+    - inv H7.
+      edestruct (G_get H4) as [v2 [Heqv2 HV]]; eauto.
+      destruct v2.
+      destruct i.
+      inv H5.
+      destruct v; simpl in HV;
+        destruct HV as [Hb [Hv2 HV]]; subst;
+        subst; try contradiction.
+      destruct HV as [Hex [Heqt HFvs]]; subst.
+      assert (Hw : w = w0).
+      {
+        inv Hex.
+        apply Exposed_singleton; eauto.
+      }
+      subst.
+
+      inv H10.
+      + edestruct (H1 i ρ1 ρ2) with (j1 := c) as [j2 [r2 [He' HR]]]; eauto; try lia.
+        eapply G_subset with (Γ2 := (A1.occurs_free (A1.Ecase x w0 ((c0, e') :: cl')))); eauto.
+        eapply G_mono; eauto.
+        apply Included_refl.
+        apply A1.free_case_hd_subset.
+
+        exists (S j2), r2; split; eauto.
+        econstructor; eauto.
+        eapply bstep_fuel_exposed_inv; eauto.
+      + edestruct (H2 (S i) ρ1 ρ2) with (j1 := S c) (r1 := r1) as [j2 [r2 [He' HR]]]; eauto; try lia.
+        eapply G_subset; eauto.
+        apply Included_refl.
+        apply A1.free_case_tl_subset; auto.
+
+        exists j2, r2; split; eauto.
+        inv He'; auto.
+        inv H6.
+        rewrite Heqv2 in H12; inv H12; eauto.
+  Qed.
+
   (* Fundamental Property *)
   Lemma fundamental_property {Γ e e'}:
     trans Γ e e' -> trans_correct Γ e e'.
@@ -955,10 +1116,11 @@ Section Spec.
     - eapply fun_unknown_compat; eauto.
     - eapply app_known_compat; eauto.
     - eapply app_unknown_compat; eauto.
-    - admit.
-    - admit.
-    - admit.
-  Admitted.
+    - eapply constr_compat; eauto.
+    - eapply proj_compat; eauto.
+    - eapply case_nil_compat; eauto.
+    - eapply case_cons_compat; eauto.
+  Qed.
 
   (* Top Level *)
   Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
