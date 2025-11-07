@@ -351,7 +351,6 @@ Section Spec.
     same_id f (TAG val w (Vfun f1 t l e)) -> f1 = f.
   Proof. unfold same_id; simpl; auto. Qed.
 
-  (* TODO: refactor *)
   Definition G i Γ1 ρ1 Γ2 ρ2 :=
     wf_env ρ2 /\
     forall x,
@@ -361,7 +360,7 @@ Section Spec.
         ((x \in Γ2) ->
          exists v2,
            M.get x ρ2 = Some v2 /\
-           same_id x v2 /\
+           (forall w, K ! x = Some w -> same_id x v2) /\
            (K ! x = None -> exposed v2) /\
            V i v1 v2).
 
@@ -382,7 +381,7 @@ Section Spec.
       M.get x ρ1 = Some v1 ->
       exists v2,
         M.get x ρ2 = Some v2 /\
-        same_id x v2 /\
+        (forall w, K ! x = Some w -> same_id x v2) /\
         (K ! x = None -> exposed v2) /\
         V i v1 v2.
   Proof.
@@ -686,7 +685,8 @@ Section Spec.
       destruct fv2; simpl in HV;
         destruct HV as [Hv1 HV];
         destruct v; try contradiction.
-      apply same_id_fun in Hid; inv Hid.
+      specialize (Hid _ HKf).
+      apply same_id_fun in Hid; subst.
       destruct HV as [Hfeq [Hlen HV]]; subst.
       destruct (K ! f) eqn:Heqk; try contradiction.
       + destruct HV as [Heqw [Hex HV]]; subst.
@@ -741,33 +741,36 @@ Section Spec.
       destruct fv2; simpl in HV;
         destruct HV as [Hv1 HV];
         destruct v; try contradiction.
-      apply same_id_fun in Hid; inv Hid.
       destruct HV as [Hfeq [Hlen HV]]; subst.
-      destruct (K ! f) eqn:Heqk; try discriminate.
-      destruct HV as [Hex HV].
-      inv Hex.
-      assert (Hw : w = w0) by (apply Exposed_singleton; eauto); subst.
+      rename v into f'.
+      destruct (K ! f') eqn:HeqKf'; try discriminate.
+      + destruct HV as [Heqw [Hex HV]]; subst.
+        specialize (HK HKf).
+        inv HK; contradiction.
+      + destruct HV as [Hex HV].
+        inv Hex.
+        assert (Hw : w = w0) by (apply Exposed_singleton; eauto); subst.
 
-      edestruct (G_get_list H2 xs vs) as [vs2 [Heqvs2 [Hexvs Vvs]]]; eauto.
-      eapply A1.free_app_xs_subset; eauto.
+        edestruct (G_get_list H2 xs vs) as [vs2 [Heqvs2 [Hexvs Vvs]]]; eauto.
+        eapply A1.free_app_xs_subset; eauto.
 
-      destruct (set_lists_length3 (M.set f (Tag w0 (A1.Vfun f t l e0)) t) l vs2) as [ρ4 Heqρ4].
-      unfold wval in *.
-      rewrite <- (Forall2_length _ _ _ Vvs).
-      rewrite <- (set_lists_length_eq _ _ _ _ H9); auto.
+        destruct (set_lists_length3 (M.set f' (Tag w0 (A1.Vfun f' t l e0)) t) l vs2) as [ρ4 Heqρ4].
+        unfold wval in *.
+        rewrite <- (Forall2_length _ _ _ Vvs).
+        rewrite <- (set_lists_length_eq _ _ _ _ H9); auto.
 
-      assert (HE : E true (i - (i - i)) ρ'' e ρ4 e0).
-      {
-        eapply (HV i vs vs2); eauto.
-        apply V_mono_Forall with (S i); auto; lia.
-      }
+        assert (HE : E true (i - (i - i)) ρ'' e ρ4 e0).
+        {
+          eapply (HV i vs vs2); eauto.
+          apply V_mono_Forall with (S i); auto; lia.
+        }
 
-      apply (E_mono _ i) in HE; try lia.
-      unfold E in HE.
-      destruct (HE c r1) as [j2 [r2 [He0 Rr]]]; try lia; auto.
-      assert (exposed_res r2) by (eapply bstep_fuel_exposed_inv; eauto).
-      exists (S j2), r2; split; eauto; simpl.
-      constructor; auto.
+        apply (E_mono _ i) in HE; try lia.
+        unfold E in HE.
+        destruct (HE c r1) as [j2 [r2 [He0 Rr]]]; try lia; auto.
+        assert (exposed_res r2) by (eapply bstep_fuel_exposed_inv; eauto).
+        exists (S j2), r2; split; eauto; simpl.
+        constructor; auto.
       * econstructor; eauto.
         destruct (exposed_reflect w0); try contradiction; auto.
       * destruct (exposed_reflect w0); try contradiction; auto.
