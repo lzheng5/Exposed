@@ -569,6 +569,56 @@ Proof.
       * right; right; auto.
 Qed.
 
+Inductive bound_var : exp -> vars :=
+| Bound_Econstr1 :
+    forall x t ys e,
+      bound_var (Econstr x t ys e) x
+
+| Bound_Econstr2 :
+    forall y x t ys e,
+      bound_var e y ->
+      bound_var (Econstr x t ys e) y
+
+| Bound_Eproj1 :
+    forall x y i e,
+      bound_var (Eproj x i y e) x
+
+| Bound_Eproj2 :
+    forall y x i y' e,
+      bound_var e y ->
+      bound_var (Eproj x i y' e) y
+
+| Bound_Eletapp1 :
+    forall x f ys e,
+      bound_var (Eletapp x f ys e) x
+
+| Bound_Eletapp2 :
+    forall y x f ys e,
+      bound_var e y ->
+      bound_var (Eletapp x f ys e) y
+
+| Bound_Ecase :
+    forall x y c e cl,
+      bound_var e y ->
+      List.In (c, e) cl ->
+      bound_var (Ecase x cl) y
+
+| Bound_Efun1 :
+    forall f xs e k,
+      bound_var (Efun f xs e k) f
+
+| Bound_Efun2 :
+    forall y f xs e k,
+      List.In y xs ->
+      bound_var (Efun f xs e k) y
+
+| Bound_Efun3 :
+    forall y f xs e k,
+      bound_var e y ->
+      bound_var (Efun f xs e k) y.
+
+Hint Constructors bound_var : core.
+
 (* Linking *)
 Definition link f x e1 e2 : exp :=
   Efun f [] e1

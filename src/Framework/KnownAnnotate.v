@@ -12,6 +12,16 @@ Module A1 := ANF.
 
 (* Known Function Analysis With A Single Exposed Web Id *)
 
+(* Outline: *)
+(* 1. build `K : known_map` for every function identifiers (assume unique names) in the program with nonexposed web ids (Note it is not necessary to require them to be distinct though) *)
+(* 2. follow `escape_fun_exp` as in CertiCoq to filter `K` so that its domain satisfies `known_fun` *)
+(* 3. rewrite based on `K` [this is the main result we are establishing here] *)
+
+Definition known_map := M.t web.
+
+Parameter analyze : A0.exp -> known_map.
+
+(* Specification for `analyze` *)
 (* Similar to CertiCoq's `Known_exp` *)
 Inductive known_fun (S : Ensemble var) : A0.exp -> Prop :=
 | Known_Ret :
@@ -68,25 +78,76 @@ Inductive known_fun (S : Ensemble var) : A0.exp -> Prop :=
 
 Hint Constructors known_fun : core.
 
-Definition known_map := M.t web.
-
 Definition known_map_inv K :=
   forall f w,
     K ! f = Some w ->
     ~ (w \in Exposed).
 
-(* Outline: *)
-(* 1. build `K : known_map` for every function identifiers (assume unique names) in the program with nonexposed web ids (Note it is not necessary to require them to be distinct though) *)
-(* 2. follow `escape_fun_exp` as in CertiCoq to filter `K` so that its domain satisfies `known_fun` *)
-(* 3. rewrite based on `K` [this is the main result we are establishing here] *)
-
-Parameter analyze : A0.exp -> known_map.
+Definition known_map_bound (K : known_map) e :=
+  (Dom_map K) \subset (A0.bound_var e).
 
 Axiom analyze_sound :
   forall (e : A0.exp),
     let K := analyze e in
     known_fun (Dom_map K) e /\
-    known_map_inv K.
+    known_map_inv K /\
+    known_map_bound K e.
+
+Lemma analyze_Disjoint e1 e2 :
+  Disjoint _ (A0.bound_var e1) (A0.bound_var e2) ->
+  let K1 := analyze e1 in
+  let K2 := analyze e2 in
+  Disjoint _ (Dom_map K1) (Dom_map K2).
+Proof.
+  intros.
+  destruct (analyze_sound e1) as [_ [_ He1]].
+  destruct (analyze_sound e2) as [_ [_ He2]].
+  unfold known_map_bound in *.
+  subst K1; subst K2.
+  eapply Disjoint_Included; eauto.
+Qed.
+
+Parameter join : known_map -> known_map -> known_map.
+
+Definition join_spec (K1 K2 K3 : known_map) :=
+  forall x,
+    (forall w, K1 ! x = Some w -> K2 ! x = None -> K3 ! x = Some w) /\
+    (forall w, K1 ! x = None -> K2 ! x = Some w -> K3 ! x = Some w) /\
+    (K1 ! x = None -> K2 ! x = None -> K3 ! x = None).
+
+Axiom join_sound :
+  forall K1 K2,
+    Disjoint _ (Dom_map K1) (Dom_map K2) ->
+    join_spec K1 K2 (join K1 K2).
+
+Lemma Disjoint_join_known_map_inv K1 K2 :
+  Disjoint _ (Dom_map K1) (Dom_map K2) ->
+  known_map_inv K1 ->
+  known_map_inv K2 ->
+  known_map_inv (join K1 K2).
+Proof.
+  intros HD HK1 HK2.
+  pose proof (join_sound _ _ HD) as HJ.
+  unfold join_spec, known_map_inv in *.
+  intros.
+  intros Hc.
+  destruct (HJ f) as [Hf1 [Hf2 Hf3]].
+  clear HJ.
+  destruct (K1 ! f) eqn:HK1f;
+    destruct (K2 ! f) eqn:HK2f;
+    remember (join K1 K2) as K3.
+  - inv HD.
+    apply (H0 f).
+    constructor; unfold Ensembles.In, Dom_map; eauto.
+  - assert (K3 ! f = Some w0) by (eapply Hf1; eauto).
+    rewrite H in H0; inv H0.
+    eapply HK1; eauto.
+  - assert (K3 ! f = Some w0) by (eapply Hf2; eauto).
+    rewrite H in H0; inv H0.
+    eapply HK2; eauto.
+  - assert (K3 ! f = None) by (eapply Hf3; eauto).
+    rewrite H in H0; inv H0.
+Qed.
 
 Parameter w0 : web.
 Axiom w0_exposed : w0 \in Exposed.
