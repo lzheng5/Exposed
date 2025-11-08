@@ -95,10 +95,10 @@ Axiom Exposed_singleton : forall w, w \in Exposed -> w = w0.
 Theorem Exposed_nonempty : exists w, w \in Exposed.
 Proof. exists w0. apply w0_exposed. Qed.
 
-Section Spec.
+Section Known.
   Variable K : known_map.
 
-  (* Specification *)
+  (* Specification based on `known_fun` *)
   Inductive trans_ (Γ : A0.vars) : A0.exp -> A1.exp -> Prop :=
   | Trans_ret :
     forall x,
@@ -1262,14 +1262,15 @@ Section Spec.
   (* Top Level *)
   Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
     wf_env ρ2 /\
-      Γ2 \subset Γ1 /\
-      forall x,
-        (x \in Γ1) ->
-        exists v1 v2,
-          M.get x ρ1 = Some v1 /\
-            M.get x ρ2 = Some v2 /\
-            exposed v2 /\
-            V i v1 v2.
+    Γ2 \subset Γ1 /\
+    forall x,
+      (x \in Γ1) ->
+      exists v1 v2,
+        M.get x ρ1 = Some v1 /\
+        M.get x ρ2 = Some v2 /\
+        K ! x = None /\
+        exposed v2 /\
+        V i v1 v2.
 
   Lemma G_top_wf_env_r i Γ1 ρ1 Γ2 ρ2 :
     G_top i Γ1 ρ1 Γ2 ρ2 ->
@@ -1300,15 +1301,206 @@ Section Spec.
     destruct H as [HΓ [Hρ HG]].
     unfold Ensembles.Included, Ensembles.In, Dom_map in *.
     split; auto; intros.
-    edestruct HG as [v1' [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; eauto.
+    edestruct HG as [v1' [v2 [Heqv1 [Heqv2 [HKx [Hex HV]]]]]]; eauto.
     rewrite Heqv1 in H0; inv H0; eauto.
+    eexists; split; eauto.
+    split; auto.
+    eapply binding_inv_exposed; eauto.
   Qed.
 
-End Spec.
+  Lemma G_G_top i Γ1 ρ1 Γ2 ρ2 :
+    G i Γ1 ρ1 Γ2 ρ2 ->
+    Γ2 \subset Γ1 ->
+    G_top i Γ1 ρ1 Γ2 ρ2.
+  Proof.
+    unfold G, G_top.
+    intros.
+    destruct H as [Hρ HG].
+    repeat (split; auto); intros.
+  Abort.
 
-Definition trans_correct_top etop etop' :=
-  A1.occurs_free etop' \subset A0.occurs_free etop /\
+  Definition trans_correct_top etop etop' :=
+    A1.occurs_free etop' \subset A0.occurs_free etop /\
     forall i ρ1 ρ2,
-      let K := analyze etop in
-      G_top K i (A0.occurs_free etop) ρ1 (A1.occurs_free etop') ρ2 ->
-      E K true i ρ1 etop ρ2 etop'.
+      known_map_inv K ->
+      G_top i (A0.occurs_free etop) ρ1 (A1.occurs_free etop') ρ2 ->
+      E true i ρ1 etop ρ2 etop'.
+
+  Lemma trans_correct_top_subset e1 e2 :
+    trans_correct_top e1 e2 ->
+    A1.occurs_free e2 \subset A0.occurs_free e1.
+  Proof.
+    unfold trans_correct_top.
+    intros.
+    inv H; auto.
+  Qed.
+
+  Lemma trans_correct_subset Γ1 Γ2 e1 e2 :
+    trans_correct Γ1 e1 e2 ->
+    Γ1 \subset Γ2 ->
+    trans_correct Γ2 e1 e2.
+  Proof.
+    unfold trans_correct.
+    intros.
+    eapply H; eauto.
+    eapply G_subset; eauto.
+    apply Included_refl.
+  Qed.
+
+  Lemma trans_correct_top_trans_correct e1 e2 :
+    trans_correct_top e1 e2 ->
+    trans_correct (A0.occurs_free e1) e1 e2.
+  Proof.
+    unfold trans_correct_top, trans_correct.
+    intros.
+    destruct H as [HS H].
+    eapply H; eauto.
+    (* eapply G_G_top; eauto. *)
+  Abort.
+
+  Theorem top etop etop':
+    trans (A0.occurs_free etop) etop etop' ->
+    trans_correct_top etop etop'.
+  Proof.
+    unfold trans_correct_top.
+    intros H.
+    specialize (fundamental_property H);
+      unfold trans_correct; intros.
+    split; intros.
+    - eapply trans_exp_inv; eauto.
+    - eapply H0; eauto.
+      eapply G_top_G; eauto.
+  Qed.
+
+  (* Cross-language Compositionality *)
+
+  (* Adequacy *)
+  Theorem adequacy e1 e2:
+    known_map_inv K ->
+    trans_correct_top e1 e2 ->
+    forall ρ1 ρ2,
+      wf_env ρ2 ->
+      (forall k, G_top k (A0.occurs_free e1) ρ1 (A1.occurs_free e2) ρ2) ->
+      forall j1 r1,
+        A0.bstep_fuel ρ1 e1 j1 r1 ->
+        exists j2 r2,
+          A1.bstep_fuel true ρ2 e2 j2 r2 /\
+          (forall k, R k r1 r2).
+  Proof.
+    intros HK; intros.
+    unfold trans_correct_top in H.
+    destruct H as [HS HT].
+
+    assert (HE : E true j1 ρ1 e1 ρ2 e2) by (eapply (HT j1); eauto).
+    edestruct (HE j1) as [j2 [r2 [Hstep2 HR]]]; eauto.
+    eexists; eexists; split; eauto.
+
+    intros.
+    assert (HE' : E true (j1 + k) ρ1 e1 ρ2 e2) by (eapply HT; eauto).
+    edestruct (HE' j1) as [j2' [r2' [Hstep2' HR']]]; eauto; try lia.
+
+    rewrite_math (j1 + k - j1 = k).
+    rewrite_math (j1 - j1 = 0).
+
+    destruct r2; destruct r2'; destruct r1;
+      simpl in *; auto; try contradiction.
+
+    edestruct (A1.bstep_fuel_deterministic w w1 Hstep2 Hstep2'); subst; eauto.
+  Qed.
+
+  (* Behavioral Refinement *)
+  Inductive val_ref_ : A0.val -> A1.wval -> Prop :=
+  | Ref_Vfun :
+    forall f1 ρ1 w xs1 e1 f2 ρ2 xs2 e2,
+      val_ref_ (A0.Vfun f1 ρ1 xs1 e1) (Tag w (A1.Vfun f2 ρ2 xs2 e2))
+
+  | Ref_Vconstr_nil :
+    forall c,
+      val_ref_ (A0.Vconstr c []) (Tag w0 (A1.Vconstr c []))
+
+  | Ref_Vconstr_cons :
+    forall c v1 v2 vs1 vs2,
+      val_ref_ v1 v2 ->
+      val_ref_ (A0.Vconstr c vs1) (Tag w0 (A1.Vconstr c vs2)) ->
+      val_ref_ (A0.Vconstr c (v1 :: vs1)) (Tag w0 (A1.Vconstr c (v2 :: vs2))).
+
+  Hint Constructors val_ref_ : core.
+
+  Definition val_ref := val_ref_.
+
+  Hint Unfold val_ref : core.
+
+  Lemma val_ref_Vconstr c vs1 vs2 :
+    Forall2 val_ref vs1 vs2 ->
+    val_ref (A0.Vconstr c vs1) (Tag w0 (A1.Vconstr c vs2)).
+  Proof.
+    intros.
+    induction H; simpl; auto.
+  Qed.
+
+  Theorem V_val_ref {v1 v2} :
+    (forall i, V i v1 v2) ->
+    val_ref v1 v2.
+  Proof.
+    unfold val_ref.
+    revert v2.
+    induction v1 using val_ind'; intros; simpl.
+    - specialize (H 0).
+      destruct v2.
+      simpl in H.
+      destruct H as [Hw HV].
+      destruct v; try contradiction.
+      destruct HV as [Hex [Hc Hlen]]; subst.
+      destruct l; try discriminate.
+      inv Hex.
+      apply Exposed_singleton in H1; subst; auto.
+    - destruct v2.
+      pose proof (H 0) as H0; simpl in *.
+      destruct H0 as [Hw HV].
+      destruct v; try contradiction.
+      destruct HV as [Hex [Hc Hlen]]; subst.
+
+      destruct l0; simpl in *; inv Hlen.
+      inv Hex.
+      apply Exposed_singleton in H3; subst.
+
+      assert (HV' : forall i, V i v1 t /\ V i (A0.Vconstr c l) (Tag w0 (A1.Vconstr c l0))).
+      {
+        intros.
+        specialize (H (S i)); simpl in *.
+        destruct H as [_ [He [Hc HFV]]]; subst.
+        inv HFV.
+        split; auto.
+
+        assert (He' : exposed (Tag w0 (A1.Vconstr c l0))) by (inv He; inv H5; auto).
+
+        assert (Hw' : wf_val (Tag w0 (A1.Vconstr c l0))).
+        {
+          constructor; intros; auto.
+          inv Hw.
+          inv H4; auto.
+        }
+
+        destruct i; simpl in *;
+          repeat (split; auto);
+          try (eapply V_mono_Forall with (S i); eauto).
+      }
+
+      assert (HV0 : forall i, V i v1 t) by (intros; destruct (HV' i); auto).
+      assert (HV1 : forall i, V i (A0.Vconstr c l) (Tag w0 (A1.Vconstr c l0))) by (intros; destruct (HV' i); auto).
+
+      auto.
+    - specialize (H 0); simpl in *.
+      destruct H as [Hw HV].
+      destruct v2; try contradiction; auto.
+      destruct v; try contradiction; auto.
+  Qed.
+
+  Corollary R_res_val_ref {v1 v2} :
+    (forall i, R i (A0.Res v1) (A1.Res v2)) ->
+    val_ref v1 v2.
+  Proof.
+    intros; eapply V_val_ref; eauto.
+  Qed.
+
+End Known.
