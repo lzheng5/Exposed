@@ -1197,8 +1197,8 @@ Module M <: Annotate.
       (FromList xs) \subset Γ1 ->
       exists vs1 vs2,
         get_list xs ρ1 = Some vs1 /\
-          get_list xs ρ2 = Some vs2 /\
-          Forall2 (V i) vs1 vs2.
+        get_list xs ρ2 = Some vs2 /\
+        Forall2 (V i) vs1 vs2.
   Proof.
     unfold G_top.
     intros HG xs.
