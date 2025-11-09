@@ -1924,8 +1924,8 @@ Section Known.
   Qed.
 
   (* Linking Preservation *)
-  (* To link two programs, we take a joined `K` that knows about the linked programs.
-     Note this is not problematic if `e1` and `e1'` have distinct bound identifiers *)
+  (* To link two programs, we take a joined `K` that knows about both programs.
+     Note this is general enough to cover the ideal scenario when `e1` and `e1'` have distinct bound identifiers *)
   Lemma preserves_linking f w x e1 e2 e1' e2' :
     K ! f = None ->
     K ! x = None ->

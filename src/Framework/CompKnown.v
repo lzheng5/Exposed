@@ -258,6 +258,8 @@ Module M.
   Section Linking.
 
     (* Linking Preservation *)
+    (* To link two programs, we take a joined `K` that knows about both programs.
+       Note this is general enough to cover the ideal scenario when `e1` and `e1'` have distinct bound identifiers *)
     Lemma Top_n_preserves_linking K f w x n n' m m' e1 e2 e1' e2' :
       K ! f = None ->
       K ! x = None ->
