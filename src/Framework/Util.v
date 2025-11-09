@@ -292,3 +292,21 @@ Proof.
   - apply Union_intror.
     eapply H; eauto.
 Qed.
+
+Lemma not_Dom_map_eq {A} (sig:M.t A) x :
+  M.get x sig = None <-> ~ Dom_map sig x.
+Proof.
+  split.
+  - unfold Dom_map.
+    intro. intro Hc.
+    inv Hc.
+    rewrite H0 in H; inv H.
+  - eapply map_util.not_Dom_map_eq; eauto.
+Qed.
+
+Lemma Dom_map_eq {A} (sig:M.t A) x :
+  (exists y, M.get x sig = Some y) <-> Dom_map sig x.
+Proof.
+  unfold Dom_map.
+  split; intros [y Hy]; eauto.
+Qed.

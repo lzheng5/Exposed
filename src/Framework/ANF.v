@@ -492,6 +492,15 @@ Proof.
   intros; auto.
 Qed.
 
+Lemma free_constr_xs_inv Γ x w t xs e :
+  occurs_free (Econstr x w t xs e) \subset Γ ->
+  FromList xs \subset Γ.
+Proof.
+  intros.
+  eapply Included_trans; eauto.
+  eapply free_constr_xs_subset; eauto.
+Qed.
+
 Lemma free_proj_k_subset k x i y w :
   (occurs_free k) \subset (x |: occurs_free (Eproj x w i y k)).
 Proof.
@@ -584,6 +593,15 @@ Proof.
   intros; auto.
 Qed.
 
+Lemma free_app_xs_inv Γ f w xs :
+  occurs_free (Eapp f w xs) \subset Γ ->
+  FromList xs \subset Γ.
+Proof.
+  intros.
+  eapply Included_trans; eauto.
+  eapply free_app_xs_subset; eauto.
+Qed.
+
 Lemma free_app_letapp f w xs x k:
   occurs_free (Eapp f w xs) \subset occurs_free (Eletapp x f w xs k).
 Proof.
@@ -631,6 +649,15 @@ Proof.
   intros; auto.
 Qed.
 
+Lemma free_letapp_xs_inv Γ x f w xs k :
+  occurs_free (Eletapp x f w xs k) \subset Γ ->
+  FromList xs \subset Γ.
+Proof.
+  intros.
+  eapply Included_trans; eauto.
+  eapply free_letapp_xs_subset; eauto.
+Qed.
+
 Lemma free_case_hd_subset e x w c cl :
   occurs_free e \subset occurs_free (Ecase x w ((c, e) :: cl)).
 Proof.
@@ -638,11 +665,29 @@ Proof.
   intros; auto.
 Qed.
 
+Lemma free_case_hd_inv Γ e x w c cl :
+  occurs_free (Ecase x w ((c, e) :: cl)) \subset Γ ->
+  occurs_free e \subset Γ.
+Proof.
+  intros.
+  eapply Included_trans; eauto.
+  eapply free_case_hd_subset; eauto.
+Qed.
+
 Lemma free_case_tl_subset w x c e cl :
   occurs_free (Ecase x w cl) \subset occurs_free (Ecase x w ((c, e) :: cl)).
 Proof.
   unfold Ensembles.Included, Ensembles.In.
   intros; auto.
+Qed.
+
+Lemma free_case_tl_inv Γ e x w c cl :
+  occurs_free (Ecase x w ((c, e) :: cl)) \subset Γ ->
+  occurs_free (Ecase x w cl) \subset Γ.
+Proof.
+  intros.
+  eapply Included_trans; eauto.
+  eapply free_case_tl_subset; eauto.
 Qed.
 
 Lemma free_case_e_inv x w Γ e t cl :

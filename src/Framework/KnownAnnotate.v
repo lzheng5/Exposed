@@ -46,6 +46,7 @@ Inductive known_fun (S : Ensemble var) : A0.exp -> Prop :=
 | Known_Fun:
   forall f xs e k,
     (f \in S) ->
+    Disjoint _ (FromList xs) S ->
     known_fun S e ->
     known_fun S k ->
     known_fun S (A0.Efun f xs e k)
@@ -86,13 +87,30 @@ Definition known_map_inv K :=
 Definition known_map_bound (K : known_map) e :=
   (Dom_map K) \subset (A0.bound_var e).
 
+Definition known_map_exclude (K : known_map) Γ :=
+  Disjoint _ (Dom_map K) Γ.
+
+Definition analyze_spec K e :=
+  known_fun (Dom_map K) e /\
+  known_map_inv K.
+
 Axiom analyze_sound :
   forall (e : A0.exp),
-    let K := analyze e in
-    known_fun (Dom_map K) e /\
-    known_map_inv K /\
-    known_map_bound K e.
+    analyze_spec (analyze e) e.
 
+Lemma known_fun_known_map_bound K e :
+  known_fun (Dom_map K) e ->
+  known_map_bound K e.
+Proof.
+Admitted.
+
+Lemma known_fun_known_map_free K e :
+  known_fun (Dom_map K) e ->
+  known_map_exclude K (A0.occurs_free e).
+Proof.
+Admitted.
+
+(*
 Lemma analyze_Disjoint e1 e2 :
   Disjoint _ (A0.bound_var e1) (A0.bound_var e2) ->
   let K1 := analyze e1 in
@@ -106,6 +124,7 @@ Proof.
   subst K1; subst K2.
   eapply Disjoint_Included; eauto.
 Qed.
+ *)
 
 Parameter join : known_map -> known_map -> known_map.
 
@@ -268,6 +287,61 @@ Section Known.
 
   Hint Unfold trans : core.
 
+  Lemma known_fun_trans e :
+    known_map_inv K ->
+    known_fun (Dom_map K) e ->
+    forall Γ,
+      (A0.occurs_free e) \subset Γ ->
+      exists e', trans Γ e e'.
+  Proof.
+    unfold known_map_inv.
+    intros HK H.
+    induction H; simpl; intros.
+    - exists (A1.Eret x); auto.
+    - apply Dom_map_eq in H.
+      destruct H as [w Hw].
+      exists (A1.Eapp f w ys); econstructor; eauto.
+      eapply A0.free_app_xs_inv; eauto.
+    - apply Dom_map_eq in H.
+      destruct H as [w Hw].
+      destruct (IHknown_fun (x |: Γ)) as [e' He']; auto.
+      eapply A0.free_letapp_k_inv; eauto.
+      exists (A1.Eletapp x f w ys e'); econstructor; eauto.
+      eapply A0.free_letapp_xs_inv; eauto.
+    - apply Dom_map_eq in H.
+      destruct H as [w Hw].
+      destruct (IHknown_fun1 (FromList xs :|: (f |: Γ))) as [e' He']; auto.
+      eapply A0.free_fun_e_inv; eauto.
+      destruct (IHknown_fun2 (f |: Γ)) as [k' Hk']; auto.
+      eapply A0.free_fun_k_inv; eauto.
+      exists (A1.Efun f w xs e' k'); econstructor; eauto.
+    - destruct (IHknown_fun (x |: Γ)) as [e' He']; auto.
+      eapply A0.free_constr_k_inv; eauto.
+      exists (A1.Econstr x w0 ct ys e'); econstructor; eauto.
+      eapply A0.free_constr_xs_inv; eauto.
+    - destruct (IHknown_fun (x |: Γ)) as [e' He']; auto.
+      eapply A0.free_proj_k_inv; eauto.
+      exists (A1.Eproj x w0 n y e'); econstructor; eauto.
+    - exists (A1.Ecase x w0 []); econstructor; eauto.
+    - destruct (IHknown_fun1 Γ) as [e' He']; auto.
+      eapply A0.free_case_hd_inv; eauto.
+      destruct (IHknown_fun2 Γ) as [c' Hc']; auto.
+      eapply A0.free_case_tl_inv; eauto.
+      inv Hc'.
+      + exists (A1.Ecase x w0 [(c, e')]); econstructor; eauto.
+      + exists (A1.Ecase x w0 ((c, e') :: (t, e'0) :: cl')); econstructor; eauto.
+  Qed.
+
+  Corollary known_fun_trans_total e :
+    known_map_inv K ->
+    known_fun (Dom_map K) e ->
+    exists e', trans (A0.occurs_free e) e e'.
+  Proof.
+    intros.
+    eapply known_fun_trans; eauto.
+    apply Included_refl.
+  Qed.
+
   Lemma trans_exp_inv {Γ e e'} :
     trans Γ e e' ->
     (A1.occurs_free e') \subset (A0.occurs_free e).
@@ -287,20 +361,6 @@ Section Known.
     - inv H1; auto.
     - inv H3; auto.
   Qed.
-
-  Lemma trans_exp_weaken {Γ Γ' e e'} :
-    trans Γ e e' ->
-    Γ \subset Γ' ->
-    trans Γ' e e'.
-  Proof.
-  Admitted.
-
-  Theorem trans_total :
-    forall e,
-    exists e',
-      trans (A0.occurs_free e) e e'.
-  Proof.
-  Admitted.
 
   Lemma Erase_Annotate_id e1 e2 e1' :
     trans (A0.occurs_free e1) e1 e1' ->
