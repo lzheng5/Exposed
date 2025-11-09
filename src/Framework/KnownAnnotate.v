@@ -1510,14 +1510,10 @@ Section Known.
     trans (A0.occurs_free etop) etop etop' ->
     trans_correct_top etop etop'.
   Proof.
-    unfold trans_correct_top.
     intros H.
-    specialize (fundamental_property H);
-      unfold trans_correct; intros.
-    split; intros.
-    - eapply trans_exp_inv; eauto.
-    - eapply H0; eauto.
-      eapply G_top_G; eauto.
+    specialize (fundamental_property H).
+    eapply trans_correct_trans_correct_top; eauto.
+    eapply trans_exp_inv; eauto.
   Qed.
 
   (* Cross-language Compositionality *)
