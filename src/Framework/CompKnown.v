@@ -31,6 +31,7 @@ Module M.
 
   Section Comp_n.
 
+    (* need to make `K` a section variable so that we can share constraints between definitions *)
     Variable K : AM.known_map.
 
     Definition Top_n n m := Cross (Cross (C0.Top_n n) (fun e1 e2 => AM.trans_correct_top K e1 e2)) (C1.Top_n m).

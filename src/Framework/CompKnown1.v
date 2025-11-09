@@ -280,7 +280,6 @@ Module M.
       K ! x = None ->
       AM.known_map_inv K ->
       AM.known_fun (Dom_map K) e2' ->
-
       Top_n K n m p e1 e2 ->
       C0.Top_n n' e1' e2' ->
       Top_n K (n + n') m p (A0.link f x e1 e1') (A0.link f x e2 e2').
