@@ -31,7 +31,7 @@ Module M.
 
   Section Comp_n.
 
-    Variable K : known_map.
+    Variable K : AM.known_map.
 
     Definition Top_n n m := Cross (Cross (C0.Top_n n) (fun e1 e2 => AM.trans_correct_top K e1 e2)) (C1.Top_n m).
 
@@ -147,7 +147,7 @@ Module M.
   Section Adequacy.
 
     Lemma Top_n_R_n K n m e1 e2:
-      known_map_inv K ->
+      AM.known_map_inv K ->
       Top_n K n m e1 e2 ->
       forall ρ1 ρ2,
         wf_env ρ2 ->
@@ -191,7 +191,7 @@ Module M.
 
     (* Termination Perservation *)
     Theorem Top_n_preserves_termination K n m e1 e2 :
-      known_map_inv K ->
+      AM.known_map_inv K ->
       Top_n K n m e1 e2 ->
       forall ρ1 ρ2,
         wf_env ρ2 ->
@@ -234,7 +234,7 @@ Module M.
 
     (* Behavioral Refinement *)
     Theorem Top_n_val_ref K n m e1 e2 :
-      known_map_inv K ->
+      AM.known_map_inv K ->
       Top_n K n m e1 e2 ->
       forall ρ1 ρ2,
         wf_env ρ2 ->
