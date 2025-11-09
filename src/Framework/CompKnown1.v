@@ -238,15 +238,16 @@ Module M.
       auto.
     Qed.
 
-    Theorem Top_n_correlate n e1 e2 :
+    Theorem Top_n_correlate K n e1 e2 :
       C0.Top_n n e1 e2 ->
-      exists K, Top_n K n 0 0 e1 e2.
+      AM.known_map_inv K ->
+      AM.known_fun (Dom_map K) e2 ->
+      Top_n K n 0 0 e1 e2.
     Proof.
       unfold Top_n, Cross.
       intros.
-      exists (AM.analyze e2), e2; split.
-      - destruct (AM.analyze_sound e2) as [HS HK].
-        destruct (AM.known_fun_trans_total (AM.analyze e2) e2) as [e2' HA]; auto.
+      exists e2; split.
+      - destruct (AM.known_fun_trans_total K e2) as [e2' HA]; auto.
         exists e2'; split.
         + unfold C.Top_n, Cross.
           exists e2'; split.
@@ -263,19 +264,26 @@ Module M.
     Theorem Top_n_preserves_linking_cross_l K f x n n' m p e1 e2 e1' e2' :
       K ! f = None ->
       K ! x = None ->
+      AM.known_map_inv K ->
+      AM.known_fun (Dom_map K) e2 ->
       C0.Top_n n e1 e2 ->
       Top_n K n' m p e1' e2' ->
-      Top_n (AM.join K (analyze e2)) (n + n') m p (A0.link f x e1 e1') (A0.link f x e2 e2').
+      Top_n K (n + n') m p (A0.link f x e1 e1') (A0.link f x e2 e2').
     Proof.
       intros.
       eapply Top_n_preserves_linking_l; eauto.
       eapply Top_n_correlate; eauto.
     Qed.
 
-    Theorem Top_n_preserves_linking_cross_r f x n n' m p e1 e2 e1' e2' :
-      Top_n n m p e1 e2 ->
+    Theorem Top_n_preserves_linking_cross_r K f x n n' m p e1 e2 e1' e2' :
+      K ! f = None ->
+      K ! x = None ->
+      AM.known_map_inv K ->
+      AM.known_fun (Dom_map K) e2' ->
+
+      Top_n K n m p e1 e2 ->
       C0.Top_n n' e1' e2' ->
-      Top_n (n + n') m p (A0.link f x e1 e1') (A0.link f x e2 e2').
+      Top_n K (n + n') m p (A0.link f x e1 e1') (A0.link f x e2 e2').
     Proof.
       intros.
       eapply Top_n_preserves_linking_r; eauto.
