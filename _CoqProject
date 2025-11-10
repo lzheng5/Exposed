@@ -33,15 +33,15 @@ src/Framework/Label.v
 src/Framework/ANF1.v
 src/Framework/Erase.v
 src/Framework/Annotate.v
-src/Framework/TrivialAnnotate.v
+#src/Framework/TrivialAnnotate.v
 src/Framework/KnownAnnotate.v
 
 src/Framework/RelComp.v
 src/Framework/IdComp.v
 src/Framework/ReflComp.v
 src/Framework/Refl0Comp.v
-src/Framework/Comp.v
 src/Framework/CompKnown.v
 src/Framework/CompKnown1.v
-src/Framework/Comp1.v
-src/Framework/CompTop.v
+#src/Framework/Comp.v
+#src/Framework/Comp1.v
+#src/Framework/CompTop.v

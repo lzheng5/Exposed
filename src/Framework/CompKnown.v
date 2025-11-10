@@ -5,7 +5,7 @@ From CertiCoq.Libraries Require Import maps_util.
 Import ListNotations.
 Require Import Lia.
 
-From Framework Require Import Util RelComp ANF0 Refl0 Refl0Comp KnownAnnotate ANF Refl ReflComp.
+From Framework Require Import Util RelComp ANF0 Refl0 Refl0Comp Annotate ANF Refl ReflComp.
 
 Module A0 := ANF0.
 Module A1 := ANF.
@@ -25,22 +25,20 @@ Module C1 := ReflComp.
 (* Behavioral Refinement *)
 (* Linking Preservation *)
 
-Module AM := KnownAnnotate.
-
-Module M.
+Module M (AM : Annotate).
 
   Section Comp_n.
 
-    (* need to make `K` a section variable so that we can share constraints between definitions *)
-    Variable K : AM.known_map.
+    (* need to make `W` a section variable so that we can share constraints between definitions *)
+    Variable W : AM.web_map.
 
-    Definition Top_n n m := Cross (Cross (C0.Top_n n) (fun e1 e2 => AM.trans_correct_top K e1 e2)) (C1.Top_n m).
+    Definition Top_n n m := Cross (Cross (C0.Top_n n) (fun e1 e2 => AM.trans_correct_top W e1 e2)) (C1.Top_n m).
 
-    Definition V_n n m := Cross (Cross (C0.V_n n) (fun v1 v2 => forall k, AM.V K k v1 v2)) (C1.V_n m).
+    Definition V_n n m := Cross (Cross (C0.V_n n) (fun v1 v2 => forall k, AM.V W k v1 v2)) (C1.V_n m).
 
-    Definition R_n n m := Cross (Cross (C0.R_n n) (fun v1 v2 => forall k, AM.R K k v1 v2)) (C1.R_n m).
+    Definition R_n n m := Cross (Cross (C0.R_n n) (fun v1 v2 => forall k, AM.R W k v1 v2)) (C1.R_n m).
 
-    Definition G_n n m Γ1 Γ2 := Cross (Cross (C0.G_n n Γ1 Γ2) (fun ρ1 ρ2 => forall k, AM.G_top K k Γ1 ρ1 Γ2 ρ2)) (C1.G_n m Γ1 Γ2).
+    Definition G_n n m Γ1 Γ2 := Cross (Cross (C0.G_n n Γ1 Γ2) (fun ρ1 ρ2 => forall k, AM.G_top W k Γ1 ρ1 Γ2 ρ2)) (C1.G_n m Γ1 Γ2).
 
     Lemma V_n_wf_val_r n m v1 v2:
       V_n n m v1 v2 ->
@@ -55,14 +53,18 @@ Module M.
     Qed.
 
     Lemma R_res_inv_l v1 r2 :
-      (forall i, AM.R K i (A0.Res v1) r2) ->
-      exists v2, r2 = A1.Res v2 /\ (forall i, AM.V K i v1 v2).
+      (forall i, AM.R W i (A0.Res v1) r2) ->
+      exists v2, r2 = A1.Res v2 /\ (forall i, AM.V W i v1 v2).
     Proof.
       intros.
       pose proof (H 0) as H0.
       eapply AM.R_res_inv_l in H0.
       destruct H0 as [v2 [Heqv2 _]]; subst.
       eexists; split; eauto.
+      intros.
+      specialize (H i).
+      apply AM.R_res_inv_l in H.
+      destruct H as [v2' [Heqv2' HV]]; inv Heqv2'; eauto.
     Qed.
 
     Lemma R_n_V_n n m v1 v2:
@@ -147,19 +149,19 @@ Module M.
 
   Section Adequacy.
 
-    Lemma Top_n_R_n K n m e1 e2:
-      AM.known_map_inv K ->
-      Top_n K n m e1 e2 ->
+    Lemma Top_n_R_n W n m e1 e2:
+      AM.web_map_inv W ->
+      Top_n W n m e1 e2 ->
       forall ρ1 ρ2,
         wf_env ρ2 ->
-        G_n K n m (A0.occurs_free e1) (A1.occurs_free e2) ρ1 ρ2 ->
+        G_n W n m (A0.occurs_free e1) (A1.occurs_free e2) ρ1 ρ2 ->
         forall j1 r1,
           A0.bstep_fuel ρ1 e1 j1 r1 ->
           exists j2 r2,
             A1.bstep_fuel true ρ2 e2 j2 r2 /\
-            R_n K n m r1 r2.
+            R_n W n m r1 r2.
     Proof.
-      intros HK Hrel.
+      intros HW Hrel.
       unfold Top_n, G_n, R_n, Cross in *.
       destruct Hrel as [e2' [[e1' [HC0 HA]] HC1]].
       intros.
@@ -176,7 +178,7 @@ Module M.
         eapply AM.G_top_wf_env_r; eauto.
       }
 
-      edestruct (AM.adequacy K _ _ HK HA) with (ρ2 := ρ2') as [j2' [r2' [Hstep2' HAR]]]; eauto.
+      edestruct (AM.adequacy W _ _ HW HA) with (ρ2 := ρ2') as [j2' [r2' [Hstep2' HAR]]]; eauto.
       - intros.
         eapply AM.G_top_subset; eauto.
         eapply C0.Top_n_subset; eauto.
@@ -191,17 +193,17 @@ Module M.
     Qed.
 
     (* Termination Perservation *)
-    Theorem Top_n_preserves_termination K n m e1 e2 :
-      AM.known_map_inv K ->
-      Top_n K n m e1 e2 ->
+    Theorem Top_n_preserves_termination W n m e1 e2 :
+      AM.web_map_inv W ->
+      Top_n W n m e1 e2 ->
       forall ρ1 ρ2,
         wf_env ρ2 ->
-        G_n K n m (A0.occurs_free e1) (A1.occurs_free e2) ρ1 ρ2 ->
+        G_n W n m (A0.occurs_free e1) (A1.occurs_free e2) ρ1 ρ2 ->
         forall j1 v1,
           A0.bstep_fuel ρ1 e1 j1 (A0.Res v1) ->
           exists j2 v2,
             A1.bstep_fuel true ρ2 e2 j2 (A1.Res v2) /\
-            V_n K n m v1 v2.
+            V_n W n m v1 v2.
     Proof.
       intros.
       edestruct Top_n_R_n with (ρ1 := ρ1) as [j2 [r2 [Hr2 HR]]]; eauto.
@@ -215,8 +217,8 @@ Module M.
 
     Definition val_ref := Cross (Cross C0.val_ref AM.val_ref) C1.val_ref.
 
-    Lemma R_n_res_val_ref {K n m v1 v2} :
-      R_n K n m (A0.Res v1) (A1.Res v2) ->
+    Lemma R_n_res_val_ref {W n m v1 v2} :
+      R_n W n m (A0.Res v1) (A1.Res v2) ->
       val_ref v1 v2.
     Proof.
       unfold R_n, val_ref, Cross.
@@ -234,12 +236,12 @@ Module M.
     Qed.
 
     (* Behavioral Refinement *)
-    Theorem Top_n_val_ref K n m e1 e2 :
-      AM.known_map_inv K ->
-      Top_n K n m e1 e2 ->
+    Theorem Top_n_val_ref W n m e1 e2 :
+      AM.web_map_inv W ->
+      Top_n W n m e1 e2 ->
       forall ρ1 ρ2,
         wf_env ρ2 ->
-        G_n K n m (A0.occurs_free e1) (A1.occurs_free e2) ρ1 ρ2 ->
+        G_n W n m (A0.occurs_free e1) (A1.occurs_free e2) ρ1 ρ2 ->
         forall j1 v1,
           A0.bstep_fuel ρ1 e1 j1 (A0.Res v1) ->
           exists j2 v2,
@@ -258,24 +260,23 @@ Module M.
   Section Linking.
 
     (* Linking Preservation *)
-    (* To link two programs, we take a joined `K` that knows about both programs.
+    (* To link two programs, we take a joined `W` that knows about both programs.
        Note this is general enough to cover the ideal scenario when `e1` and `e1'` have distinct bound identifiers *)
-    Lemma Top_n_preserves_linking K f w x n n' m m' e1 e2 e1' e2' :
-      K ! f = None ->
-      K ! x = None ->
+    Lemma Top_n_preserves_linking W f w x n n' m m' e1 e2 e1' e2' :
+      AM.linking_inv W f x ->
       (w \in Exposed) ->
-      Top_n K n m e1 e2 ->
-      Top_n K n' m' e1' e2' ->
-      Top_n K (n + n') (m + m') (A0.link f x e1 e1') (A1.link f w x e2 e2').
+      Top_n W n m e1 e2 ->
+      Top_n W n' m' e1' e2' ->
+      Top_n W (n + n') (m + m') (A0.link f x e1 e1') (A1.link f w x e2 e2').
     Proof.
       unfold Top_n, Cross.
-      intros HKf HKx Hw.
+      intros HW Hw.
       intros.
       destruct H as [e3 [[e4 [HC0 HA1]] HC1]].
       destruct H0 as [e3' [[e4' [HC0' HA1']] HC1']].
 
       eapply (C0.Top_n_preserves_linking f x n n') in HC0; eauto.
-      eapply (AM.preserves_linking K f w x e4 e3 e4' e3') in HA1; eauto.
+      eapply (AM.preserves_linking W f w x e4 e3 e4' e3') in HA1; eauto.
       eapply (C1.Top_n_preserves_linking f w x m m') in HC1; eauto.
     Qed.
 
