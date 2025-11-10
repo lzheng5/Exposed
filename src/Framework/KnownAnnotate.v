@@ -343,7 +343,56 @@ Section Known.
     Erase.trans (A1.occurs_free e1') e1' e2 ->
     e1 = e2.
   Proof.
-  Admitted.
+    unfold trans.
+    intro H.
+    revert e2.
+    induction H; simpl; intros.
+    - inv H1; auto.
+    - inv H4; auto.
+      erewrite IHtrans_1 with (e2 := e'0); eauto.
+      + erewrite IHtrans_2 with (e2 := k'0); eauto.
+        eapply Erase.trans_exp_strengthen; eauto.
+        eapply A1.free_fun_k_subset; eauto.
+      + eapply Erase.trans_exp_strengthen; eauto.
+        eapply A1.free_fun_e_subset; eauto.
+    - inv H3; auto.
+      erewrite IHtrans_1 with (e2 := e'0); eauto.
+      + erewrite IHtrans_2 with (e2 := k'0); eauto.
+        eapply Erase.trans_exp_strengthen; eauto.
+        eapply A1.free_fun_k_subset; eauto.
+      + eapply Erase.trans_exp_strengthen; eauto.
+        eapply A1.free_fun_e_subset; eauto.
+    - inv H4; auto.
+    - inv H3; auto.
+    - inv H6; auto.
+      erewrite IHtrans_ with (e2 := k'0); eauto.
+      eapply Erase.trans_exp_strengthen; eauto.
+      eapply A1.free_letapp_k_subset; eauto.
+    - inv H5; auto.
+      erewrite IHtrans_ with (e2 := k'0); eauto.
+      eapply Erase.trans_exp_strengthen; eauto.
+      eapply A1.free_letapp_k_subset; eauto.
+    - inv H3; auto.
+      erewrite IHtrans_ with (e2 := k'0); eauto.
+      eapply Erase.trans_exp_strengthen; eauto.
+      eapply A1.free_constr_k_subset; eauto.
+    - inv H3; auto.
+      erewrite IHtrans_ with (e2 := k'0); eauto.
+      eapply Erase.trans_exp_strengthen; eauto.
+      eapply A1.free_proj_k_subset; eauto.
+    - inv H1; auto.
+    - inv H3; auto.
+      erewrite IHtrans_1 with (e2 := e'0); eauto.
+      assert (A0.Ecase x cl = A0.Ecase x cl'0).
+      {
+        erewrite IHtrans_2 with (e2 := (A0.Ecase x cl'0)); eauto.
+        eapply Erase.trans_exp_strengthen; eauto.
+        eapply A1.free_case_tl_subset; eauto.
+      }
+      inv H3; auto.
+      eapply Erase.trans_exp_strengthen; eauto.
+      eapply A1.free_case_hd_subset; eauto.
+  Qed.
 
   (* Cross-language Logical Relations *)
   (* Note these are parameterized by the known_map, `K` *)
