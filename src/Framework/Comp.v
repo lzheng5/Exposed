@@ -192,7 +192,7 @@ Module M (AM : Annotate).
         + eexists; eexists; split; eauto.
     Qed.
 
-    (* Termination Perservation *)
+    (* Termination Preservation *)
     Theorem Top_n_preserves_termination W n m e1 e2 :
       AM.web_map_inv W ->
       Top_n W n m e1 e2 ->

@@ -198,7 +198,7 @@ Section Adequacy.
           eapply V_mono; eauto; try lia.
   Qed.
 
-  (* Termination Perservation *)
+  (* Termination Preservation *)
   Theorem Top_n_preserves_termination n e1 e2 :
     Top_n n e1 e2 ->
     forall ρ1 ρ2,
