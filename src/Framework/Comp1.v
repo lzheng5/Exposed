@@ -5,7 +5,7 @@ From CertiCoq.Libraries Require Import maps_util.
 Import ListNotations.
 Require Import Lia.
 
-From Framework Require Import Util RelComp ANF0 Refl0 Refl0Comp Annotate ANF Refl ReflComp Erase CompKnown.
+From Framework Require Import Util RelComp ANF0 Refl0 Refl0Comp Annotate ANF Refl ReflComp Erase Comp.
 
 Module A0 := ANF0.
 Module A1 := ANF.
@@ -27,7 +27,7 @@ Module C1 := ReflComp.
 
 Module M (AM : Annotate).
 
-  Module C := CompKnown.M AM.
+  Module C := Comp.M AM.
 
   Section Comp_n.
 
