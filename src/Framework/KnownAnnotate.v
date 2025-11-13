@@ -12,11 +12,13 @@ Module A1 := ANF.
 
 Module M <: Annotate.
 
+  (* TODO: merge `known_map_inv` into `known_fun` *)
+
   (* Known Function Analysis With A Single Exposed Web Id *)
 
   (* Outline: *)
   (* 1. run `analyze` to build `K : known_map` for every function identifiers (assume unique names) in the program with nonexposed web ids (Note it is not necessary to require them to be distinct though) *)
-  (* 2. follow `escape_fun_exp` as in CertiCoq to filter `K` so that its domain satisfies `known_fun` *)
+  (* 2. follow `escaping_fun_exp` as in CertiCoq [https://github.com/CertiCoq/certicoq/blob/master/theories/LambdaANF/dead_param_elim.v] to filter `K` so that its domain satisfies `known_fun` *)
   (* 3. rewrite based on `K` *)
 
   (* Step 3 is the main step we are establishing here *)
@@ -26,7 +28,7 @@ Module M <: Annotate.
   Parameter analyze : A0.exp -> known_map.
 
   (* Specification for the *result* of `analyze`, or `K` *)
-  (* Similar to CertiCoq's `Known_exp` *)
+  (* Similar to CertiCoq's `Known_exp` [https://github.com/CertiCoq/certicoq/blob/master/theories/LambdaANF/dead_param_elim_util.v] *)
   Inductive known_fun (S : Ensemble var) : A0.exp -> Prop :=
   | Known_Ret :
     forall x,
@@ -35,13 +37,11 @@ Module M <: Annotate.
 
   | Known_App :
     forall f ys,
-      (f \in S) ->
       Disjoint _ (FromList ys) S ->
       known_fun S (A0.Eapp f ys)
 
   | Known_LetApp :
     forall x f ys e,
-      (f \in S) ->
       (~ x \in S) -> (* intermediate result shouldn't be known fun *)
       Disjoint _ (FromList ys) S ->
       known_fun S e ->
@@ -49,7 +49,6 @@ Module M <: Annotate.
 
   | Known_Fun:
     forall f xs e k,
-      (f \in S) ->
       Disjoint _ (FromList xs) S ->
       known_fun S e ->
       known_fun S k ->
@@ -233,23 +232,25 @@ Module M <: Annotate.
       intros HK H.
       induction H; simpl; intros.
       - exists (A1.Eret x); auto.
-      - apply Dom_map_eq in H.
-        destruct H as [w Hw].
-        exists (A1.Eapp f w ys); econstructor; eauto.
-        eapply A0.free_app_xs_inv; eauto.
-      - apply Dom_map_eq in H.
-        destruct H as [w Hw].
-        destruct (IHknown_fun (x |: Γ)) as [e' He']; auto.
+      - destruct (K ! f) eqn:HKf.
+        + exists (A1.Eapp f w ys); econstructor; eauto.
+          eapply A0.free_app_xs_inv; eauto.
+        + exists (A1.Eapp f w0 ys); eapply Trans_app_unknown; eauto.
+          eapply A0.free_app_xs_inv; eauto.
+      - destruct (IHknown_fun (x |: Γ)) as [e' He']; auto.
         eapply A0.free_letapp_k_inv; eauto.
-        exists (A1.Eletapp x f w ys e'); econstructor; eauto.
-        eapply A0.free_letapp_xs_inv; eauto.
-      - apply Dom_map_eq in H.
-        destruct H as [w Hw].
-        destruct (IHknown_fun1 (FromList xs :|: (f |: Γ))) as [e' He']; auto.
+        destruct (K ! f) eqn:HKf.
+        + exists (A1.Eletapp x f w ys e'); econstructor; eauto.
+          eapply A0.free_letapp_xs_inv; eauto.
+        + exists (A1.Eletapp x f w0 ys e'); eapply Trans_letapp_unknown; eauto.
+          eapply A0.free_letapp_xs_inv; eauto.
+      - destruct (IHknown_fun1 (FromList xs :|: (f |: Γ))) as [e' He']; auto.
         eapply A0.free_fun_e_inv; eauto.
         destruct (IHknown_fun2 (f |: Γ)) as [k' Hk']; auto.
         eapply A0.free_fun_k_inv; eauto.
-        exists (A1.Efun f w xs e' k'); econstructor; eauto.
+        destruct (K ! f) eqn:Hkf.
+        + exists (A1.Efun f w xs e' k'); econstructor; eauto.
+        + exists (A1.Efun f w0 xs e' k'); eapply Trans_fun_unknown; eauto.
       - destruct (IHknown_fun (x |: Γ)) as [e' He']; auto.
         eapply A0.free_constr_k_inv; eauto.
         exists (A1.Econstr x w0 ct ys e'); econstructor; eauto.
