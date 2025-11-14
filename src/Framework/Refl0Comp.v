@@ -21,7 +21,7 @@ Section Refl0Comp.
 
   Definition R_n := Comp (fun r1 r2 => forall k, R k r1 r2).
 
-  Definition G_n n Γ1 Γ2 := Comp (fun ρ1 ρ2 => forall k, G_top k Γ1 ρ1 Γ2 ρ2) n.
+  Definition G_n n Γ1 (Γ2 : vars) := Comp (fun ρ1 ρ2 => forall k, G_top k Γ1 ρ1 ρ2) n.
 
   Lemma V_n_refl n v :
     V_n n v v.
@@ -97,15 +97,13 @@ Section Refl0Comp.
       eapply Included_trans; eauto.
   Qed.
 
-  Lemma G_top_subset i Γ1 ρ1 Γ2 ρ2 Γ3 Γ4 :
-    G_top i Γ1 ρ1 Γ2 ρ2 ->
-    Γ3 \subset Γ1 ->
-    Γ4 \subset Γ3 ->
-    G_top i Γ3 ρ1 Γ4 ρ2.
+  Lemma G_top_subset i Γ1 ρ1 Γ2 ρ2:
+    G_top i Γ1 ρ1 ρ2 ->
+    Γ2 \subset Γ1 ->
+    G_top i Γ2 ρ1 ρ2.
   Proof.
     unfold G_top.
     intros.
-    destruct H as [Hs HG].
     repeat (split; auto).
     eapply G_subset; eauto.
   Qed.
@@ -152,26 +150,20 @@ Section Adequacy.
       destruct H.
       unfold E, E' in *.
       pose proof (H3 0) as HG0.
-      destruct HG0 as [HS _].
 
       edestruct (H0 j1 ρ1 ρ1') with (j1 := j1) as [j2 [r2 [Hr2 HR]]]; eauto.
-      + destruct (H3 j1) as [_ HG].
-        repeat (split; auto).
-      + edestruct (IHHrel ρ1' ρ2) as [j3 [r3 [Hr3 HR']]]; eauto.
-        eapply G_n_subset; eauto.
-        eapply Top_n_subset; eauto.
+      edestruct (IHHrel ρ1' ρ2) as [j3 [r3 [Hr3 HR']]]; eauto.
+      eapply G_n_subset with (Γ2 := occurs_free c3) (Γ4 := occurs_free c3); eauto.
+      eapply Top_n_subset; eauto.
 
-        eexists; eexists; split; eauto.
-        econstructor; eauto.
-        intros.
-        edestruct (H0 (k + j1) ρ1 ρ1') with (j1 := j1) as [j4 [r4 [Hr4 HR'']]]; eauto; try lia.
-        * specialize (H3 (k + j1)).
-          eapply G_top_subset; eauto.
-          apply Included_refl.
-        * unfold R, R' in *.
-          destruct r1; destruct r4; destruct r2; try contradiction; auto.
-          edestruct (bstep_fuel_deterministic v1 v0 Hr2 Hr4); subst; eauto.
-          eapply V_mono; eauto; try lia.
+      eexists; eexists; split; eauto.
+      econstructor; eauto.
+      intros.
+      edestruct (H0 (k + j1) ρ1 ρ1') with (j1 := j1) as [j4 [r4 [Hr4 HR'']]]; eauto; try lia.
+      unfold R, R' in *.
+      destruct r1; destruct r4; destruct r2; try contradiction; auto.
+      edestruct (bstep_fuel_deterministic v1 v0 Hr2 Hr4); subst; eauto.
+      eapply V_mono; eauto; try lia.
   Qed.
 
   (* Termination Preservation *)
@@ -355,18 +347,14 @@ Section Linking.
     unfold related_top, related.
     intros.
     split; auto; intros.
-    eapply H0; eauto.
-    eapply G_top_G; eauto.
   Qed.
 
-  Lemma G_G_top i Γ1 ρ1 Γ2 ρ2 :
+  Lemma G_G_top i Γ1 ρ1 ρ2 :
     G i Γ1 ρ1 ρ2 ->
-    Γ2 \subset Γ1 ->
-    G_top i Γ1 ρ1 Γ2 ρ2.
+    G_top i Γ1 ρ1 ρ2.
   Proof.
     unfold G, G_top.
-    intros.
-    repeat (split; auto); intros.
+    intros; auto.
   Qed.
 
   Lemma related_top_related e1 e2 :
@@ -377,7 +365,6 @@ Section Linking.
     intros.
     destruct H as [HS H].
     eapply H; eauto.
-    eapply G_G_top; eauto.
   Qed.
 
   (* Linking Preservation for [related_top] *)

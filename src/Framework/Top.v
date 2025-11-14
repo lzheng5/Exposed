@@ -130,12 +130,12 @@ Module ReflTop.
       inv H1; auto.
   Qed.
 
-  Lemma G_top_relate {i Γ1 ρ1 Γ2 ρ2}:
-    Id.G_top i Γ1 ρ1 Γ2 ρ2 <-> Refl.G_top i Γ1 ρ1 Γ2 ρ2.
+  Lemma G_top_relate {i Γ1 ρ1 ρ2}:
+    Id.G_top i Γ1 ρ1 ρ2 <-> Refl.G_top i Γ1 ρ1 ρ2.
   Proof.
     unfold Id.G_top, Refl.G_top.
     split; intros;
-      destruct H as [Hr1 [Hr2 [HS HG]]];
+      destruct H as [Hr1 [Hr2 HG]];
       repeat (split; auto); intros;
       edestruct HG as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; eauto;
       eexists; eexists; repeat (split; eauto);

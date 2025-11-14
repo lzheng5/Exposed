@@ -1079,10 +1079,9 @@ Proof.
 Qed.
 
 (* Top Level *)
-Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
+Definition G_top i Γ1 ρ1 ρ2 :=
   wf_env ρ1 /\
   wf_env ρ2 /\
-  Γ2 \subset Γ1 /\
   forall x,
     (x \in Γ1) ->
     exists v1 v2,
@@ -1092,24 +1091,30 @@ Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
       V i v1 v2.
 
 Lemma G_top_G : forall {i Γ1 ρ1 Γ2 ρ2},
-    G_top i Γ1 ρ1 Γ2 ρ2 ->
+    Γ2 \subset Γ1 ->
+    G_top i Γ1 ρ1 ρ2 ->
     G i Γ1 ρ1 ρ2.
 Proof.
   unfold G_top, G.
   intros.
-  destruct H as [Hr1 [Hr2 [HS HG]]].
+  destruct H0 as [Hr1 [Hr2 HG]].
   unfold Ensembles.Included, Ensembles.In, Dom_map in *.
   repeat (split; auto); intros.
   edestruct HG as [v1' [v2 [Heqv1' [Heqv2 [Hexv1 HV]]]]]; eauto.
-  rewrite Heqv1' in H0; inv H0.
+  rewrite Heqv1' in H1; inv H1.
   eexists; split; eauto.
 Qed.
 
 Definition related_top etop etop' :=
   occurs_free etop' \subset occurs_free etop /\
   forall i ρ1 ρ2,
-    G_top i (occurs_free etop) ρ1 (occurs_free etop') ρ2 ->
+    G_top i (occurs_free etop) ρ1 ρ2 ->
     E true i ρ1 etop ρ2 etop'.
+
+Lemma related_top_subset e e' :
+  related_top e e' ->
+  occurs_free e' \subset occurs_free e.
+Proof. unfold related_top; intros; tauto. Qed.
 
 Theorem top etop:
   related_top etop etop.
@@ -1124,6 +1129,7 @@ Proof.
   destruct H as [_ [Hr2 _]].
   eapply H0; eauto.
   eapply G_top_G; eauto.
+  eapply Included_refl; eauto.
 Qed.
 
 (* Reflexivity of [related_top] *)
@@ -1140,6 +1146,7 @@ Proof.
   intros.
   eapply H0; eauto.
   eapply G_top_G; eauto.
+  eapply Included_refl; eauto.
 Qed.
 
 (* Transitivity of [related_top] *)
@@ -1153,7 +1160,7 @@ Proof.
   destruct H0.
   split; intros.
   - eapply Included_trans; eauto.
-  - destruct H3 as [Hr1 [Hr2 [Hs HG]]].
+  - destruct H3 as [Hr1 [Hr2 HG]].
     eapply trans_E; eauto.
     intros.
     eapply H2; eauto.

@@ -475,10 +475,9 @@ Proof.
 Qed.
 
 (* Top Level *)
-Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
+Definition G_top i Γ1 ρ1 ρ2 :=
   wf_env ρ1 /\
   wf_env ρ2 /\
-  Γ2 \subset Γ1 /\
   (forall x,
     (x \in Γ1 ->
      exists v1 v2,
@@ -488,22 +487,23 @@ Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
        V i v1 v2)).
 
 Lemma G_top_G {i Γ1 ρ1 Γ2 ρ2} :
-  G_top i Γ1 ρ1 Γ2 ρ2 ->
+  Γ2 \subset Γ1 ->
+  G_top i Γ1 ρ1 ρ2 ->
   G i Γ1 ρ1 Γ2 ρ2.
 Proof.
   unfold G_top, G.
   intros.
-  destruct H as [Hr1 [Hr2 [Hs HG]]].
+  destruct H0 as [Hr1 [Hr2 HG]].
   repeat (split; auto); intros.
   edestruct (HG x) as [v1' [v2 [Heqv1' [Heqv2 [Hex HV]]]]]; eauto.
-  rewrite Heqv1' in H0; inv H0.
+  rewrite Heqv1' in H1; inv H1.
   eexists; split; eauto; intros.
 Qed.
 
 Definition trans_correct_top etop etop' :=
   (occurs_free etop') \subset (occurs_free etop) /\
   forall i ρ1 ρ2,
-    G_top i (occurs_free etop) ρ1 (occurs_free etop') ρ2 ->
+    G_top i (occurs_free etop) ρ1 ρ2 ->
     E true i ρ1 etop ρ2 etop'.
 
 Theorem top' etop etop':
@@ -520,6 +520,8 @@ Proof.
   - intros.
     eapply H0; eauto.
     eapply G_top_G; eauto.
+    eapply trans_refl in H; eauto; subst.
+    apply Included_refl.
 Qed.
 
 (* Reflexivity of [trans_correct_top] *)
@@ -536,6 +538,7 @@ Proof.
   intros.
   eapply H0; eauto.
   eapply G_top_G; eauto.
+  apply Included_refl.
 Qed.
 
 (* Transitivity of [trans_correct_top] *)
@@ -549,7 +552,7 @@ Proof.
   destruct H0.
   split; intros.
   - eapply Included_trans; eauto.
-  - destruct H3 as [Hr1 [Hr2 [Hs HG]]].
+  - destruct H3 as [Hr1 [Hr2 HG]].
     eapply trans_E; eauto.
     intros.
     eapply H2; eauto.
@@ -629,19 +632,20 @@ Qed.
 
 (* Stronger [G_top] *)
 Lemma G_top_weak_G_top {i Γ1 ρ1 Γ2 ρ2} :
-  G_top i Γ1 ρ1 Γ2 ρ2 ->
+  Γ2 \subset Γ1 ->
+  G_top i Γ1 ρ1 ρ2 ->
   weak_G_top i Γ1 ρ1 Γ2 ρ2.
 Proof.
   unfold weak_G_top, G_top.
   intros.
-  destruct H as [Hr1 [Hr2 [HS HG]]].
+  destruct H0 as [Hr1 [Hr2 HG]].
   repeat (split; auto); intros.
   - edestruct (HG x) as [v1' [v2 [Heqv1' [Heqv2 [Hex HV]]]]]; eauto.
   - unfold Ensembles.Included, Ensembles.In in *.
     edestruct (HG x) as [v1' [v2 [Heqv1' [Heqv2 [Hex HV]]]]]; eauto.
     eexists; split; eauto.
     eapply V_exposed; eauto.
-  - inv H.
+  - inv H0.
     edestruct (HG x) as [v1' [v2 [Heqv1' [Heqv2 [Hex HV]]]]]; eauto.
 Qed.
 

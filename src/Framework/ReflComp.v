@@ -21,7 +21,7 @@ Section ReflComp.
 
   Definition R_n := Comp (fun r1 r2 => forall k, R k r1 r2).
 
-  Definition G_n n Γ1 Γ2 := Comp (fun ρ1 ρ2 => forall k, G_top k Γ1 ρ1 Γ2 ρ2) n.
+  Definition G_n n Γ1 (Γ2 : vars) := Comp (fun ρ1 ρ2 => forall k, G_top k Γ1 ρ1 ρ2) n.
 
   Lemma V_n_refl n v :
     wf_val v ->
@@ -120,15 +120,14 @@ Section ReflComp.
       destruct (H 0) as [Hr1 [Hr2 _]]; auto.
   Qed.
 
-  Lemma G_top_subset i Γ1 ρ1 Γ2 ρ2 Γ3 Γ4 :
-    G_top i Γ1 ρ1 Γ2 ρ2 ->
-    Γ3 \subset Γ1 ->
-    Γ4 \subset Γ3 ->
-    G_top i Γ3 ρ1 Γ4 ρ2.
+  Lemma G_top_subset i Γ1 ρ1 Γ2 ρ2 :
+    G_top i Γ1 ρ1 ρ2 ->
+    Γ2 \subset Γ1 ->
+    G_top i Γ2 ρ1 ρ2.
   Proof.
     unfold G_top.
     intros.
-    destruct H as [Hr1 [Hr2 [Hs HG]]].
+    destruct H as [Hr1 [Hr2 HG]].
     repeat (split; auto).
   Qed.
 
@@ -176,13 +175,11 @@ Section Adequacy.
       destruct H.
       unfold E, E' in *.
       pose proof (H5 0) as HG0.
-      destruct HG0 as [Hw1 [Hw2 [HS _]]].
+      destruct HG0 as [Hw1 [Hw2 _]].
 
       edestruct (H2 j1 ρ1 ρ1') with (j1 := j1) as [j2 [r2 [Hr2 HR]]]; eauto.
-      + destruct (H5 j1) as [Hw1' [Hw2' [_ HG]]].
-        repeat (split; auto).
       + edestruct (IHHrel ρ1' ρ2) as [j3 [r3 [Hr3 HR']]]; eauto.
-        eapply G_n_subset; eauto.
+        eapply G_n_subset with (Γ2 := occurs_free c3) (Γ4 := occurs_free c3); eauto.
         eapply Top_n_subset; eauto.
 
         eexists; eexists; split; eauto.
@@ -190,9 +187,7 @@ Section Adequacy.
         intros.
         edestruct (H2 (k + j1) ρ1 ρ1') with (j1 := j1) as [j4 [r4 [Hr4 HR'']]]; eauto; try lia.
         * specialize (H5 (k + j1)).
-          eapply G_top_subset; eauto.
-          apply Included_refl.
-        * unfold R, R' in *.
+          unfold R, R' in *.
           destruct r1; destruct r4; destruct r2; try contradiction; auto.
           edestruct (bstep_fuel_deterministic w1 w0 Hr2 Hr4); subst; eauto.
           eapply V_mono; eauto; try lia.
@@ -475,6 +470,7 @@ Section Linking.
   Proof.
     unfold related_top, related.
     intros.
+    inv H.
   Abort.
 
   Lemma G_G_top i Γ1 ρ1 Γ2 ρ2 :
@@ -482,16 +478,17 @@ Section Linking.
     Γ2 \subset Γ1 ->
     wf_env ρ1 ->
     wf_env ρ2 ->
-    G_top i Γ1 ρ1 Γ2 ρ2.
+    G_top i Γ1 ρ1 ρ2.
   Proof.
     unfold G, G_top.
     intros.
     repeat (split; auto); intros.
+    destruct H as [Hr1 [Hr2 HG]].
   Abort.
 
   (* Environment Lemmas *)
-  Lemma G_top_get_list {i Γ1 ρ1 Γ2 ρ2} :
-    G_top i Γ1 ρ1 Γ2 ρ2 ->
+  Lemma G_top_get_list {i Γ1 ρ1 ρ2} :
+    G_top i Γ1 ρ1 ρ2 ->
     forall xs,
       (FromList xs) \subset Γ1 ->
       exists vs1 vs2,
@@ -501,7 +498,7 @@ Section Linking.
   Proof.
     unfold G_top.
     intros HG xs.
-    destruct HG as [Hr1 [Hr2 [HS HG]]].
+    destruct HG as [Hr1 [Hr2 HG]].
     induction xs; simpl; intros.
     - eexists; eexists; repeat split; eauto.
     - rewrite FromList_cons in H.
@@ -521,27 +518,23 @@ Section Linking.
       exists (v1 :: vs1), (v2 :: vs2); split; auto.
   Qed.
 
-  Lemma G_top_set {i Γ1 ρ1 Γ2 ρ2}:
-    G_top i Γ1 ρ1 Γ2 ρ2 ->
+  Lemma G_top_set {i Γ1 ρ1 ρ2}:
+    G_top i Γ1 ρ1 ρ2 ->
     forall {x v1 v2},
       wf_val v1 ->
       wf_val v2 ->
       exposed v1 ->
       V i v1 v2 ->
-      G_top i (x |: Γ1) (M.set x v1 ρ1) (x |: Γ2) (M.set x v2 ρ2).
+      G_top i (x |: Γ1) (M.set x v1 ρ1) (M.set x v2 ρ2).
   Proof.
     unfold G_top.
     intros.
-    destruct H as [Hr1 [Hr2 [HS HG]]].
+    destruct H as [Hr1 [Hr2 HG]].
     split.
     eapply wf_env_set; eauto.
 
     split.
     eapply wf_env_set; eauto.
-
-    split.
-    apply Included_Union_compat; auto.
-    apply Included_refl.
 
     intros.
     destruct (M.elt_eq x0 x); subst.
@@ -553,8 +546,8 @@ Section Linking.
       eapply HG; eauto.
   Qed.
 
-  Lemma G_top_set_lists {i Γ1 ρ1 Γ2 ρ2}:
-    G_top i Γ1 ρ1 Γ2 ρ2 ->
+  Lemma G_top_set_lists {i Γ1 ρ1 ρ2}:
+    G_top i Γ1 ρ1 ρ2 ->
     forall {xs vs1 vs2 ρ3 ρ4 w},
       Forall2 (V i) vs1 vs2 ->
       (w \in Exposed) ->
@@ -562,7 +555,7 @@ Section Linking.
       Forall exposed vs2 ->
       set_lists xs vs1 ρ1 = Some ρ3 ->
       set_lists xs vs2 ρ2 = Some ρ4 ->
-      G_top i (FromList xs :|: Γ1) ρ3 (FromList xs :|: Γ2) ρ4.
+      G_top i (FromList xs :|: Γ1) ρ3 ρ4.
   Proof.
     unfold G_top.
     intros HG xs.
@@ -570,10 +563,8 @@ Section Linking.
     - destruct vs1; try discriminate.
       destruct vs2; try discriminate.
       inv H3; inv H4.
-      destruct HG as [Hr1 [Hr2 [HS HG]]].
+      destruct HG as [Hr1 [Hr2 HG]].
       repeat (split; auto); intros.
-      apply Included_Union_compat; auto.
-      apply Included_refl.
       inv H3.
       inv H4.
       eapply HG; eauto.
@@ -582,7 +573,7 @@ Section Linking.
       destruct (set_lists xs vs1 ρ1) eqn:Heq1; try discriminate.
       destruct (set_lists xs vs2 ρ2) eqn:Heq2; try discriminate.
       inv H; inv H1; inv H2; inv H3; inv H4.
-      destruct HG as [Hr1 [Hr2 [HS HG]]].
+      destruct HG as [Hr1 [Hr2 HG]].
 
       split.
       eapply wf_env_set; eauto.
@@ -596,10 +587,6 @@ Section Linking.
       eapply V_wf_val_Forall_r; eauto.
       eapply V_wf_val_r; eauto.
 
-      split.
-      apply Included_Union_compat; auto.
-      apply Included_refl.
-
       intros.
       destruct (M.elt_eq x a); subst.
       + repeat rewrite M.gss in *; eauto.
@@ -610,14 +597,14 @@ Section Linking.
   Qed.
 
   (* Monotonicity Lemma *)
-  Lemma G_top_mono {Γ1 Γ2 ρ1 ρ2} i j:
-    G_top i Γ1 ρ1 Γ2 ρ2 ->
+  Lemma G_top_mono {Γ1 ρ1 ρ2} i j:
+    G_top i Γ1 ρ1 ρ2 ->
     j <= i ->
-    G_top j Γ1 ρ1 Γ2 ρ2.
+    G_top j Γ1 ρ1 ρ2.
   Proof.
     unfold G_top.
     intros.
-    destruct H as [Hr1 [Hr2 [HS HG]]].
+    destruct H as [Hr1 [Hr2 HG]].
     repeat (split; auto); intros.
     edestruct HG as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; eauto.
     eexists; eexists; repeat split; eauto.
@@ -627,13 +614,12 @@ Section Linking.
   (* Compatibility Lemmas *)
   Lemma Vfun_V e e' :
     related_top e e' ->
-    forall i f xs Γ1 Γ2 ρ1 ρ2 w,
+    forall i f xs Γ1 ρ1 ρ2 w,
       (w \in Exposed) ->
       wf_env ρ1 ->
       wf_env ρ2 ->
-      G_top i Γ1 ρ1 Γ2 ρ2 ->
+      G_top i Γ1 ρ1 ρ2 ->
       occurs_free e \subset (FromList xs :|: (f |: Γ1)) ->
-      occurs_free e' \subset (FromList xs :|: (f |: Γ2)) ->
       V i (Tag w (Vfun f ρ1 xs e)) (Tag w (Vfun f ρ2 xs e')).
   Proof.
     unfold related_top.
@@ -643,15 +629,15 @@ Section Linking.
       destruct (exposed_reflect w); try contradiction.
 
     apply (He (i - (i - j)) ρ3 ρ4); auto.
-    eapply G_top_subset with (Γ1 := FromList xs :|: (f |: Γ1)) (Γ2 := FromList xs :|: (f |: Γ2)); eauto.
+    eapply G_top_subset with (Γ1 := FromList xs :|: (f |: Γ1)); eauto.
     eapply G_top_set_lists; eauto.
     eapply G_top_set; eauto.
     eapply G_top_mono; eauto; try lia.
     apply V_mono with i; try lia.
-    eapply IHi with (Γ2 := Γ2); eauto.
+    eapply IHi; eauto.
     apply G_top_mono with (S i); eauto; lia.
-    destruct H6; auto.
-    destruct H6; auto.
+    destruct H5; auto.
+    destruct H5; auto.
   Qed.
 
   Lemma fun_compat_top e e' k k' f w xs :
@@ -668,19 +654,18 @@ Section Linking.
     eapply free_fun_compat; eauto.
 
     pose proof H4 as HG.
-    destruct H4 as [Hr1 [Hr2 [HS HG']]].
+    destruct H4 as [Hr1 [Hr2 HG']].
     inv H6.
     - exists 0, OOT; split; simpl; eauto.
     - inv H4.
       edestruct (H3 (i - 1) (M.set f (Tag w (Vfun f ρ1 xs e)) ρ1) (M.set f (Tag w (Vfun f ρ2 xs e')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
-      + eapply G_top_subset with (Γ1 := (f |: (occurs_free (Efun f w xs e k)))) (Γ2 := (f |: (occurs_free (Efun f w xs e' k')))); eauto.
+      + eapply G_top_subset with (Γ1 := (f |: (occurs_free (Efun f w xs e k)))); eauto.
         * eapply G_top_set; eauto.
           eapply G_top_mono; eauto; try lia.
-          eapply Vfun_V with (Γ1 := (occurs_free (Efun f w xs e k))) (Γ2 := (occurs_free (Efun f w xs e' k'))); eauto.
+          eapply Vfun_V with (Γ1 := (occurs_free (Efun f w xs e k))); eauto.
           -- unfold related_top.
              split; auto.
           -- eapply G_top_mono; eauto; try lia.
-          -- eapply free_fun_e_subset; eauto.
           -- eapply free_fun_e_subset; eauto.
         * eapply free_fun_k_subset; eauto.
       + exists (S j2), r2; split; auto.
@@ -701,7 +686,7 @@ Section Linking.
     eapply free_letapp_compat; eauto.
 
     pose proof H2 as HG.
-    destruct H2 as [Hr1 [Hr2 [HS HG']]].
+    destruct H2 as [Hr1 [Hr2 HG']].
     inv H4.
     - exists 0, OOT; split; simpl; auto.
     - inv H2.
@@ -734,7 +719,7 @@ Section Linking.
         * eapply V_mono_Forall; eauto; lia.
         * destruct r2; simpl in HR; try contradiction.
           edestruct (H1 (i - c0) (M.set x v ρ1) (M.set x w ρ2)) with (j1 := c') as [j3 [r3 [He1 HR']]]; eauto; try lia.
-          eapply G_top_subset with (Γ1 := x |: (occurs_free (Eletapp x f w0 xs k))) (Γ2 := x |: (occurs_free (Eletapp x f w0 xs k'))); eauto.
+          eapply G_top_subset with (Γ1 := x |: (occurs_free (Eletapp x f w0 xs k))); eauto.
           eapply G_top_set; eauto.
           eapply G_top_mono; eauto; lia.
           -- eapply bstep_fuel_wf_res in H15; eauto; inv H15; auto.

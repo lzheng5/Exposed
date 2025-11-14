@@ -168,9 +168,6 @@ Module M (AM : Annotate).
 
       destruct H0 as [ρ2' [[ρ1' [HG0 HAG]] HG1]].
       edestruct (C0.Top_n_R_n _ _ _ HC0) with (ρ2 := ρ1') as [j1' [r1' [Hstep1' HRn0]]]; eauto.
-      eapply C0.G_n_subset; eauto.
-      apply Included_refl.
-      eapply C0.Top_n_subset; eauto.
 
       assert (wf_env ρ2').
       {
