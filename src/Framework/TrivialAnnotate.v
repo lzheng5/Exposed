@@ -5,7 +5,7 @@ From CertiCoq.Libraries Require Import maps_util.
 Import ListNotations.
 Require Import Lia.
 
-From Framework Require Import Util ANF0 ANF Refl0 Refl Annotate Erase.
+From Framework Require Import Util ANF0 ANF Annotate Erase.
 
 Module A0 := ANF0.
 Module A1 := ANF.
