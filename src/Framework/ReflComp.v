@@ -178,19 +178,19 @@ Section Adequacy.
       destruct HG0 as [Hw1 [Hw2 _]].
 
       edestruct (H2 j1 ρ1 ρ1') with (j1 := j1) as [j2 [r2 [Hr2 HR]]]; eauto.
-      + edestruct (IHHrel ρ1' ρ2) as [j3 [r3 [Hr3 HR']]]; eauto.
-        eapply G_n_subset with (Γ2 := occurs_free c3) (Γ4 := occurs_free c3); eauto.
-        eapply Top_n_subset; eauto.
+      edestruct (IHHrel ρ1' ρ2) as [j3 [r3 [Hr3 HR']]]; eauto.
+      eapply G_n_subset with (Γ2 := occurs_free c3) (Γ4 := occurs_free c3); eauto.
+      eapply Top_n_subset; eauto.
 
-        eexists; eexists; split; eauto.
-        econstructor; eauto.
-        intros.
-        edestruct (H2 (k + j1) ρ1 ρ1') with (j1 := j1) as [j4 [r4 [Hr4 HR'']]]; eauto; try lia.
-        * specialize (H5 (k + j1)).
-          unfold R, R' in *.
-          destruct r1; destruct r4; destruct r2; try contradiction; auto.
-          edestruct (bstep_fuel_deterministic w1 w0 Hr2 Hr4); subst; eauto.
-          eapply V_mono; eauto; try lia.
+      eexists; eexists; split; eauto.
+      econstructor; eauto.
+      intros.
+      edestruct (H2 (k + j1) ρ1 ρ1') with (j1 := j1) as [j4 [r4 [Hr4 HR'']]]; eauto; try lia.
+      specialize (H5 (k + j1)).
+      unfold R, R' in *.
+      destruct r1; destruct r4; destruct r2; try contradiction; auto.
+      edestruct (bstep_fuel_deterministic w1 w0 Hr2 Hr4); subst; eauto.
+      eapply V_mono; eauto; try lia.
   Qed.
 
   (* Termination Preservation *)
