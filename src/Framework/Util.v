@@ -8,6 +8,13 @@ Ltac rewrite_math t :=
   assert (H : t) by lia;
   rewrite H in *; clear H.
 
+Ltac invc :=
+  repeat match goal with
+  | H1 : ?f = ?C ?x,
+    H2 : ?f = ?C ?y |- _ =>
+      rewrite H1 in H2; inv H2
+  end.
+
 Lemma normalize_step : forall i j, j <= i -> i - (i - j) = j.
 Proof. intros; lia. Qed.
 
