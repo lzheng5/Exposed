@@ -5,14 +5,10 @@ From CertiCoq.Libraries Require Import maps_util.
 Import ListNotations.
 Require Import Lia.
 
-Require Import Framework.Util.
+From Framework Require Import Base Util.
+Export Base.
 
 (* Untyped λANF without Web Annotations *)
-
-Module M := Maps.PTree.
-Definition var := M.elt.
-Definition vars := Ensemble var.
-Definition ctor_tag := M.elt.
 
 (* Syntax *)
 Inductive exp : Type :=
@@ -90,21 +86,6 @@ Inductive res : Type :=
 Hint Constructors res : core.
 
 (* Big-step Semantics *)
-Definition fuel := nat.
-
-Inductive find_tag : list (ctor_tag * exp) -> ctor_tag -> exp -> Prop :=
-| find_tag_hd :
-  forall c e l,
-    find_tag ((c, e) :: l) c e
-
-| find_tag_tl :
-  forall c e l c' e',
-    find_tag l c' e' ->
-    c <> c' ->
-    find_tag ((c, e) :: l) c' e'.
-
-Hint Constructors find_tag : core.
-
 Inductive bstep (ρ : env) : exp -> fuel -> res -> Prop :=
 | BStep_ret :
   forall {x v},
@@ -176,19 +157,6 @@ Hint Constructors bstep_fuel : core.
 
 Scheme bstep_ind' := Minimality for bstep Sort Prop
 with bstep_fuel_ind' := Minimality for bstep_fuel Sort Prop.
-
-Lemma find_tag_deterministic {cl c e e'} :
-  find_tag cl c e ->
-  find_tag cl c e' ->
-  e = e'.
-Proof.
-  intros H. revert e'.
-  induction H; intros.
-  - inv H; auto.
-    contradiction.
-  - inv H1; auto.
-    contradiction.
-Qed.
 
 (* TODO: refactor *)
 Theorem bstep_deterministic v v' {ρ e c c' r r'}:

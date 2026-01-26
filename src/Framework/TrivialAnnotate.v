@@ -28,7 +28,7 @@ Module M <: Annotate.
   Proof. exists w0. apply w0_exposed. Qed.
 
   (* Specification *)
-  Inductive trans_ (Γ : A0.vars) : A0.exp -> A1.exp -> Prop :=
+  Inductive trans_ (Γ : vars) : A0.exp -> A1.exp -> Prop :=
   | Trans_ret :
     forall {x},
       (x \in Γ) ->

@@ -113,7 +113,7 @@ Module M <: Annotate.
     Variable K : known_map.
 
     (* Specification based on `known_fun` but incorporate unknown cases *)
-    Inductive trans_ (Γ : A0.vars) : A0.exp -> A1.exp -> Prop :=
+    Inductive trans_ (Γ : vars) : A0.exp -> A1.exp -> Prop :=
     | Trans_ret :
       forall x,
         K ! x = None ->

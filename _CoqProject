@@ -12,6 +12,7 @@
 -Q src/Framework Framework
 
 src/Framework/Util.v
+src/Framework/Base.v
 src/Framework/ANF.v
 src/Framework/Refl.v
 src/Framework/Exposed.v

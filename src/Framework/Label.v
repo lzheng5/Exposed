@@ -5,7 +5,7 @@ From CertiCoq.Libraries Require Import maps_util.
 Import ListNotations.
 Require Import Lia.
 
-From Framework Require Import Util ANF0 ANF1.
+From Framework Require Import Base Util ANF0 ANF1.
 
 Module A0 := ANF0.
 Module A1 := ANF1.
@@ -13,7 +13,7 @@ Module A1 := ANF1.
 (* Attach Unique Labels *)
 
 (* Specification *)
-Inductive trans (Γ : A0.vars) : label -> A0.exp -> label -> A1.exp -> Prop :=
+Inductive trans (Γ : vars) : label -> A0.exp -> label -> A1.exp -> Prop :=
 | Trans_ret :
   forall {x l0},
     (x \in Γ) ->
@@ -62,7 +62,7 @@ Inductive trans (Γ : A0.vars) : label -> A0.exp -> label -> A1.exp -> Prop :=
     trans_case Γ l1 cl0 l2 cl1 ->
     trans Γ l0 (A0.Ecase x cl0) l2 (A1.Ecase x l0 cl1)
 
-with trans_case (Γ : A0.vars) : label -> list (A0.ctor_tag * A0.exp) -> label -> list (A1.ctor_tag * A1.exp) -> Prop :=
+with trans_case (Γ : vars) : label -> list (ctor_tag * A0.exp) -> label -> list (ctor_tag * A1.exp) -> Prop :=
 | Trans_case_nil :
   forall {l0},
     trans_case Γ l0 [] l0 []
@@ -348,7 +348,7 @@ Qed.
 
 (* Alternative Simpler Specification
    Note this is directly based on `unique_label` *)
-Inductive trans' (Γ : A0.vars) : A0.exp -> A1.exp -> Prop :=
+Inductive trans' (Γ : vars) : A0.exp -> A1.exp -> Prop :=
 | Trans'_ret :
   forall {x},
     (x \in Γ) ->
@@ -395,7 +395,7 @@ Inductive trans' (Γ : A0.vars) : A0.exp -> A1.exp -> Prop :=
     trans_case' Γ cl0 cl1 L ->
     trans' Γ (A0.Ecase x cl0) (A1.Ecase x l cl1)
 
-with trans_case' (Γ : A0.vars) : list (A0.ctor_tag * A0.exp) -> list (A1.ctor_tag * A1.exp) -> labels -> Prop :=
+with trans_case' (Γ : vars) : list (ctor_tag * A0.exp) -> list (ctor_tag * A1.exp) -> labels -> Prop :=
 | Trans_case'_nil :
   trans_case' Γ [] [] (Empty_set _)
 
@@ -784,7 +784,7 @@ Definition trans_correct Γ e1 e2 :=
     G i Γ ρ1 ρ2 ->
     E i ρ1 e1 ρ2 e2.
 
-Fixpoint trans_correct_case (Γ : A0.vars) (cl1 : list (A0.ctor_tag * A0.exp)) (cl2 : list (A1.ctor_tag * A1.exp)) :=
+Fixpoint trans_correct_case (Γ : vars) (cl1 : list (ctor_tag * A0.exp)) (cl2 : list (ctor_tag * A1.exp)) :=
   match cl1, cl2 with
   | [], [] => True
   | ((c1, e1) :: cl1'), ((c2, e2) :: cl2') =>

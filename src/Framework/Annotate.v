@@ -19,7 +19,7 @@ Module Type Annotate.
   Parameter Exposed_nonempty : exists w, w \in Exposed.
 
   (* Specification *)
-  Parameter trans : web_map -> A0.vars -> A0.exp -> A1.exp -> Prop.
+  Parameter trans : web_map -> vars -> A0.exp -> A1.exp -> Prop.
 
   (* A successful analysis should always allow us to transform the program *)
   Parameter trans_total :
@@ -53,7 +53,7 @@ Module Type Annotate.
       exists v2, r2 = A1.Res v2 /\ V W i v1 v2.
 
   (* Top-level Logical Relations *)
-  Parameter G_top : web_map -> nat -> A0.vars -> A0.env -> A1.vars -> A1.env -> Prop.
+  Parameter G_top : web_map -> nat -> vars -> A0.env -> vars -> A1.env -> Prop.
 
   Parameter G_top_wf_env_r :
     forall W i Γ1 ρ1 Γ2 ρ2,

@@ -5,29 +5,10 @@ From CertiCoq.Libraries Require Import maps_util.
 Import ListNotations.
 Require Import Lia.
 
-Require Import Framework.Util.
+From Framework Require Import Base Util.
+Export Base.
 
 (* Untyped λANF with labels instead of web constraints *)
-
-Module M := Maps.PTree.
-Definition var := M.elt.
-Definition vars := Ensemble var.
-Definition ctor_tag := M.elt.
-Definition label := M.elt.
-Definition labels := Ensemble label.
-Definition next_label l : label := Pos.succ l.
-
-Lemma next_label_lt l : Pos.lt l (next_label l).
-Proof.
-  unfold next_label.
-  eapply Pos.lt_succ_diag_r; eauto.
-Qed.
-
-Lemma next_label_le l : Pos.le l (next_label l).
-Proof.
-  eapply Pos.lt_le_incl; eauto.
-  eapply next_label_lt; eauto.
-Qed.
 
 (* Syntax *)
 Inductive exp : Type :=
@@ -102,19 +83,6 @@ Hint Constructors res : core.
 (* Big-step Semantics *)
 Definition fuel := nat.
 
-Inductive find_tag : list (ctor_tag * exp) -> ctor_tag -> exp -> Prop :=
-| find_tag_hd :
-  forall c e l,
-    find_tag ((c, e) :: l) c e
-
-| find_tag_tl :
-  forall c e l c' e',
-    find_tag l c' e' ->
-    c <> c' ->
-    find_tag ((c, e) :: l) c' e'.
-
-Hint Constructors find_tag : core.
-
 Inductive bstep (ρ : env) : exp -> fuel -> res -> Prop :=
 | BStep_ret :
   forall {x wv},
@@ -186,19 +154,6 @@ Hint Constructors bstep_fuel : core.
 
 Scheme bstep_ind' := Minimality for bstep Sort Prop
 with bstep_fuel_ind' := Minimality for bstep_fuel Sort Prop.
-
-Lemma find_tag_deterministic {cl c e e'} :
-  find_tag cl c e ->
-  find_tag cl c e' ->
-  e = e'.
-Proof.
-  intros H. revert e'.
-  induction H; intros.
-  - inv H; auto.
-    contradiction.
-  - inv H1; auto.
-    contradiction.
-Qed.
 
 Theorem bstep_deterministic v v' {ρ e c c' r r'}:
     bstep ρ e c r ->
