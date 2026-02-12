@@ -1535,6 +1535,95 @@ Module M <: Annotate.
       repeat (split; auto).
     Qed.
 
+    (* Top-level Monotonicity Lemmas *)
+    Lemma V_top_mono i :
+      forall {j v1 v2},
+        V_top i v1 v2 ->
+        j <= i ->
+        V_top j v1 v2.
+    Proof.
+      induction i using lt_wf_rec; intros.
+      destruct v2.
+      destruct i; simpl in H0;
+        destruct j; simpl; intros;
+        destruct H0 as [Hv1 [Hex HV]]; subst.
+      - repeat (split; auto).
+      - inv H1.
+      - repeat (split; auto).
+        destruct v1; destruct v; try contradiction.
+        + destruct HV.
+          destruct (exposed_reflect w); fcrush.
+        + destruct HV as [Hc HV]; subst.
+          repeat split; auto.
+          eapply Forall2_length; eauto.
+      - repeat (split; auto).
+        destruct v1; destruct v; try contradiction.
+        + destruct HV as [Hlen HV]; subst.
+          repeat split; auto; intros.
+          inv Hex.
+          destruct (exposed_reflect w); try contradiction.
+          specialize (HV j0 vs1 vs2 ρ3 ρ4).
+          rewrite normalize_step in *; try lia.
+          apply HV; eauto; lia.
+        + destruct HV as [Heqc HV]; subst.
+          repeat split; auto.
+          eapply V_mono_Forall_aux; eauto; lia.
+    Qed.
+
+    Lemma V_top_mono_Forall {vs1 vs2} i j :
+      Forall2 (V_top i) vs1 vs2 ->
+      j <= i ->
+      Forall2 (V_top j) vs1 vs2.
+    Proof.
+      intros H.
+      revert j.
+      induction H; simpl; intros; auto.
+      constructor; eauto.
+      eapply V_top_mono; eauto.
+    Qed.
+
+    Lemma R_top_mono {r1 r2} i j :
+      R_top i r1 r2 ->
+      j <= i ->
+      R_top j r1 r2.
+    Proof.
+      unfold R.
+      intros.
+      destruct r1; auto.
+      destruct r2; auto.
+      eapply V_top_mono; eauto.
+    Qed.
+
+    Lemma E_top_mono {ex ρ1 ρ2 e1 e2} i j:
+      E_top ex i ρ1 e1 ρ2 e2 ->
+      j <= i ->
+      E_top ex j ρ1 e1 ρ2 e2.
+    Proof.
+      unfold E_top, E'.
+      intros.
+      destruct (H j1 r1) as [j2 [r2 [Hr2 HR]]]; auto; try lia.
+      exists j2, r2; split; eauto.
+      apply R_top_mono with (i - j1); try lia; auto.
+    Qed.
+
+    Lemma G_top_mono {Γ1 Γ2 ρ1 ρ2} i j:
+      G_top i Γ1 ρ1 Γ2 ρ2 ->
+      j <= i ->
+      G_top j Γ1 ρ1 Γ2 ρ2.
+    Proof.
+      unfold G_top.
+      intros.
+      destruct H as [Hwf [HS HG]].
+      split; auto.
+      split; auto; intros.
+      edestruct HG as [HK [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]]; eauto.
+      split; auto.
+      eexists; eexists; repeat (split; eauto).
+      apply V_top_mono with i; eauto.
+    Qed.
+
+    (* Top-level Theorems *)
+
     (* G_top is stronger than G *)
     Lemma G_top_G : forall {i K Γ1 ρ1 Γ2 ρ2},
         G_top i Γ1 ρ1 Γ2 ρ2 ->
@@ -1637,7 +1726,6 @@ Module M <: Annotate.
 
     (* Adequacy *)
     Theorem adequacy e1 e2:
-      known_map_inv K ->
       trans_correct_top e1 e2 ->
       forall ρ1 ρ2,
         wf_env ρ2 ->
@@ -1646,18 +1734,18 @@ Module M <: Annotate.
           A0.bstep_fuel ρ1 e1 j1 r1 ->
           exists j2 r2,
             A1.bstep_fuel true ρ2 e2 j2 r2 /\
-            (forall k, R k r1 r2).
+            (forall k, R_top k r1 r2).
     Proof.
-      intros HK; intros.
+      intros.
       unfold trans_correct_top in H.
       destruct H as [HS HT].
 
-      assert (HE : E true j1 ρ1 e1 ρ2 e2) by (eapply (HT j1); eauto).
+      assert (HE : E_top true j1 ρ1 e1 ρ2 e2) by (eapply (HT j1); eauto).
       edestruct (HE j1) as [j2 [r2 [Hstep2 HR]]]; eauto.
       eexists; eexists; split; eauto.
 
       intros.
-      assert (HE' : E true (j1 + k) ρ1 e1 ρ2 e2) by (eapply HT; eauto).
+      assert (HE' : E_top true (j1 + k) ρ1 e1 ρ2 e2) by (eapply HT; eauto).
       edestruct (HE' j1) as [j2' [r2' [Hstep2' HR']]]; eauto; try lia.
 
       rewrite_math (j1 + k - j1 = k).
@@ -1699,8 +1787,8 @@ Module M <: Annotate.
       induction H; simpl; auto.
     Qed.
 
-    Theorem V_val_ref {v1 v2} :
-      (forall i, V i v1 v2) ->
+    Theorem V_top_val_ref {v1 v2} :
+      (forall i, V_top i v1 v2) ->
       val_ref v1 v2.
     Proof.
       unfold val_ref.
@@ -1709,23 +1797,23 @@ Module M <: Annotate.
       - specialize (H 0).
         destruct v2.
         simpl in H.
-        destruct H as [Hw HV].
+        destruct H as [Hw [Hex HV]].
         destruct v; try contradiction.
-        destruct HV as [Hex [Hc Hlen]]; subst.
+        destruct HV as [Hc Hlen]; subst.
         destruct l; try discriminate.
         inv Hex.
         apply Exposed_singleton in H1; subst; auto.
       - destruct v2.
         pose proof (H 0) as H0; simpl in *.
-        destruct H0 as [Hw HV].
+        destruct H0 as [Hw [Hex HV]].
         destruct v; try contradiction.
-        destruct HV as [Hex [Hc Hlen]]; subst.
+        destruct HV as [Hc Hlen]; subst.
 
         destruct l0; simpl in *; inv Hlen.
         inv Hex.
         apply Exposed_singleton in H3; subst.
 
-        assert (HV' : forall i, V i v1 t /\ V i (A0.Vconstr c l) (Tag w0 (A1.Vconstr c l0))).
+        assert (HV' : forall i, V_top i v1 t /\ V_top i (A0.Vconstr c l) (Tag w0 (A1.Vconstr c l0))).
         {
           intros.
           specialize (H (S i)); simpl in *.
@@ -1743,26 +1831,24 @@ Module M <: Annotate.
           }
 
           destruct i; simpl in *;
-            repeat (split; auto);
-            try (eapply V_mono_Forall with (S i); eauto).
+            repeat (split; auto).
+            try (eapply V_top_mono_Forall with (S i); eauto).
         }
 
-        assert (HV0 : forall i, V i v1 t) by (intros; destruct (HV' i); auto).
-        assert (HV1 : forall i, V i (A0.Vconstr c l) (Tag w0 (A1.Vconstr c l0))) by (intros; destruct (HV' i); auto).
+        assert (HV0 : forall i, V_top i v1 t) by (intros; destruct (HV' i); auto).
+        assert (HV1 : forall i, V_top i (A0.Vconstr c l) (Tag w0 (A1.Vconstr c l0))) by (intros; destruct (HV' i); auto).
 
         auto.
       - specialize (H 0); simpl in *.
-        destruct H as [Hw HV].
+        destruct H as [Hw [Hex HV]].
         destruct v2; try contradiction; auto.
         destruct v; try contradiction; auto.
     Qed.
 
     Corollary R_res_val_ref {v1 v2} :
-      (forall i, R i (A0.Res v1) (A1.Res v2)) ->
+      (forall i, R_top i (A0.Res v1) (A1.Res v2)) ->
       val_ref v1 v2.
-    Proof.
-      intros; eapply V_val_ref; eauto.
-    Qed.
+    Proof. intros; eapply V_top_val_ref; eauto. Qed.
 
     (* Linking Compat Lemmas *)
 
