@@ -1358,7 +1358,7 @@ Module M <: Annotate.
 
   End Known.
 
-  Module Top.
+  Section Top.
 
     (* Top-level Logical Relations *)
     Fixpoint V_top (i : nat) (v1 : A0.val) (wv2 : A1.wval) {struct i} : Prop :=
@@ -1799,6 +1799,10 @@ Module M <: Annotate.
       eapply trans_exp_inv; eauto.
     Qed.
 
+  End Top.
+
+  Section Comp.
+
     (* Cross-language Compositionality *)
 
     (* Adequacy *)
@@ -2210,6 +2214,6 @@ Module M <: Annotate.
       eapply letapp_compat_top; eauto.
     Qed.
 
-  End Top.
+  End Comp.
 
 End M.
