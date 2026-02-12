@@ -1286,8 +1286,7 @@ Module M <: Annotate.
       intros.
       inv H4.
       - exists 0, A1.OOT; split; simpl; auto.
-      - inv H5.
-        inv H8.
+      - fcrush.
     Qed.
 
     Lemma case_cons_compat Γ x t e e' cl cl':
@@ -1357,7 +1356,139 @@ Module M <: Annotate.
       - eapply case_cons_compat; eauto.
     Qed.
 
+  End Known.
+
+  Module Top.
     (* Top Level *)
+
+    (* V_top *)
+    Fixpoint V_top (i : nat) (v1 : A0.val) (wv2 : A1.wval) {struct i} : Prop :=
+      wf_val wv2 /\
+      exposed wv2 /\
+      match wv2 with
+      | A1.TAG _ w2 v2 =>
+          match v1, v2 with
+          | A0.Vconstr c1 vs1, A1.Vconstr c2 vs2 =>
+              c1 = c2 /\
+              match i with
+              | 0 => length vs1 = length vs2
+              | S i0 => Forall2 (V_top i0) vs1 vs2
+              end
+
+          | A0.Vfun f1 ρ1 xs1 e1, A1.Vfun f2 ρ2 xs2 e2 =>
+              (* note function arguments and result are always exposed regardless of whether a function is known or unknown *)
+              length xs1 = length xs2 /\
+              match i with
+              | 0 => True
+              | S i0 =>
+                  forall j vs1 vs2 ρ3 ρ4,
+                    j <= i0 ->
+                    Forall exposed vs2 ->
+                    Forall2 (V_top (i0 - (i0 - j))) vs1 vs2 ->
+                    set_lists xs1 vs1 (M.set f1 (A0.Vfun f1 ρ1 xs1 e1) ρ1) = Some ρ3 ->
+                    set_lists xs2 vs2 (M.set f2 (Tag w2 (A1.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
+                    E' V_top true (i0 - (i0 - j)) ρ3 e1 ρ4 e2
+              end
+
+          | _, _ => False
+          end
+      end.
+
+    Lemma V_exposed_V_top_Forall :
+      forall i K,
+        known_map_inv K ->
+        (forall m : nat,
+            m < S i ->
+            forall K v1 v2,
+              known_map_inv K ->
+              exposed v2 ->
+              V K m v1 v2 <-> V_top m v1 v2) ->
+        forall j vs1 vs2,
+          j <= i ->
+          Forall exposed vs2 ->
+          Forall2 (V K j) vs1 vs2 <-> Forall2 (V_top j) vs1 vs2.
+    Proof.
+      intros.
+      revert vs1 j H1.
+      induction H2; simpl; intros.
+      - split; intros; inv H2; auto.
+      - split; intros; inv H4; constructor; auto;
+          solve [ eapply H0; try lia; eauto |
+                  eapply IHForall; eauto ].
+    Qed.
+
+    Lemma V_V_top :
+      forall i K v1 v2,
+        known_map_inv K ->
+        exposed v2 ->
+        (V K i v1 v2 <-> V_top i v1 v2).
+    Proof.
+      intro i.
+      induction i using lt_wf_rec; intros.
+      split; intros.
+      - destruct i; simpl in *;
+          inv H2; split; auto.
+        + destruct v2.
+          destruct v1; destruct v; eauto.
+          * destruct H4 as [Hlen HV]; subst.
+            inv H1.
+            destruct (exposed_reflect w); try contradiction.
+            fcrush.
+        + destruct v2.
+          destruct v1; destruct v; eauto.
+          * destruct H4 as [Hlen HV]; subst.
+            repeat (split; auto).
+            inv H1.
+            destruct (exposed_reflect w); try contradiction; intros.
+            destruct HV as [Hex HV]; intros.
+            assert (HEV : E' (V K) true (i - (i - j)) ρ3 e ρ4 e0).
+            {
+              eapply HV; eauto.
+              eapply V_exposed_V_top_Forall; eauto; try lia.
+            }
+            unfold E' in *; intros.
+            edestruct HEV as [j2 [r2 [Hstep HR]]]; eauto.
+            eexists; eexists; split; eauto.
+            unfold R' in *.
+            destruct r1; destruct r2; auto.
+            eapply H; eauto; try lia.
+            eapply bstep_fuel_exposed_inv in Hstep; eauto; fcrush.
+          * destruct H4 as [Hex [Hc HV]]; subst.
+            repeat (split; eauto).
+            eapply V_exposed_V_top_Forall; eauto.
+            inv H1; auto.
+      - destruct i; simpl in *;
+          destruct H2 as [Hwf [Hex HV]]; split; auto.
+        + destruct v2.
+          destruct v1; destruct v; eauto.
+          inv Hex.
+          destruct (exposed_reflect w); try contradiction; fcrush.
+        + destruct v2.
+          destruct v1; destruct v; eauto.
+          * destruct HV as [Hlen HV]; subst.
+            repeat (split; auto).
+            inv Hex.
+            destruct (exposed_reflect w); try contradiction.
+            split; auto; intros.
+            assert (HE : E' V_top true (i - (i - j)) ρ3 e ρ4 e0).
+            {
+              eapply HV; eauto.
+              eapply V_exposed_V_top_Forall; eauto; try lia.
+            }
+            unfold E' in *; intros.
+            edestruct HE as [j2 [r2 [Hstep HR]]]; eauto.
+            eexists; eexists; split; eauto.
+            unfold R' in *.
+            destruct r1; destruct r2; auto.
+            eapply H; eauto; try lia.
+            eapply bstep_fuel_exposed_inv in Hstep; eauto; fcrush.
+          * destruct HV as [Hc HV]; subst.
+            repeat (split; eauto).
+            eapply V_exposed_V_top_Forall; eauto.
+            inv H1; auto.
+    Qed.
+
+
     Definition binding_inv_top x v :=
       K ! x = None /\ exposed v.
 
