@@ -1511,7 +1511,6 @@ Module M <: Annotate.
         exists v1 v2,
           M.get x ρ1 = Some v1 /\
           M.get x ρ2 = Some v2 /\
-          exposed v2 /\
           V_top i v1 v2.
 
     Lemma G_top_binding_inv_top i Γ1 ρ1 Γ2 ρ2 :
@@ -1579,6 +1578,16 @@ Module M <: Annotate.
       intros.
       destruct i; destruct v2;
         simpl in *; fcrush.
+    Qed.
+
+    Lemma V_top_exposed_Forall_r {i vs1 vs2} :
+      Forall2 (V_top i) vs1 vs2 ->
+      Forall exposed vs2.
+    Proof.
+      intros.
+      induction H; auto.
+      constructor; auto.
+      eapply V_top_exposed_r; eauto.
     Qed.
 
     Lemma R_top_wf_res_l {i r1 r2} :
@@ -1683,7 +1692,7 @@ Module M <: Annotate.
       destruct H as [Hwf [HS HG]].
       split; auto.
       split; auto; intros.
-      edestruct HG as [HK [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]]; eauto.
+      edestruct HG as [HK [v1 [v2 [Heqv1 [Heqv2 HV]]]]]; eauto.
       split; auto.
       eexists; eexists; repeat (split; eauto).
       apply V_top_mono with i; eauto.
@@ -1701,9 +1710,10 @@ Module M <: Annotate.
       destruct H as [HΓ [Hρ HG]].
       unfold Ensembles.Included, Ensembles.In, Dom_map in *.
       split; auto; intros.
-      edestruct HG as [HK [v1' [v2 [Heqv1 [Heqv2 [Hbinv HV]]]]]]; eauto.
+      edestruct HG as [HK [v1' [v2 [Heqv1 [Heqv2 HV]]]]]; eauto.
       invc.
       eexists; split; eauto.
+      assert (exposed v2) by (eapply V_top_exposed_r; eauto).
       split; auto.
       eapply binding_inv_exposed; eauto.
       eapply V_V_top; eauto.
@@ -1927,7 +1937,6 @@ Module M <: Annotate.
         exists v1 v2,
           M.get x ρ1 = Some v1 /\
           M.get x ρ2 = Some v2 /\
-          exposed v2 /\
           V_top i v1 v2.
     Proof.
       unfold G.
@@ -1943,7 +1952,6 @@ Module M <: Annotate.
         exists vs1 vs2,
           get_list xs ρ1 = Some vs1 /\
           get_list xs ρ2 = Some vs2 /\
-          Forall exposed vs2 /\
           Forall2 (V_top i) vs1 vs2.
     Proof.
       intros HG xs.
@@ -1951,9 +1959,9 @@ Module M <: Annotate.
       induction xs; simpl; intros.
       - eexists; eexists; repeat split; eauto.
       - rewrite FromList_cons in H.
-        edestruct (G_top_get HG) as [v1 [v2 [Heqv1 [Heqv2 [Hb HV]]]]]; eauto.
+        edestruct (G_top_get HG) as [v1 [v2 [Heqv1 [Heqv2 HV]]]]; eauto.
 
-        edestruct IHxs as [vs1 [vs2 [Heqvs1 [Heqvs2 [Hexs HVs]]]]]; eauto.
+        edestruct IHxs as [vs1 [vs2 [Heqvs1 [Heqvs2 HVs]]]]; eauto.
         eapply Included_trans; eauto.
         apply Included_Union_r.
 
@@ -1967,7 +1975,6 @@ Module M <: Annotate.
     Lemma G_top_set {i Γ1 ρ1 Γ2 ρ2}:
       G_top i Γ1 ρ1 Γ2 ρ2 ->
       forall {x v1 v2},
-        exposed v2 ->
         V_top i v1 v2 ->
         binding_inv_top x ->
         G_top i (x |: Γ1) (M.set x v1 ρ1) (x |: Γ2) (M.set x v2 ρ2).
@@ -2025,7 +2032,6 @@ Module M <: Annotate.
         inv H; inv H0; inv H1; inv H2.
         eapply G_top_subset with (Γ1 := (a |: (FromList xs :|: Γ1))) (Γ2 := (a |: (FromList xs :|: Γ2))); eauto.
         eapply G_top_set; eauto.
-        eapply V_top_exposed_r; eauto.
         normalize_sets.
         rewrite Union_assoc.
         apply Included_refl.
@@ -2136,7 +2142,7 @@ Module M <: Annotate.
       inv H3.
       - exists 0, OOT; split; simpl; auto.
       - inv H4.
-        + edestruct (G_top_get H1) as [fv1 [fv2 [Heqfv1 [Heqfv2 [Hexfv HVf]]]]]; eauto.
+        + edestruct (G_top_get H1) as [fv1 [fv2 [Heqfv1 [Heqfv2 HVf]]]]; eauto.
           invc.
           destruct fv2.
           destruct i.
@@ -2145,9 +2151,9 @@ Module M <: Annotate.
           destruct HVf as [Hfv2 [Hexf2 HV]]; subst.
           destruct v0; try contradiction.
           destruct HV as [Hlen HV]; subst.
-          inv Hexfv.
+          inv Hexf2.
           destruct (exposed_reflect w); try contradiction.
-          edestruct (G_top_get_list H1 xs) as [vs1 [vs2 [Heqvs1 [Heqvs2 [Hexs HVvs]]]]]; eauto.
+          edestruct (G_top_get_list H1 xs) as [vs1 [vs2 [Heqvs1 [Heqvs2 HVvs]]]]; eauto.
           eapply A0.free_letapp_xs_subset; eauto.
 
           invc.
@@ -2161,13 +2167,13 @@ Module M <: Annotate.
 
           unfold E' in HV.
           edestruct (HV i vs1 vs2 ρ'' ρ4) with (j1 := c0) as [j2 [r2 [He0 HR]]]; eauto; try lia.
+          * eapply V_top_exposed_Forall_r; eauto.
           * eapply V_top_mono_Forall; eauto; lia.
           * destruct r2; simpl in HR; try contradiction.
             edestruct (H0 (i - c0) (M.set x v ρ1) (M.set x w ρ2)) with (j1 := c') as [j3 [r3 [He1 HR']]]; eauto; try lia.
             eapply G_top_subset with (Γ1 := x |: (A0.occurs_free (A0.Eletapp x f xs k))) (Γ2 := x |: (A1.occurs_free (A1.Eletapp x f w0 xs k'))); eauto.
             eapply G_top_set; eauto.
             eapply G_top_mono; eauto; lia.
-            -- assert (Hw : exposed_res (A1.Res w)) by (eapply bstep_fuel_exposed_inv; eauto); inv Hw; auto.
             -- eapply V_top_mono; eauto; try lia.
             -- eapply A0.free_letapp_k_subset; eauto.
             -- exists (S (j2 + j3)), r3; split; eauto.
@@ -2179,6 +2185,7 @@ Module M <: Annotate.
 
                intros.
                split; auto.
+               eapply V_top_exposed_Forall_r; eauto.
                assert (Hw : exposed_res (A1.Res w)) by (eapply bstep_fuel_exposed_inv; eauto); inv Hw; auto.
 
                eapply bstep_fuel_exposed_inv; eauto.
