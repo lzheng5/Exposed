@@ -4,6 +4,7 @@ From CertiCoq.LambdaANF Require Import Ensembles_util map_util set_util List_uti
 From CertiCoq.Libraries Require Import maps_util.
 Import ListNotations.
 Require Import Lia.
+From Hammer Require Import Hammer Tactics Reflect.
 
 From Framework Require Import Util ANF0 ANF Annotate Erase.
 
@@ -105,6 +106,14 @@ Module M <: Annotate.
   Parameter w0 : web.
   Axiom w0_exposed : w0 \in Exposed.
   Axiom Exposed_singleton : forall w, w \in Exposed -> w = w0.
+
+  Lemma w0_exposedb : exposedb w0 = true.
+  Proof.
+    destruct (exposed_reflect w0); auto.
+    exfalso.
+    apply n.
+    apply w0_exposed; auto.
+  Qed.
 
   Theorem Exposed_nonempty : exists w, w \in Exposed.
   Proof. exists w0. apply w0_exposed. Qed.
@@ -386,10 +395,9 @@ Module M <: Annotate.
 
           | A0.Vfun f1 ρ1 xs1 e1, A1.Vfun f2 ρ2 xs2 e2 =>
               (* note function arguments and result are always exposed regardless of whether a function is known or unknown *)
-              f1 = f2 /\
               length xs1 = length xs2 /\
-              match K ! f1 with
-              | None => (* unknown *)
+              match exposedb w2 with
+              | true => (* unknown *)
                   exposed wv2 /\
                   match i with
                   | 0 => True
@@ -403,9 +411,9 @@ Module M <: Annotate.
                         E' V true (i0 - (i0 - j)) ρ3 e1 ρ4 e2
                   end
 
-              | Some w1 => (* known *)
-                  w1 = w2 /\
-                  (~ w1 \in Exposed) /\
+              | false => (* known *)
+                  f1 = f2 /\
+                  K ! f1 = Some w2 /\
                   match i with
                   | 0 => True
                   | S i0 =>
@@ -491,8 +499,10 @@ Module M <: Annotate.
     Proof. unfold same_id; simpl; auto. Qed.
 
     Definition binding_inv x v :=
-      (forall w, K ! x = Some w -> same_id x v) /\
-        (K ! x = None -> exposed v).
+      match K ! x with
+      | Some w => same_id x v /\ ~ exposed v
+      | None => exposed v
+      end.
 
     Lemma binding_inv_exposed x v :
       (K ! x = None) ->
@@ -500,9 +510,7 @@ Module M <: Annotate.
       binding_inv x v.
     Proof.
       unfold binding_inv.
-      intros.
-      split; intros; auto.
-      rewrite H in H1; discriminate.
+      fcrush.
     Qed.
 
     Lemma binding_inv_exposed_Forall xs :
@@ -523,11 +531,12 @@ Module M <: Annotate.
 
     Lemma binding_inv_known_fun f w ρ xs e :
       K ! f = Some w ->
+      ~ (w \in Exposed) ->
       binding_inv f (Tag w (A1.Vfun f ρ xs e)).
     Proof.
+      unfold binding_inv.
       intros.
-      split; intros; simpl; auto.
-      rewrite H in H0; discriminate.
+      fcrush.
     Qed.
 
     Definition G i Γ1 ρ1 Γ2 ρ2 :=
@@ -598,7 +607,7 @@ Module M <: Annotate.
         destruct (get_list xs ρ1) eqn:Heq3; try discriminate.
         inv H2.
         unfold Ensembles.Included, Ensembles.In in *.
-        edestruct (G_get HG) as [v2 [Heqv2 [[Hid HK] HV]]]; eauto.
+        edestruct (G_get HG) as [v2 [Heqv2 [Hbinv HV]]]; eauto.
         eapply (H a).
         apply in_eq.
         apply H0.
@@ -619,6 +628,8 @@ Module M <: Annotate.
           apply Disjoint_FromList_cons_inv in H1.
           inv H1.
           apply not_Dom_map_eq in H2; auto.
+          unfold binding_inv in *.
+          fcrush.
     Qed.
 
     Lemma G_set {i Γ1 ρ1 Γ2 ρ2}:
@@ -715,25 +726,21 @@ Module M <: Annotate.
       - repeat (split; auto).
         destruct v1; destruct v; try contradiction.
         + destruct HV.
-          destruct (K ! v0) eqn:HeqK.
-          * destruct H2 as [Hlen [Heqw [Hex HV]]]; subst.
-            repeat (split; eauto).
-          * destruct H2 as [Hlen [Hex HV]].
-            repeat (split; eauto).
+          destruct (exposed_reflect w); fcrush.
         + destruct HV as [Hex [Hc HV]]; subst.
           repeat split; auto.
           eapply Forall2_length; eauto.
       - repeat (split; auto).
         destruct v1; destruct v; try contradiction.
-        + destruct HV as [Hf [Hlen HV]]; subst.
+        + destruct HV as [Hlen HV]; subst.
           repeat split; auto.
-          destruct (K ! v) eqn:HeqK.
-          * destruct HV as [Heqw [Hex HV]]; subst.
+          destruct (exposed_reflect w).
+          * destruct HV as [Hex HV]; subst.
             repeat split; auto; intros.
             specialize (HV j0 vs1 vs2 ρ3 ρ4).
             rewrite normalize_step in *; try lia.
             apply HV; eauto; lia.
-          * destruct HV as [Hex HV]; subst.
+          * destruct HV as [Heqv [Hex HV]]; subst.
             repeat split; auto; intros.
             specialize (HV j0 vs1 vs2 ρ3 ρ4).
             rewrite normalize_step in *; try lia.
@@ -788,7 +795,7 @@ Module M <: Annotate.
       intros.
       inv H.
       split; auto; intros.
-      edestruct H2 as [v2 [Heqv2 [[Hid HK] HV]]]; eauto.
+      edestruct H2 as [v2 [Heqv2 [Hbinv HV]]]; eauto.
       eexists; eexists; repeat split; eauto.
       apply V_mono with i; eauto.
     Qed.
@@ -810,8 +817,10 @@ Module M <: Annotate.
       inv H4.
       - exists 0, A1.OOT; split; auto.
       - inv H5.
-        edestruct (G_get H2) as [v2 [Heqv2 [[Hid HK] HV]]]; eauto.
-        exists 1, (A1.Res v2); split; simpl; auto.
+        edestruct (G_get H2) as [v2 [Heqv2 [Hbinv HV]]]; eauto.
+        unfold binding_inv in *.
+        rewrite H0 in Hbinv.
+        exists 1, (A1.Res v2); split; simpl; eauto.
         apply V_mono with i; try lia; auto.
     Qed.
 
@@ -829,9 +838,11 @@ Module M <: Annotate.
       unfold trans_correct.
       intros HK HKf HKxs He i.
       assert (~ Ensembles.In web Exposed w) by (eapply HK; eauto).
+      assert (exposedb w = false) by (destruct (exposed_reflect w); try contradiction; auto).
       induction i; simpl; intros; auto;
-        rewrite HKf;
-        repeat (split; auto); intros.
+        repeat (split; auto);
+        rewrite H0; intros; (repeat split; auto);
+        intros.
 
       apply (He (i - (i - j)) ρ3 ρ4); auto.
       - eapply G_subset with (Γ2 := (FromList xs :|: (f |: Γ2))); eauto.
@@ -891,10 +902,13 @@ Module M <: Annotate.
     Proof.
       unfold trans_correct.
       intros HK HKf HKxs He i.
+
       induction i; simpl; intros; auto;
-        rewrite HKf;
-        repeat (split; auto); intros;
-        try (constructor; apply w0_exposed).
+        repeat (split; auto);
+        rewrite w0_exposedb;
+        repeat (split; auto);
+        try (constructor; apply w0_exposed);
+        intros.
 
       apply (He (i - (i - j)) ρ3 ρ4); auto.
       - eapply G_subset with (Γ2 := (FromList xs :|: (f |: Γ2))); eauto.
@@ -904,7 +918,7 @@ Module M <: Annotate.
         + apply V_mono with i; try lia.
           eapply IHi with (Γ2 := Γ2); eauto.
           apply G_mono with (S i); eauto; lia.
-        + split; intros; simpl; auto.
+        + eapply binding_inv_exposed; eauto.
           constructor; apply w0_exposed.
         + eapply binding_inv_exposed_Forall; eauto.
           eapply set_lists_length_eq; eauto.
@@ -959,49 +973,49 @@ Module M <: Annotate.
       inv H4.
       - exists 0, A1.OOT; split; simpl; auto.
       - inv H5.
-        edestruct (G_get H2 f) as [fv2 [Heqfv2 [[Hid HK] HV]]]; eauto.
+        edestruct (G_get H2 f) as [fv2 [Heqfv2 [Hbinv HV]]]; eauto.
         destruct i.
         inv H3.
         destruct fv2; simpl in HV;
           destruct HV as [Hv1 HV];
           destruct v; try contradiction.
-        specialize (Hid _ HKf).
-        apply same_id_fun in Hid; subst.
-        destruct HV as [Hfeq [Hlen HV]]; subst.
-        destruct (K ! f) eqn:Heqk; try contradiction.
-        + destruct HV as [Heqw [Hex HV]]; subst.
-          inv HKf.
-          clear HK Hex.
+        destruct HV as [Hlen HV].
+        unfold binding_inv in *.
+        rewrite HKf in Hbinv.
+        inv Hbinv.
+        apply same_id_fun in H4; subst.
+        destruct (exposed_reflect w1).
+        exfalso; fcrush.
 
-          edestruct (G_get_list H2 xs vs) as [vs2 [Heqvs2 [Hexvs Vvs]]]; eauto.
-          eapply A1.free_app_xs_subset; eauto.
+        destruct HV as [Heqf [Hex HV]]; subst.
+        invc.
 
-          destruct (set_lists_length3 (M.set f (Tag w (A1.Vfun f t l e0)) t) l vs2) as [ρ4 Heqρ4].
-          unfold wval in *.
-          rewrite <- (Forall2_length _ _ _ Vvs).
-          rewrite <- (set_lists_length_eq _ _ _ _ H9); auto.
+        edestruct (G_get_list H2 xs vs) as [vs2 [Heqvs2 [Hexvs Vvs]]]; eauto.
+        eapply A1.free_app_xs_subset; eauto.
 
-          assert (HE : E true (i - (i - i)) ρ'' e ρ4 e0).
-          {
-            eapply (HV i vs vs2); eauto.
-            apply V_mono_Forall with (S i); auto; lia.
-          }
+        destruct (set_lists_length3 (M.set f (Tag w1 (A1.Vfun f t l e0)) t) l vs2) as [ρ4 Heqρ4].
+        unfold wval in *.
+        rewrite <- (Forall2_length _ _ _ Vvs).
+        rewrite <- (set_lists_length_eq _ _ _ _ H9); auto.
 
-          apply (E_mono _ i) in HE; try lia.
-          unfold E in HE.
-          destruct (HE c r1) as [j2 [r2 [He0 Rr]]]; try lia; auto.
-          exists (S j2), r2; split; eauto.
-          constructor; auto.
-          * econstructor; eauto.
-            destruct (exposed_reflect w); try contradiction; auto.
-            -- pose proof He0 as Hr2.
-               apply bstep_fuel_exposed_inv in Hr2.
-               eapply bstep_fuel_exposed; eauto.
-            -- intros; contradiction.
-          * eapply bstep_fuel_exposed_inv; eauto.
-        + destruct HV as [Hex HV].
-          inv Hex.
-          rewrite HKf in Heqk; discriminate.
+        assert (HE : E true (i - (i - i)) ρ'' e ρ4 e0).
+        {
+          eapply (HV i vs vs2); eauto.
+          apply V_mono_Forall with (S i); auto; lia.
+        }
+
+        apply (E_mono _ i) in HE; try lia.
+        unfold E in HE.
+        destruct (HE c r1) as [j2 [r2 [He0 Rr]]]; try lia; auto.
+        exists (S j2), r2; split; eauto.
+        constructor; auto.
+        + econstructor; eauto.
+          destruct (exposed_reflect w1); try contradiction; auto.
+          * pose proof He0 as Hr2.
+             apply bstep_fuel_exposed_inv in Hr2.
+             eapply bstep_fuel_exposed; eauto.
+          * intros; contradiction.
+        + eapply bstep_fuel_exposed_inv; eauto.
     Qed.
 
     Lemma app_unknown_compat Γ xs f :
@@ -1018,44 +1032,42 @@ Module M <: Annotate.
       inv H4.
       - exists 0, A1.OOT; split; simpl; auto.
       - inv H5.
-        edestruct (G_get H2 f) as [fv2 [Heqfv2 [[Hid HK] HV]]]; eauto.
+        edestruct (G_get H2 f) as [fv2 [Heqfv2 [Hbinv HV]]]; eauto.
         destruct i.
         inv H3.
         destruct fv2; simpl in HV;
           destruct HV as [Hv1 HV];
           destruct v; try contradiction.
-        destruct HV as [Hfeq [Hlen HV]]; subst.
-        rename v into f'.
-        destruct (K ! f') eqn:HeqKf'; try discriminate.
-        + destruct HV as [Heqw [Hex HV]]; subst.
-          specialize (HK HKf).
-          inv HK; contradiction.
-        + destruct HV as [Hex HV].
-          inv Hex.
-          assert (Hw : w = w0) by (apply Exposed_singleton; eauto); subst.
+        destruct HV as [Hlen HV]; subst.
+        unfold binding_inv in *.
+        rewrite HKf in Hbinv.
+        inv Hbinv.
+        destruct (exposed_reflect w); try contradiction.
+        destruct HV as [Hex HV].
+        assert (Hw : w = w0) by (apply Exposed_singleton; eauto); subst.
 
-          edestruct (G_get_list H2 xs vs) as [vs2 [Heqvs2 [Hexvs Vvs]]]; eauto.
-          eapply A1.free_app_xs_subset; eauto.
+        edestruct (G_get_list H2 xs vs) as [vs2 [Heqvs2 [Hexvs Vvs]]]; eauto.
+        eapply A1.free_app_xs_subset; eauto.
 
-          destruct (set_lists_length3 (M.set f' (Tag w0 (A1.Vfun f' t l e0)) t) l vs2) as [ρ4 Heqρ4].
-          unfold wval in *.
-          rewrite <- (Forall2_length _ _ _ Vvs).
-          rewrite <- (set_lists_length_eq _ _ _ _ H9); auto.
+        destruct (set_lists_length3 (M.set v (Tag w0 (A1.Vfun v t l e0)) t) l vs2) as [ρ4 Heqρ4].
+        unfold wval in *.
+        rewrite <- (Forall2_length _ _ _ Vvs).
+        rewrite <- (set_lists_length_eq _ _ _ _ H9); auto.
 
-          assert (HE : E true (i - (i - i)) ρ'' e ρ4 e0).
-          {
-            eapply (HV i vs vs2); eauto.
-            apply V_mono_Forall with (S i); auto; lia.
-          }
+        assert (HE : E true (i - (i - i)) ρ'' e ρ4 e0).
+        {
+          eapply (HV i vs vs2); eauto.
+          apply V_mono_Forall with (S i); auto; lia.
+        }
 
-          apply (E_mono _ i) in HE; try lia.
-          unfold E in HE.
-          destruct (HE c r1) as [j2 [r2 [He0 Rr]]]; try lia; auto.
-          assert (exposed_res r2) by (eapply bstep_fuel_exposed_inv; eauto).
-          exists (S j2), r2; split; eauto; simpl.
-          constructor; auto.
-          econstructor; eauto.
-          destruct (exposed_reflect w0); try contradiction; auto.
+        apply (E_mono _ i) in HE; try lia.
+        unfold E in HE.
+        destruct (HE c r1) as [j2 [r2 [He0 Rr]]]; try lia; auto.
+        assert (exposed_res r2) by (eapply bstep_fuel_exposed_inv; eauto).
+        exists (S j2), r2; split; eauto; simpl.
+        constructor; auto.
+        econstructor; eauto.
+        destruct (exposed_reflect w0); try contradiction; auto.
     Qed.
 
     Lemma letapp_known_compat Γ k k' xs x w f :
