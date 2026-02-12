@@ -13,9 +13,7 @@ Module A1 := ANF.
 
 Module M <: Annotate.
 
-  (* TODO: revisit known_map_inv *)
   (* TODO: revisit binding_inv *)
-  (* TODO: merge `known_map_inv` into `known_fun` *)
 
   (* Known Function Analysis With A Single Exposed Web Id *)
 
@@ -2191,8 +2189,6 @@ Module M <: Annotate.
     Definition linking_inv f x :=
       binding_inv_top f /\ binding_inv_top x.
 
-    (* To link two programs, we take a joined `K` that knows about both programs.
-     Note this is general enough to cover the ideal scenario when `e1` and `e1'` have distinct bound identifiers *)
     Lemma preserves_linking f w x e1 e2 e1' e2' :
       linking_inv f x ->
       (w \in Exposed) ->
