@@ -1501,24 +1501,27 @@ Module M <: Annotate.
 
     Definition E_top := (E' V_top).
 
+    Definition binding_inv_top x : Prop :=
+      forall (K : known_map), K ! x = None.
+
     Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
       wf_env ρ2 /\
       Γ2 \subset Γ1 /\
       forall x,
         (x \in Γ1) ->
-        (forall (K : known_map), K ! x = None) /\
+        binding_inv_top x /\
         exists v1 v2,
           M.get x ρ1 = Some v1 /\
           M.get x ρ2 = Some v2 /\
           exposed v2 /\
           V_top i v1 v2.
 
-    Lemma G_top_K i Γ1 ρ1 Γ2 ρ2 :
+    Lemma G_top_binding_inv_top i Γ1 ρ1 Γ2 ρ2 :
       G_top i Γ1 ρ1 Γ2 ρ2 ->
       forall x,
         (x \in Γ1) ->
-        (forall (K : known_map), K ! x = None).
-    Proof. unfold G_top; fcrush. Qed.
+        binding_inv_top x.
+    Proof. unfold G_top, binding_inv_top; fcrush. Qed.
 
     Lemma G_top_wf_env_r i Γ1 ρ1 Γ2 ρ2 :
       G_top i Γ1 ρ1 Γ2 ρ2 ->
@@ -1968,7 +1971,7 @@ Module M <: Annotate.
       forall {x v1 v2},
         exposed v2 ->
         V_top i v1 v2 ->
-        (forall (K : known_map), K ! x = None) ->
+        binding_inv_top x ->
         G_top i (x |: Γ1) (M.set x v1 ρ1) (x |: Γ2) (M.set x v2 ρ2).
     Proof.
       intros.
@@ -1992,7 +1995,7 @@ Module M <: Annotate.
       - repeat (rewrite M.gso; auto).
         assert (x0 \in Γ1) by fcrush.
         split.
-        eapply G_top_K; eauto.
+        eapply G_top_binding_inv_top; eauto.
         eapply G_top_get; eauto.
     Qed.
 
@@ -2002,7 +2005,7 @@ Module M <: Annotate.
         Forall2 (V_top i) vs1 vs2 ->
         set_lists xs vs1 ρ1 = Some ρ3 ->
         set_lists xs vs2 ρ2 = Some ρ4 ->
-        Forall (fun x => (forall (K : known_map), K ! x = None)) xs ->
+        Forall binding_inv_top xs ->
         G_top i (FromList xs :|: Γ1) ρ3 (FromList xs :|: Γ2) ρ4.
     Proof.
       intros HG xs.
@@ -2036,7 +2039,8 @@ Module M <: Annotate.
     Lemma Vfun_V_top e e' :
       trans_correct_top e e' ->
       forall i f xs Γ1 Γ2 ρ1 ρ2,
-        (forall (K : known_map), K ! f = None) ->
+        binding_inv_top f ->
+        Forall binding_inv_top xs ->
 
         G_top i Γ1 ρ1 Γ2 ρ2 ->
         A0.occurs_free e \subset (FromList xs :|: (f |: Γ1)) ->
@@ -2059,7 +2063,6 @@ Module M <: Annotate.
       apply V_top_mono with i; try lia.
       eapply IHi with (Γ2 := Γ2); eauto.
       apply G_top_mono with (S i); eauto; lia.
-      eapply set_lists_length_eq; eauto.
     Qed.
 
     Lemma free_fun_compat e e' f k k' xs :
@@ -2073,30 +2076,29 @@ Module M <: Annotate.
     Qed.
 
     Lemma fun_compat_top e e' k k' f xs :
-      K ! f = None ->
-      Disjoint _ (FromList xs) (Dom_map K) ->
+      binding_inv_top f ->
+      Forall binding_inv_top xs ->
 
       trans_correct_top e e' ->
       trans_correct_top k k' ->
       trans_correct_top (A0.Efun f xs e k) (Efun f w0 xs e' k').
     Proof.
-      unfold trans_correct_top, E, E'.
+      unfold trans_correct_top, E_top, E'.
       intros HKf HKxs; intros.
       assert (Hw0 : w0 \in Exposed) by (apply w0_exposed).
 
-      destruct H.
-      destruct H0.
+      inv H.
+      inv H0.
       split; intros.
       eapply free_fun_compat; eauto.
 
-      inv H6.
+      inv H5.
       - exists 0, OOT; split; simpl; eauto.
-      - inv H7.
-        edestruct (H2 (i - 1) (M.set f (A0.Vfun f ρ1 xs e) ρ1) (M.set f (Tag w0 (A1.Vfun f ρ2 xs e')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+      - inv H6.
+        edestruct (H3 (i - 1) (M.set f (A0.Vfun f ρ1 xs e) ρ1) (M.set f (Tag w0 (A1.Vfun f ρ2 xs e')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
         + eapply G_top_subset with (Γ1 := (f |: (A0.occurs_free (A0.Efun f xs e k)))) (Γ2 := (f |: (A1.occurs_free (A1.Efun f w0 xs e' k')))); eauto.
           * eapply G_top_set; eauto.
             eapply G_top_mono; eauto; try lia.
-            split; auto.
 
             eapply Vfun_V_top with (Γ1 := (A0.occurs_free (A0.Efun f xs e k))) (Γ2 := (A1.occurs_free (A1.Efun f w0 xs e' k'))); eauto.
             -- unfold trans_correct_top.
@@ -2108,7 +2110,7 @@ Module M <: Annotate.
         + exists (S j2), r2; split; auto.
           * constructor; auto.
             eapply bstep_fuel_exposed_inv; eauto.
-          * apply R_mono with ((i - 1) - c); try lia; auto.
+          * apply R_top_mono with ((i - 1) - c); try lia; auto.
     Qed.
 
     Lemma free_letapp_compat k k' f x xs :
@@ -2121,64 +2123,57 @@ Module M <: Annotate.
     Qed.
 
     Lemma letapp_compat_top k k' xs x f :
-      K ! f = None ->
-      Disjoint _ (FromList xs) (Dom_map K) ->
-      K ! x = None ->
+      binding_inv_top f ->
+      binding_inv_top x ->
 
       trans_correct_top k k' ->
       trans_correct_top (A0.Eletapp x f xs k) (A1.Eletapp x f w0 xs k').
     Proof.
-      unfold trans_correct_top, E, E'.
-      intros HKf HKxs HKx; intros.
+      unfold trans_correct_top, E_top, E'.
+      intros HKf HKx; intros.
       destruct H.
       split; intros.
       eapply free_letapp_compat; eauto.
 
-      inv H4.
+      inv H3.
       - exists 0, OOT; split; simpl; auto.
-      - inv H5.
-        + edestruct (G_top_get H2) as [fv1 [fv2 [Heqfv1 [Heqfv2 [[_ Hexfv] HVf]]]]]; eauto.
-          rewrite Heqfv1 in H9; inv H9.
+      - inv H4.
+        + edestruct (G_top_get H1) as [fv1 [fv2 [Heqfv1 [Heqfv2 [Hexfv HVf]]]]]; eauto.
+          invc.
           destruct fv2.
           destruct i.
-          inv H3.
+          fcrush.
           simpl in HVf.
-          destruct HVf as [Hfv2 HV]; subst.
+          destruct HVf as [Hfv2 [Hexf2 HV]]; subst.
           destruct v0; try contradiction.
-          destruct HV as [Heqf [Hlen HV]]; subst.
-          rename v0 into f'.
+          destruct HV as [Hlen HV]; subst.
           inv Hexfv.
-          destruct (K ! f') eqn:HKf'.
-          destruct HV as [Heqw [Hexw' _]]; subst; contradiction.
-
-          destruct HV as [Hex HV].
-
-          edestruct (G_top_get_list H2 xs) as [vs1 [vs2 [Heqvs1 [Heqvs2 [Hexs [Hbs HVvs]]]]]]; eauto.
+          destruct (exposed_reflect w); try contradiction.
+          edestruct (G_top_get_list H1 xs) as [vs1 [vs2 [Heqvs1 [Heqvs2 [Hexs HVvs]]]]]; eauto.
           eapply A0.free_letapp_xs_subset; eauto.
 
-          rewrite Heqvs1 in H10; inv H10.
+          invc.
 
           assert (Heqw : w = w0) by (eapply Exposed_singleton; eauto); inv Heqw.
 
-          destruct (set_lists_length3 (M.set f' (Tag w0 (Vfun f' t l e0)) t) l vs2) as [ρ4 Heqρ4].
+          destruct (set_lists_length3 (M.set v0 (Tag w0 (Vfun v0 t l e0)) t) l vs2) as [ρ4 Heqρ4].
           unfold wval in *.
           rewrite <- (Forall2_length _ _ _ HVvs).
-          rewrite <- (set_lists_length_eq _ _ _ _ H13); auto.
+          rewrite <- (set_lists_length_eq _ _ _ _ H12); auto.
 
           unfold E' in HV.
-          edestruct (HV i vs vs2 ρ'' ρ4) with (j1 := c0) as [j2 [r2 [He0 HR]]]; eauto; try lia.
-          * eapply V_mono_Forall; eauto; lia.
+          edestruct (HV i vs1 vs2 ρ'' ρ4) with (j1 := c0) as [j2 [r2 [He0 HR]]]; eauto; try lia.
+          * eapply V_top_mono_Forall; eauto; lia.
           * destruct r2; simpl in HR; try contradiction.
             edestruct (H0 (i - c0) (M.set x v ρ1) (M.set x w ρ2)) with (j1 := c') as [j3 [r3 [He1 HR']]]; eauto; try lia.
             eapply G_top_subset with (Γ1 := x |: (A0.occurs_free (A0.Eletapp x f xs k))) (Γ2 := x |: (A1.occurs_free (A1.Eletapp x f w0 xs k'))); eauto.
             eapply G_top_set; eauto.
             eapply G_top_mono; eauto; lia.
-            -- eapply binding_inv_top_exposed; eauto.
-               assert (Hw : exposed_res (A1.Res w)) by (eapply bstep_fuel_exposed_inv; eauto); inv Hw; auto.
-            -- eapply V_mono; eauto; try lia.
+            -- assert (Hw : exposed_res (A1.Res w)) by (eapply bstep_fuel_exposed_inv; eauto); inv Hw; auto.
+            -- eapply V_top_mono; eauto; try lia.
             -- eapply A0.free_letapp_k_subset; eauto.
             -- exists (S (j2 + j3)), r3; split; eauto.
-               2 : { eapply R_mono; eauto; lia. }
+               2 : { eapply R_top_mono; eauto; lia. }
 
                constructor; auto.
                eapply BStep_letapp_Res with (v := w); eauto.
@@ -2194,7 +2189,7 @@ Module M <: Annotate.
 
     (* Linking Preservation *)
     Definition linking_inv f x :=
-      K ! f = None /\ K ! x = None.
+      binding_inv_top f /\ binding_inv_top x.
 
     (* To link two programs, we take a joined `K` that knows about both programs.
      Note this is general enough to cover the ideal scenario when `e1` and `e1'` have distinct bound identifiers *)
@@ -2209,13 +2204,9 @@ Module M <: Annotate.
       intros [HKf HKx]; intros.
       apply Exposed_singleton in H; subst.
       eapply fun_compat_top; eauto.
-      normalize_sets.
-      eapply Disjoint_Empty_set_l; eauto.
       eapply letapp_compat_top; eauto.
-      normalize_sets.
-      eapply Disjoint_Empty_set_l; eauto.
     Qed.
 
-  End Known.
+  End Top.
 
 End M.
