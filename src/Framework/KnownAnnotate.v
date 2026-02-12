@@ -13,8 +13,6 @@ Module A1 := ANF.
 
 Module M <: Annotate.
 
-  (* TODO: revisit binding_inv *)
-
   (* Known Function Analysis With A Single Exposed Web Id *)
 
   (* Outline: *)
@@ -97,7 +95,8 @@ Module M <: Annotate.
 
   Definition analyze_spec K e :=
     analysis_spec K e /\
-    known_map_inv K.
+    known_map_inv K /\
+    Disjoint _ (A0.occurs_free e) (Dom_map K).
 
   Axiom analyze_sound :
     forall (e : A0.exp),
@@ -1499,26 +1498,15 @@ Module M <: Annotate.
 
     Definition E_top := (E' V_top).
 
-    Definition binding_inv_top x : Prop :=
-      forall (K : known_map), K ! x = None.
-
     Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
       wf_env ρ2 /\
       Γ2 \subset Γ1 /\
       forall x,
         (x \in Γ1) ->
-        binding_inv_top x /\
         exists v1 v2,
           M.get x ρ1 = Some v1 /\
           M.get x ρ2 = Some v2 /\
           V_top i v1 v2.
-
-    Lemma G_top_binding_inv_top i Γ1 ρ1 Γ2 ρ2 :
-      G_top i Γ1 ρ1 Γ2 ρ2 ->
-      forall x,
-        (x \in Γ1) ->
-        binding_inv_top x.
-    Proof. unfold G_top, binding_inv_top; fcrush. Qed.
 
     Lemma G_top_wf_env_r i Γ1 ρ1 Γ2 ρ2 :
       G_top i Γ1 ρ1 Γ2 ρ2 ->
@@ -1692,8 +1680,7 @@ Module M <: Annotate.
       destruct H as [Hwf [HS HG]].
       split; auto.
       split; auto; intros.
-      edestruct HG as [HK [v1 [v2 [Heqv1 [Heqv2 HV]]]]]; eauto.
-      split; auto.
+      edestruct HG as [v1 [v2 [Heqv1 [Heqv2 HV]]]]; eauto.
       eexists; eexists; repeat (split; eauto).
       apply V_top_mono with i; eauto.
     Qed.
@@ -1703,6 +1690,7 @@ Module M <: Annotate.
     (* G_top is stronger than G *)
     Lemma G_top_G : forall {i K Γ1 ρ1 Γ2 ρ2},
         G_top i Γ1 ρ1 Γ2 ρ2 ->
+        Disjoint _ Γ1 (Dom_map K) ->
         G K i Γ1 ρ1 Γ2 ρ2.
     Proof.
       unfold G_top, G.
@@ -1710,12 +1698,15 @@ Module M <: Annotate.
       destruct H as [HΓ [Hρ HG]].
       unfold Ensembles.Included, Ensembles.In, Dom_map in *.
       split; auto; intros.
-      edestruct HG as [HK [v1' [v2 [Heqv1 [Heqv2 HV]]]]]; eauto.
+      edestruct HG as [v1' [v2 [Heqv1 [Heqv2 HV]]]]; eauto.
       invc.
       eexists; split; eauto.
       assert (exposed v2) by (eapply V_top_exposed_r; eauto).
       split; auto.
       eapply binding_inv_exposed; eauto.
+      eapply not_Dom_map_eq; eauto.
+      inv H0.
+      fcrush.
       eapply V_V_top; eauto.
     Qed.
 
@@ -1772,6 +1763,7 @@ Module M <: Annotate.
     Lemma trans_correct_trans_correct_top K e1 e2 :
       A1.occurs_free e2 \subset A0.occurs_free e1 ->
       known_map_inv K ->
+      Disjoint _ (A0.occurs_free e1) (Dom_map K) ->
       trans_correct K (A0.occurs_free e1) e1 e2 ->
       trans_correct_top e1 e2.
     Proof.
@@ -1780,7 +1772,7 @@ Module M <: Annotate.
       split; auto; intros.
       unfold E_top, E, E' in *.
       intros.
-      edestruct H1 as [j2 [r2 [Hstep HR]]]; eauto.
+      edestruct H2 as [j2 [r2 [Hstep HR]]]; eauto.
       eapply G_top_G; eauto.
       eexists; eexists; split; eauto.
       eapply R_R_top; eauto.
@@ -1790,10 +1782,11 @@ Module M <: Annotate.
     (* Top-level correctness for the analysis *)
     Theorem top K etop etop':
       known_map_inv K ->
+      Disjoint _ (A0.occurs_free etop) (Dom_map K) ->
       trans K (A0.occurs_free etop) etop etop' ->
       trans_correct_top etop etop'.
     Proof.
-      intros HK H.
+      intros HK HD H.
       specialize (fundamental_property _ H).
       eapply trans_correct_trans_correct_top; eauto.
       eapply trans_exp_inv; eauto.
@@ -1980,7 +1973,6 @@ Module M <: Annotate.
       G_top i Γ1 ρ1 Γ2 ρ2 ->
       forall {x v1 v2},
         V_top i v1 v2 ->
-        binding_inv_top x ->
         G_top i (x |: Γ1) (M.set x v1 ρ1) (x |: Γ2) (M.set x v2 ρ2).
     Proof.
       intros.
@@ -1999,12 +1991,9 @@ Module M <: Annotate.
       intros.
       destruct (M.elt_eq x0 x); subst.
       - repeat rewrite M.gss.
-        split; auto.
         eexists; eexists; repeat split; eauto.
       - repeat (rewrite M.gso; auto).
         assert (x0 \in Γ1) by fcrush.
-        split.
-        eapply G_top_binding_inv_top; eauto.
         eapply G_top_get; eauto.
     Qed.
 
@@ -2014,7 +2003,6 @@ Module M <: Annotate.
         Forall2 (V_top i) vs1 vs2 ->
         set_lists xs vs1 ρ1 = Some ρ3 ->
         set_lists xs vs2 ρ2 = Some ρ4 ->
-        Forall binding_inv_top xs ->
         G_top i (FromList xs :|: Γ1) ρ3 (FromList xs :|: Γ2) ρ4.
     Proof.
       intros HG xs.
@@ -2033,7 +2021,7 @@ Module M <: Annotate.
         destruct vs2; try discriminate.
         destruct (set_lists xs vs1 ρ1) eqn:Heq1; try discriminate.
         destruct (set_lists xs vs2 ρ2) eqn:Heq2; try discriminate.
-        inv H; inv H0; inv H1; inv H2.
+        inv H; inv H0; inv H1.
         eapply G_top_subset with (Γ1 := (a |: (FromList xs :|: Γ1))) (Γ2 := (a |: (FromList xs :|: Γ2))); eauto.
         eapply G_top_set; eauto.
         normalize_sets.
@@ -2047,9 +2035,6 @@ Module M <: Annotate.
     Lemma Vfun_V_top e e' :
       trans_correct_top e e' ->
       forall i f xs Γ1 Γ2 ρ1 ρ2,
-        binding_inv_top f ->
-        Forall binding_inv_top xs ->
-
         G_top i Γ1 ρ1 Γ2 ρ2 ->
         A0.occurs_free e \subset (FromList xs :|: (f |: Γ1)) ->
         A1.occurs_free e' \subset (FromList xs :|: (f |: Γ2)) ->
@@ -2084,15 +2069,12 @@ Module M <: Annotate.
     Qed.
 
     Lemma fun_compat_top e e' k k' f xs :
-      binding_inv_top f ->
-      Forall binding_inv_top xs ->
-
       trans_correct_top e e' ->
       trans_correct_top k k' ->
       trans_correct_top (A0.Efun f xs e k) (Efun f w0 xs e' k').
     Proof.
       unfold trans_correct_top, E_top, E'.
-      intros HKf HKxs; intros.
+      intros.
       assert (Hw0 : w0 \in Exposed) by (apply w0_exposed).
 
       inv H.
@@ -2131,14 +2113,11 @@ Module M <: Annotate.
     Qed.
 
     Lemma letapp_compat_top k k' xs x f :
-      binding_inv_top f ->
-      binding_inv_top x ->
-
       trans_correct_top k k' ->
       trans_correct_top (A0.Eletapp x f xs k) (A1.Eletapp x f w0 xs k').
     Proof.
       unfold trans_correct_top, E_top, E'.
-      intros HKf HKx; intros.
+      intros.
       destruct H.
       split; intros.
       eapply free_letapp_compat; eauto.
@@ -2197,18 +2176,14 @@ Module M <: Annotate.
     Qed.
 
     (* Linking Preservation *)
-    Definition linking_inv f x :=
-      binding_inv_top f /\ binding_inv_top x.
-
     Lemma preserves_linking f w x e1 e2 e1' e2' :
-      linking_inv f x ->
       (w \in Exposed) ->
       trans_correct_top e1 e2 ->
       trans_correct_top e1' e2' ->
       trans_correct_top (A0.link f x e1 e1') (A1.link f w x e2 e2').
     Proof.
       unfold A0.link, A1.link.
-      intros [HKf HKx]; intros.
+      intros.
       apply Exposed_singleton in H; subst.
       eapply fun_compat_top; eauto.
       eapply letapp_compat_top; eauto.
