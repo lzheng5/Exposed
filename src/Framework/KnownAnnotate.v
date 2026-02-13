@@ -1334,7 +1334,7 @@ Module M <: Annotate.
           exists j2, r2; split; eauto.
           inv He'; auto.
           inv H6.
-          rewrite Heqv2 in H12; inv H12; eauto.
+          invc; eauto.
     Qed.
 
     (* Fundamental Property *)

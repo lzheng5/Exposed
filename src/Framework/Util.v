@@ -10,9 +10,18 @@ Ltac rewrite_math t :=
 
 Ltac invc :=
   repeat match goal with
+  (* 1. Rewrite between different names for the same term *)
   | H1 : ?f = ?C ?x,
     H2 : ?f = ?C ?y |- _ =>
-      rewrite H1 in H2; inv H2
+      rewrite H1 in H2; inversion H2; clear H2; subst
+
+  (* 2. Enhanced: Invert any equality of the same constructor (any arity) *)
+  | H : ?lhs = ?rhs |- _ =>
+      (* Check if both sides are applications of the same constructor *)
+      first [
+        injection H as ?; subst; clear H
+        | discriminate H (* Handle different constructors *)
+      ]
   end.
 
 Lemma normalize_step : forall i j, j <= i -> i - (i - j) = j.
