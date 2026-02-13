@@ -815,3 +815,103 @@ Module AnnotateTop.
   Qed.
 
 End AnnotateTop.
+
+Module AnnotateVEquiv (VA : VAnn).
+
+  Module A := AnnotateV VA.
+  Check A.V.
+  Module T := AnnotateTop.VM.
+  Check T.V.
+
+  (*
+  Lemma V_V_top_Forall :
+    forall i K,
+      (forall m : nat,
+          m < S i ->
+          forall K v1 v2,
+            exposed v2 ->
+            A.V K m v1 v2 <-> T.V m v1 v2) ->
+      forall j vs1 vs2,
+        j <= i ->
+        Forall exposed vs2 ->
+        Forall2 (A.V K j) vs1 vs2 <-> Forall2 (T.V j) vs1 vs2.
+  Proof.
+    intros.
+    revert vs1 j H0.
+    induction H1; simpl; intros.
+    - split; intros; inv H1; auto.
+    - split; intros; inv H3; constructor; auto;
+        solve [ eapply H; try lia; eauto |
+                eapply IHForall; eauto ].
+  Qed.
+
+  Lemma V_V_top :
+    forall i K v1 v2,
+      exposed v2 ->
+      (V K i v1 v2 <-> V_top i v1 v2).
+  Proof.
+    intro i.
+    induction i using lt_wf_rec; intros.
+    split; intros.
+    - destruct i; simpl in *;
+        inv H1; split; auto.
+      + destruct v2.
+        destruct v1; destruct v; eauto.
+        * destruct H3 as [Hlen HV]; subst.
+          inv H0.
+          destruct (exposed_reflect w); try contradiction.
+          fcrush.
+      + destruct v2.
+        destruct v1; destruct v; eauto.
+        * destruct H3 as [Hlen HV]; subst.
+          repeat (split; auto).
+          inv H0.
+          destruct (exposed_reflect w); try contradiction; intros.
+          destruct HV as [Hex HV]; intros.
+          assert (HEV : E' (V K) true (i - (i - j)) ρ3 e ρ4 e0).
+          {
+            eapply HV; eauto.
+            eapply V_V_top_Forall; eauto; try lia.
+          }
+          unfold E' in *; intros.
+          edestruct HEV as [j2 [r2 [Hstep HR]]]; eauto.
+          eexists; eexists; split; eauto.
+          unfold R' in *.
+          destruct r1; destruct r2; auto.
+          eapply H; eauto; try lia.
+          eapply bstep_fuel_exposed_inv in Hstep; eauto; fcrush.
+        * destruct H3 as [Hex [Hc HV]]; subst.
+          repeat (split; eauto).
+          eapply V_V_top_Forall; eauto; fcrush.
+    - destruct i; simpl in *;
+        destruct H1 as [Hwf [Hex HV]]; split; auto.
+      + destruct v2.
+        destruct v1; destruct v; eauto.
+        inv Hex.
+        destruct (exposed_reflect w); try contradiction; fcrush.
+      + destruct v2.
+        destruct v1; destruct v; eauto.
+        * destruct HV as [Hlen HV]; subst.
+          repeat (split; auto).
+          inv Hex.
+          destruct (exposed_reflect w); try contradiction.
+          split; auto; intros.
+          assert (HE : E' V_top true (i - (i - j)) ρ3 e ρ4 e0).
+          {
+            eapply HV; eauto.
+            eapply V_V_top_Forall; eauto; try lia.
+          }
+          unfold E' in *; intros.
+          edestruct HE as [j2 [r2 [Hstep HR]]]; eauto.
+          eexists; eexists; split; eauto.
+          unfold R' in *.
+          destruct r1; destruct r2; auto.
+          eapply H; eauto; try lia.
+          eapply bstep_fuel_exposed_inv in Hstep; eauto; fcrush.
+        * destruct HV as [Hc HV]; subst.
+          repeat (split; eauto).
+          eapply V_V_top_Forall; eauto; fcrush.
+  Qed.
+*)
+
+End AnnotateVEquiv.
