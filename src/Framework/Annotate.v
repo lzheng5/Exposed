@@ -833,9 +833,9 @@ End AnnotateTop.
 
 Module AnnotateVVTop (VA : VAnn).
 
+  (* Equivalence between AnnotateV.V and AnnotateTop.V when for exposed values. *)
+
   Import AnnotateUtil.
-  Module A := AnnotateV VA.
-  Module T := AnnotateTop.
 
   Lemma V_Forall_compat :
     forall i (V1 V2 : nat -> A0.val -> A1.wval -> Prop),
@@ -941,10 +941,13 @@ Module AnnotateVVTop (VA : VAnn).
         fcrush.
   Qed.
 
+  Module A := AnnotateV VA.
+  Module T := AnnotateTop.
+
   Theorem V_V_top :
-    forall i K v1 v2,
+    forall i W v1 v2,
       exposed v2 ->
-      (A.V K i v1 v2 <-> T.V i v1 v2).
+      (A.V W i v1 v2 <-> T.V i v1 v2).
   Proof.
     intro i.
     induction i using lt_wf_rec; intros.
@@ -957,7 +960,7 @@ Module AnnotateVVTop (VA : VAnn).
       + fcrush.
       + destruct H3 as [Hlen HV]; subst.
         split; auto.
-        eapply V_ex_compat with (V1 := A.V K); eauto.
+        eapply V_ex_compat with (V1 := A.V W); eauto.
       + fcrush.
     - destruct i; simpl in *;
         inv H1; split; auto;
@@ -966,7 +969,34 @@ Module AnnotateVVTop (VA : VAnn).
       + fcrush.
       + destruct H3 as [Hlen HV]; subst.
         split; auto.
-        eapply V_ex_compat with (V1 := A.V K); eauto.
+        eapply V_ex_compat with (V1 := A.V W); eauto.
+  Qed.
+
+  Lemma V_V_top_Forall :
+    forall i W vs1 vs2,
+      Forall exposed vs2 ->
+      (Forall2 (A.V W i) vs1 vs2 <-> Forall2 (T.V i) vs1 vs2).
+  Proof.
+    intros.
+    revert i W vs1.
+    induction H; intros.
+    - split; intros; inv H; auto.
+    - split; intros; inv H1; constructor; auto;
+        solve [ eapply V_V_top; try lia; eauto |
+                eapply IHForall; eauto ].
+  Qed.
+
+  Lemma R_R_top :
+    forall i W r1 r2,
+      exposed_res r2 ->
+      (A.R W i r1 r2 <-> T.R i r1 r2).
+  Proof.
+    unfold A.R, T.R, R'.
+    intros.
+    split; intros;
+      destruct r1; destruct r2; try contradiction; auto;
+      inv H;
+      eapply V_V_top; eauto.
   Qed.
 
 End AnnotateVVTop.
