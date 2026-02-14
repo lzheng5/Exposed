@@ -669,6 +669,7 @@ Module AnnotateTop.
   Qed.
 
   (* Compatibility Lemmas *)
+  (* TODO: Generalize *)
   Lemma Vfun_V w e e' :
     trans_correct e e' ->
     (w \in Exposed) ->
@@ -750,7 +751,7 @@ Module AnnotateTop.
     inv H0; auto.
   Qed.
 
-  (* Need [Exposed] to be a singleton set *)
+  (* Note here we require [Exposed] to be a singleton set *)
   Lemma letapp_compat w k k' xs x f :
     (w \in Exposed) ->
     (forall w0, w0 \in Exposed -> w0 = w) ->
@@ -949,23 +950,21 @@ Module AnnotateVVTop (VA : VAnn).
     induction i using lt_wf_rec; intros.
     split; intros.
     - destruct i; simpl in *;
-        inv H1; split; auto.
-      + destruct v2.
-        destruct (exposed_reflect w); try contradiction; fcrush.
-      + destruct v2.
+        inv H1; split; auto;
+        destruct v2;
         destruct (exposed_reflect w); try contradiction.
-        * destruct H3 as [Hlen HV]; subst.
-          split; auto.
-          eapply V_ex_compat with (V1 := A.V K); eauto.
-        * exfalso.
-          fcrush.
+      + fcrush.
+      + fcrush.
+      + destruct H3 as [Hlen HV]; subst.
+        split; auto.
+        eapply V_ex_compat with (V1 := A.V K); eauto.
+      + fcrush.
     - destruct i; simpl in *;
-        inv H1; split; auto.
-      + destruct v2.
-        destruct (exposed_reflect w); try contradiction; fcrush.
-      + destruct v2.
+        inv H1; split; auto;
+        destruct v2;
         destruct (exposed_reflect w); try contradiction.
-        destruct H3 as [Hlen HV]; subst.
+      + fcrush.
+      + destruct H3 as [Hlen HV]; subst.
         split; auto.
         eapply V_ex_compat with (V1 := A.V K); eauto.
   Qed.
