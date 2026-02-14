@@ -100,25 +100,28 @@ End AnnotateUtil.
 
 Module Type VAnn.
 
-  Parameter V_ann0 : A0.val -> A1.val -> Prop.
+  (* Analysis result type *)
+  Parameter web_map : Type.
+  
+  Parameter V_ann0 : web_map -> A0.val -> A1.val -> Prop.
 
   Parameter V_ann : (nat -> A0.val -> A1.wval -> Prop) ->
                     (bool -> nat -> A0.env -> A0.exp -> A1.env -> A1.exp -> Prop) ->
-                    nat -> A0.val -> web -> A1.val -> Prop.
+                    web_map -> nat -> A0.val -> web -> A1.val -> Prop.
 
   Parameter V_ann_V_ann0 :
-    forall V E i v1 w2 v2,
-      V_ann V E i v1 w2 v2 ->
-      V_ann0 v1 v2.
+    forall V E W i v1 w2 v2,
+      V_ann V E W i v1 w2 v2 ->
+      V_ann0 W v1 v2.
 
   Parameter V_ann_mono :
-    forall V E i j v1 w2 v2,
+    forall V E W i j v1 w2 v2,
       (forall k : nat,
           k < S i ->
           forall (j : nat) (v1 : A0.val) (v2 : A1.wval), V k v1 v2 -> j <= k -> V j v1 v2) ->
-      V_ann (fun i' => V (i - (i - i'))) (fun b i' => E b (i - (i - i'))) i v1 w2 v2 ->
+      V_ann (fun i' => V (i - (i - i'))) (fun b i' => E b (i - (i - i'))) W i v1 w2 v2 ->
       j <= i ->
-      V_ann (fun j' => V (j - (j - j'))) (fun b j' => E b (j - (j - j'))) j v1 w2 v2.
+      V_ann (fun j' => V (j - (j - j'))) (fun b j' => E b (j - (j - j'))) W j v1 w2 v2.
 
 End VAnn.
 
@@ -128,7 +131,7 @@ Module AnnotateV (VA : VAnn).
   Export AnnotateUtil.
 
   (* Cross-language Logical Relations *)
-  Fixpoint V (i : nat) (v1 : A0.val) (wv2 : A1.wval) {struct i} : Prop :=
+  Fixpoint V (W : web_map) (i : nat) (v1 : A0.val) (wv2 : A1.wval) {struct i} : Prop :=
     wf_val wv2 /\
     match wv2 with
     | A1.TAG _ w2 v2 =>
@@ -136,26 +139,26 @@ Module AnnotateV (VA : VAnn).
         | 0 =>
             match exposedb w2 with
             | true => exposed wv2 /\ V_ex0 v1 v2
-            | false => V_ann0 v1 v2
+            | false => V_ann0 W v1 v2
             end
 
         | S i0 =>
-            let V' := (fun j v1 wv2 => V (i0 - (i0 - j)) v1 wv2) in
-            let E' b := (fun j ρ1 e1 ρ2 e2 => E' V b (i0 - (i0 - j)) ρ1 e1 ρ2 e2) in
+            let V' := (fun j v1 wv2 => V W (i0 - (i0 - j)) v1 wv2) in
+            let E' b := (fun j ρ1 e1 ρ2 e2 => E' (V W) b (i0 - (i0 - j)) ρ1 e1 ρ2 e2) in
             match exposedb w2 with
             | true => exposed wv2 /\ V_ex V' (E' true) i0 v1 w2 v2
-            | false => V_ann V' E' i0 v1 w2 v2
+            | false => V_ann V' E' W i0 v1 w2 v2
             end
         end
     end.
 
-  Definition R := (R' V).
+  Definition R W := (R' (V W)).
 
-  Definition E := (E' V).
+  Definition E W := (E' (V W)).
 
   (* Lemmas about [wf_val], [wf_res], and [wf_env] *)
-  Lemma V_wf_val_r {i v1 v2}:
-    V i v1 v2 ->
+  Lemma V_wf_val_r {W i v1 v2}:
+    V W i v1 v2 ->
     wf_val v2.
   Proof.
     intros HV.
@@ -163,8 +166,8 @@ Module AnnotateV (VA : VAnn).
       destruct HV as [Hv2 _]; auto.
   Qed.
 
-  Lemma V_wf_val_Forall_r {i vs1 vs2} :
-    Forall2 (V i) vs1 vs2 ->
+  Lemma V_wf_val_Forall_r {W i vs1 vs2} :
+    Forall2 (V W i) vs1 vs2 ->
     Forall wf_val vs2.
   Proof.
     intros.
@@ -173,8 +176,8 @@ Module AnnotateV (VA : VAnn).
     eapply V_wf_val_r; eauto.
   Qed.
 
-  Lemma V_wf_res_r {i v1 v2}:
-    V i v1 v2 ->
+  Lemma V_wf_res_r {W i v1 v2}:
+    V W i v1 v2 ->
     wf_res (Res v2).
   Proof.
     intros HV.
@@ -182,8 +185,8 @@ Module AnnotateV (VA : VAnn).
     eapply V_wf_val_r; eauto.
   Qed.
 
-  Lemma R_wf_res_l {i r1 r2} :
-    R i r1 r2 ->
+  Lemma R_wf_res_l {W i r1 r2} :
+    R W i r1 r2 ->
     wf_res r2.
   Proof.
     unfold R.
@@ -194,9 +197,9 @@ Module AnnotateV (VA : VAnn).
   Qed.
 
   (* Inversion Lemmas *)
-  Lemma R_res_inv_l i v1 r2 :
-    R i (A0.Res v1) r2 ->
-    exists v2, r2 = A1.Res v2 /\ V i v1 v2.
+  Lemma R_res_inv_l W i v1 r2 :
+    R W i (A0.Res v1) r2 ->
+    exists v2, r2 = A1.Res v2 /\ V W i v1 v2.
   Proof.
     intros.
     destruct r2; simpl in *; try contradiction.
@@ -229,10 +232,10 @@ Module AnnotateV (VA : VAnn).
   Qed.
 
   Lemma V_mono i :
-      forall {j v1 v2},
-        V i v1 v2 ->
+      forall {W j v1 v2},
+        V W i v1 v2 ->
         j <= i ->
-        V j v1 v2.
+        V W j v1 v2.
     Proof.
       induction i using lt_wf_rec; intros.
       destruct v2.
@@ -253,20 +256,21 @@ Module AnnotateV (VA : VAnn).
         + eapply V_ann_mono; eauto; lia.
     Qed.
 
-  Lemma V_mono_Forall i j {vs1 vs2} :
-    Forall2 (V i) vs1 vs2 ->
+  Lemma V_mono_Forall i j {W vs1 vs2} :
+    Forall2 (V W i) vs1 vs2 ->
     j <= i ->
-    Forall2 (V j) vs1 vs2.
+    Forall2 (V W j) vs1 vs2.
   Proof.
     intros.
     eapply V_mono_Forall_mono; eauto.
+    intros. 
     eapply V_mono; eauto.
   Qed.
 
-  Lemma R_mono {r1 r2} i j :
-    R i r1 r2 ->
+  Lemma R_mono i j {W r1 r2} :
+    R W i r1 r2 ->
     j <= i ->
-    R j r1 r2.
+    R W j r1 r2.
   Proof.
     unfold R.
     intros.
@@ -275,16 +279,16 @@ Module AnnotateV (VA : VAnn).
     eapply V_mono; eauto.
   Qed.
 
-  Lemma E_mono {ex ρ1 ρ2 e1 e2} i j:
-    E ex i ρ1 e1 ρ2 e2 ->
+  Lemma E_mono i j {W ex ρ1 ρ2 e1 e2}:
+    E W ex i ρ1 e1 ρ2 e2 ->
     j <= i ->
-    E ex j ρ1 e1 ρ2 e2.
+    E W ex j ρ1 e1 ρ2 e2.
   Proof.
-    unfold E, R, E', R'.
+    unfold E, E'.
     intros.
     destruct (H j1 r1) as [j2 [r2 [Hr2 HR]]]; auto; try lia.
     exists j2, r2; split; eauto.
-    apply R_mono with (i - j1); try lia; auto.
+    eapply R_mono; eauto; try lia. 
   Qed.
 
 End AnnotateV.
@@ -294,32 +298,38 @@ Module AnnotateTop.
   (* The top-level exposed relation is exactly the relation induced by the trivial analysis *)
   Module VTrivM <: VAnn.
 
-    Definition V_ann0 (v1 : A0.val) (v2 : A1.val) : Prop := False.
+    Definition web_map := unit. 
+    
+    Definition V_ann0 (_ : web_map) (v1 : A0.val) (v2 : A1.val) : Prop := False.
 
     Definition V_ann
       (V' : nat -> A0.val -> A1.wval -> Prop)
       (E' : bool -> nat -> A0.env -> A0.exp -> A1.env -> A1.exp -> Prop)
-      (i0 : nat) (v1 : A0.val) (w2 : web) (v2 : A1.val) := False.
+      (_ : web_map) (i0 : nat) (v1 : A0.val) (w2 : web) (v2 : A1.val) := False.
 
     Lemma V_ann_V_ann0 :
-      forall V E i v1 w2 v2,
-        V_ann V E i v1 w2 v2 ->
-        V_ann0 v1 v2.
+      forall V E W i v1 w2 v2,
+        V_ann V E W i v1 w2 v2 ->
+        V_ann0 W v1 v2.
     Proof. unfold V_ann, V_ann0; auto. Qed.
 
-    Lemma V_ann_mono V E i j v1 w2 v2 :
+    Lemma V_ann_mono V E W i j v1 w2 v2 :
       (forall k : nat,
           k < S i ->
           forall (j : nat) (v1 : A0.val) (v2 : A1.wval), V k v1 v2 -> j <= k -> V j v1 v2) ->
-      V_ann (fun i' => V (i - (i - i'))) (fun b i' => E b (i - (i - i'))) i v1 w2 v2 ->
+      V_ann (fun i' => V (i - (i - i'))) (fun b i' => E b (i - (i - i'))) W i v1 w2 v2 ->
       j <= i ->
-      V_ann (fun j' => V (j - (j - j'))) (fun b j' => E b (j - (j - j'))) j v1 w2 v2.
+      V_ann (fun j' => V (j - (j - j'))) (fun b j' => E b (j - (j - j'))) W j v1 w2 v2.
     Proof. unfold V_ann. intros; fcrush. Qed.
 
   End VTrivM.
 
   Module VM := AnnotateV VTrivM.
-  Export VM.
+  Export VM. 
+
+  Notation V := (VM.V tt).
+  Notation E := (VM.E tt).
+  Notation R := (VM.R tt).   
 
   (* Top-level Exposed Lemmas *)
   Lemma V_exposed_r {i v1 v2}:
@@ -387,7 +397,7 @@ Module AnnotateTop.
     split; auto; intros.
     edestruct HG as [v1 [v2 [Heqv1 [Heqv2 HV]]]]; eauto.
     eexists; eexists; repeat (split; eauto).
-    apply V_mono with i; eauto.
+    eapply V_mono; eauto.
   Qed.
 
   (* Top-level Relation *)
@@ -523,10 +533,10 @@ Module AnnotateTop.
         inv H6.
         inv Hw.
         inv H8.
-        destruct i0; simpl in *;
+        destruct i0; simpl in *; 
           destruct (exposed_reflect w); try contradiction;
           repeat (split; auto);
-          simpl in *;
+          simpl in *; 
           rewrite_math (i0 - i0 = 0);
           rewrite_math (i0 - 0 = i0);
           try (eapply V_mono_Forall; eauto; lia).
