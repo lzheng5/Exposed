@@ -2,7 +2,11 @@ From CertiCoq.LambdaANF Require Import Ensembles_util map_util set_util List_uti
 
 From Framework Require Import ANF.
 
+(* Single Exposed Web Id *)
+
 Module W0.
+
+  (* Assume single exposed web id for convienience *)
 
   Parameter w0 : web.
   Parameter w0_exposed : w0 \in Exposed.
