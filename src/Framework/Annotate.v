@@ -9,6 +9,8 @@ From Framework Require Import Util ANF0 ANF Refl0 Refl Erase.
 Module A0 := ANF0.
 Module A1 := ANF.
 
+(* [TODO] Add comment to point to the concrete/instantiated logical relations. In case this is too abstract. *)
+
 Module AnnotateUtil.
 
   Lemma V_mono_Forall_aux :
@@ -102,7 +104,7 @@ Module Type VAnn.
 
   (* Analysis result type *)
   Parameter web_map : Type.
-  
+
   Parameter V_ann0 : web_map -> A0.val -> A1.val -> Prop.
 
   Parameter V_ann : (nat -> A0.val -> A1.wval -> Prop) ->
@@ -263,7 +265,7 @@ Module AnnotateV (VA : VAnn).
   Proof.
     intros.
     eapply V_mono_Forall_mono; eauto.
-    intros. 
+    intros.
     eapply V_mono; eauto.
   Qed.
 
@@ -288,18 +290,20 @@ Module AnnotateV (VA : VAnn).
     intros.
     destruct (H j1 r1) as [j2 [r2 [Hr2 HR]]]; auto; try lia.
     exists j2, r2; split; eauto.
-    eapply R_mono; eauto; try lia. 
+    eapply R_mono; eauto; try lia.
   Qed.
 
 End AnnotateV.
 
 Module AnnotateTop.
 
-  (* The top-level exposed relation is exactly the relation induced by the trivial analysis *)
+  (* Top-level Cross-language Logical Relations *)
+
+  (* The top-level annotate relation is exactly the relation induced by the trivial analysis *)
   Module VTrivM <: VAnn.
 
-    Definition web_map := unit. 
-    
+    Definition web_map := unit.
+
     Definition V_ann0 (_ : web_map) (v1 : A0.val) (v2 : A1.val) : Prop := False.
 
     Definition V_ann
@@ -325,11 +329,11 @@ Module AnnotateTop.
   End VTrivM.
 
   Module VM := AnnotateV VTrivM.
-  Export VM. 
+  Export VM.
 
-  Notation V := (VM.V tt).
-  Notation E := (VM.E tt).
-  Notation R := (VM.R tt).   
+  Definition V := (VM.V tt).
+  Definition E := (VM.E tt).
+  Definition R := (VM.R tt).
 
   (* Top-level Exposed Lemmas *)
   Lemma V_exposed_r {i v1 v2}:
@@ -533,10 +537,10 @@ Module AnnotateTop.
         inv H6.
         inv Hw.
         inv H8.
-        destruct i0; simpl in *; 
+        destruct i0; unfold V; simpl in *;
           destruct (exposed_reflect w); try contradiction;
           repeat (split; auto);
-          simpl in *; 
+          simpl in *;
           rewrite_math (i0 - i0 = 0);
           rewrite_math (i0 - 0 = i0);
           try (eapply V_mono_Forall; eauto; lia).
@@ -677,7 +681,7 @@ Module AnnotateTop.
     unfold trans_correct.
     intros [HS He] Hw i.
 
-    induction i; simpl; intros; auto;
+    induction i; intros; unfold V; simpl; auto;
       assert (Hρ2 : wf_env ρ2) by (eapply G_wf_env_r; eauto);
       destruct (exposed_reflect w); try contradiction;
       repeat (split; auto); intros.
@@ -708,7 +712,7 @@ Module AnnotateTop.
     trans_correct k k' ->
     trans_correct (A0.Efun f xs e k) (Efun f w xs e' k').
   Proof.
-    unfold trans_correct, E, E'.
+    unfold trans_correct, E, VM.E, E'.
     intro Hw; intros.
 
     inv H.
@@ -753,7 +757,7 @@ Module AnnotateTop.
     trans_correct k k' ->
     trans_correct (A0.Eletapp x f xs k) (A1.Eletapp x f w xs k').
   Proof.
-    unfold trans_correct, E, E'.
+    unfold trans_correct, E, VM.E, E'.
     intros Hw HEx; intros.
     destruct H.
     split; intros.
@@ -826,25 +830,23 @@ Module AnnotateTop.
 
 End AnnotateTop.
 
-Module AnnotateVEquiv (VA : VAnn).
+Module AnnotateVVTop (VA : VAnn).
 
+  Import AnnotateUtil.
   Module A := AnnotateV VA.
-  Check A.V.
-  Module T := AnnotateTop.VM.
-  Check T.V.
+  Module T := AnnotateTop.
 
-  (*
-  Lemma V_V_top_Forall :
-    forall i K,
+  Lemma V_Forall_compat :
+    forall i (V1 V2 : nat -> A0.val -> A1.wval -> Prop),
       (forall m : nat,
           m < S i ->
-          forall K v1 v2,
+          forall v1 v2,
             exposed v2 ->
-            A.V K m v1 v2 <-> T.V m v1 v2) ->
+            V1 m v1 v2 <-> V2 m v1 v2) ->
       forall j vs1 vs2,
         j <= i ->
         Forall exposed vs2 ->
-        Forall2 (A.V K j) vs1 vs2 <-> Forall2 (T.V j) vs1 vs2.
+        Forall2 (V1 j) vs1 vs2 <-> Forall2 (V2 j) vs1 vs2.
   Proof.
     intros.
     revert vs1 j H0.
@@ -855,10 +857,93 @@ Module AnnotateVEquiv (VA : VAnn).
                 eapply IHForall; eauto ].
   Qed.
 
-  Lemma V_V_top :
+  Lemma R_compat :
+    forall i V1 V2,
+      (forall m : nat,
+          m < S i ->
+          forall v1 v2,
+            exposed v2 ->
+            V1 m v1 v2 <-> V2 m v1 v2) ->
+      forall j r1 r2,
+        j <= i ->
+        exposed_res r2 ->
+        R' V1 j r1 r2 <-> R' V2 j r1 r2.
+  Proof.
+    unfold R'.
+    intros; split; intros;
+      destruct r1; destruct r2; auto;
+      inv H1;
+      eapply H; eauto; try lia.
+  Qed.
+
+  Lemma E_compat :
+    forall i V1 V2,
+      (forall m : nat,
+          m < S i ->
+          forall v1 v2,
+            exposed v2 ->
+            V1 m v1 v2 <-> V2 m v1 v2) ->
+      forall j ρ1 e1 ρ2 e2,
+        j <= i ->
+        E' V1 true j ρ1 e1 ρ2 e2 <-> E' V2 true j ρ1 e1 ρ2 e2.
+  Proof.
+    unfold E'.
+    intros; split; intros;
+      edestruct H1 as [j2 [r2 [Hstep HR]]]; eauto;
+      eexists; eexists; split; eauto;
+      eapply R_compat with (V1 := V1); eauto; try lia;
+      eapply bstep_fuel_exposed_inv in Hstep; eauto; fcrush.
+  Qed.
+
+  Lemma V_ex_compat :
+    forall i V1 V2,
+      (forall m : nat,
+          m < S i ->
+          forall v1 v2,
+            exposed v2 ->
+            V1 m v1 v2 <-> V2 m v1 v2) ->
+      forall j v1 w v2,
+        j <= i ->
+        exposed (Tag w v2) ->
+        V_ex
+          (fun (j : nat)  => V1 (i - (i - j)))
+          (fun (j : nat) => E' V1 true (i - (i - j)))
+          j v1 w v2
+        <->
+        V_ex
+          (fun (j : nat) => V2 (i - (i - j)))
+          (fun (j : nat) => E' V2 true (i - (i - j)))
+          j v1 w v2.
+  Proof.
+    unfold V_ex.
+    intros.
+    split; intros.
+    - destruct v1; destruct v2; try contradiction;
+        inv H2; split; auto; intros.
+      + assert (He : E' V1 true (i - (i - j0)) ρ3 e ρ4 e0).
+        {
+          eapply H4; eauto.
+          eapply V_Forall_compat; eauto; lia.
+        }
+        eapply E_compat with (V1 := V1); eauto; lia.
+      + eapply V_Forall_compat with (V1 := V1); eauto; try lia.
+        fcrush.
+    - destruct v1; destruct v2; try contradiction;
+        inv H2; split; auto; intros.
+      + assert (He : E' V2 true (i - (i - j0)) ρ3 e ρ4 e0).
+        {
+          eapply H4; eauto.
+          eapply V_Forall_compat with (V1 := V1); eauto; lia.
+        }
+        eapply E_compat with (V1 := V1); eauto; lia.
+      + eapply V_Forall_compat with (V1 := V1); eauto; try lia.
+        fcrush.
+  Qed.
+
+  Theorem V_V_top :
     forall i K v1 v2,
       exposed v2 ->
-      (V K i v1 v2 <-> V_top i v1 v2).
+      (A.V K i v1 v2 <-> T.V i v1 v2).
   Proof.
     intro i.
     induction i using lt_wf_rec; intros.
@@ -866,62 +951,23 @@ Module AnnotateVEquiv (VA : VAnn).
     - destruct i; simpl in *;
         inv H1; split; auto.
       + destruct v2.
-        destruct v1; destruct v; eauto.
-        * destruct H3 as [Hlen HV]; subst.
-          inv H0.
-          destruct (exposed_reflect w); try contradiction.
-          fcrush.
-      + destruct v2.
-        destruct v1; destruct v; eauto.
-        * destruct H3 as [Hlen HV]; subst.
-          repeat (split; auto).
-          inv H0.
-          destruct (exposed_reflect w); try contradiction; intros.
-          destruct HV as [Hex HV]; intros.
-          assert (HEV : E' (V K) true (i - (i - j)) ρ3 e ρ4 e0).
-          {
-            eapply HV; eauto.
-            eapply V_V_top_Forall; eauto; try lia.
-          }
-          unfold E' in *; intros.
-          edestruct HEV as [j2 [r2 [Hstep HR]]]; eauto.
-          eexists; eexists; split; eauto.
-          unfold R' in *.
-          destruct r1; destruct r2; auto.
-          eapply H; eauto; try lia.
-          eapply bstep_fuel_exposed_inv in Hstep; eauto; fcrush.
-        * destruct H3 as [Hex [Hc HV]]; subst.
-          repeat (split; eauto).
-          eapply V_V_top_Forall; eauto; fcrush.
-    - destruct i; simpl in *;
-        destruct H1 as [Hwf [Hex HV]]; split; auto.
-      + destruct v2.
-        destruct v1; destruct v; eauto.
-        inv Hex.
         destruct (exposed_reflect w); try contradiction; fcrush.
       + destruct v2.
-        destruct v1; destruct v; eauto.
-        * destruct HV as [Hlen HV]; subst.
-          repeat (split; auto).
-          inv Hex.
-          destruct (exposed_reflect w); try contradiction.
-          split; auto; intros.
-          assert (HE : E' V_top true (i - (i - j)) ρ3 e ρ4 e0).
-          {
-            eapply HV; eauto.
-            eapply V_V_top_Forall; eauto; try lia.
-          }
-          unfold E' in *; intros.
-          edestruct HE as [j2 [r2 [Hstep HR]]]; eauto.
-          eexists; eexists; split; eauto.
-          unfold R' in *.
-          destruct r1; destruct r2; auto.
-          eapply H; eauto; try lia.
-          eapply bstep_fuel_exposed_inv in Hstep; eauto; fcrush.
-        * destruct HV as [Hc HV]; subst.
-          repeat (split; eauto).
-          eapply V_V_top_Forall; eauto; fcrush.
+        destruct (exposed_reflect w); try contradiction.
+        * destruct H3 as [Hlen HV]; subst.
+          split; auto.
+          eapply V_ex_compat with (V1 := A.V K); eauto.
+        * exfalso.
+          fcrush.
+    - destruct i; simpl in *;
+        inv H1; split; auto.
+      + destruct v2.
+        destruct (exposed_reflect w); try contradiction; fcrush.
+      + destruct v2.
+        destruct (exposed_reflect w); try contradiction.
+        destruct H3 as [Hlen HV]; subst.
+        split; auto.
+        eapply V_ex_compat with (V1 := A.V K); eauto.
   Qed.
-*)
 
-End AnnotateVEquiv.
+End AnnotateVVTop.
