@@ -326,3 +326,37 @@ Proof.
   unfold Dom_map.
   split; intros [y Hy]; eauto.
 Qed.
+
+Section RelationUtil.
+
+  Lemma V_mono_Forall_aux (A1 A2 : Type) :
+    forall i j (V : nat -> A1 -> A2 -> Prop) vs1 vs2,
+      (forall k : nat,
+          k < S i ->
+          forall (j : nat) (v1 : A1) (v2 : A2), V k v1 v2 -> j <= k -> V j v1 v2) ->
+      Forall2 (V i) vs1 vs2 ->
+      j <= i ->
+      Forall2 (V j) vs1 vs2.
+  Proof.
+    intros.
+    revert vs2 H0.
+    induction vs1; intros; inv H0; auto.
+    rename l' into vs2.
+    constructor; auto.
+    eapply H; eauto; lia.
+  Qed.
+
+  Lemma V_mono_Forall_mono (A1 A2 : Type) (V : nat -> A1 -> A2 -> Prop) :
+    (forall i j v1 v2, V i v1 v2 -> j <= i -> V j v1 v2) ->
+    forall i j {vs1 vs2},
+      Forall2 (V i) vs1 vs2 ->
+      j <= i ->
+      Forall2 (V j) vs1 vs2.
+  Proof.
+    intros V_mono. intros.
+    revert j H0.
+    induction H; simpl; intros; auto.
+    constructor; eauto.
+  Qed.
+
+End RelationUtil.

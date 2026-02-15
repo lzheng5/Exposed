@@ -13,37 +13,6 @@ Module A1 := ANF.
 
 Module AnnotateUtil.
 
-  (* [TODO] Generalize *)
-  Lemma V_mono_Forall_aux :
-    forall i j V vs1 vs2,
-      (forall k : nat,
-          k < S i ->
-          forall (j : nat) (v1 : A0.val) (v2 : A1.wval), V k v1 v2 -> j <= k -> V j v1 v2) ->
-      Forall2 (V i) vs1 vs2 ->
-      j <= i ->
-      Forall2 (V j) vs1 vs2.
-  Proof.
-    intros.
-    revert vs2 H0.
-    induction vs1; intros; inv H0; auto.
-    rename l' into vs2.
-    constructor; auto.
-    eapply H; eauto; lia.
-  Qed.
-
-  Lemma V_mono_Forall_mono (V : nat -> A0.val -> A1.wval -> Prop) :
-    (forall i j v1 v2, V i v1 v2 -> j <= i -> V j v1 v2) ->
-    forall i j {vs1 vs2},
-      Forall2 (V i) vs1 vs2 ->
-      j <= i ->
-      Forall2 (V j) vs1 vs2.
-  Proof.
-    intros V_mono. intros.
-    revert j H0.
-    induction H; simpl; intros; auto.
-    constructor; eauto.
-  Qed.
-
   Definition V_ex0 (v1 : A0.val) (v2 : A1.val) : Prop :=
     match v1, v2 with
     | A0.Vconstr t1 vs1, A1.Vconstr t2 vs2 => t1 = t2 /\ length vs1 = length vs2

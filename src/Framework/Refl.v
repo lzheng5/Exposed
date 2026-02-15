@@ -141,23 +141,6 @@ Proof.
 Qed.
 
 (* Monotonicity Lemmas *)
-Lemma V_mono_Forall_aux :
-  forall i j V vs1 vs2,
-    (forall k : nat,
-        k < S i ->
-        forall (j : nat) (v1 v2 : wval), V k v1 v2 -> j <= k -> V j v1 v2) ->
-    Forall2 (V i) vs1 vs2 ->
-    j <= i ->
-    Forall2 (V j) vs1 vs2.
-Proof.
-  intros.
-  revert vs2 H0.
-  induction vs1; intros; inv H0; auto.
-  rename l' into vs2.
-  constructor; auto.
-  eapply H; eauto; lia.
-Qed.
-
 Lemma V_mono i :
   forall {j v1 v2},
     V i v1 v2 ->
