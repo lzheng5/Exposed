@@ -25,6 +25,7 @@ src/Framework/ANF1.v
 src/Framework/Erase.v
 src/Framework/Annotate.v
 src/Framework/Trivial.v
+src/Framework/Known.v
 
 src/Framework/RelComp.v
 src/Framework/IdComp.v

@@ -7,6 +7,8 @@ Require Import Lia.
 
 From Framework Require Import Util ANF Exposed Refl Id DPE ConstProp Defunc.
 
+(* [TODO] Refactoring *)
+
 Lemma exposed_V_relate_Forall_aux :
   forall i (V1 V2 : nat -> wval -> wval -> Prop),
     (forall n : nat, n < S i -> forall v1 v2, exposed v1 -> V1 n v1 v2 <-> V2 n v1 v2) ->

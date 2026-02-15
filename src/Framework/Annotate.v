@@ -75,7 +75,7 @@ Module Type VAnn.
   (* Analysis result type *)
   Parameter web_map : Type.
 
-  Parameter V_ann0 : web_map -> A0.val -> A1.val -> Prop.
+  Parameter V_ann0 : web_map -> A0.val -> web -> A1.val -> Prop.
 
   Parameter V_ann : (nat -> A0.val -> A1.wval -> Prop) ->
                     (bool -> nat -> A0.env -> A0.exp -> A1.env -> A1.exp -> Prop) ->
@@ -84,7 +84,7 @@ Module Type VAnn.
   Parameter V_ann_V_ann0 :
     forall V E W i v1 w2 v2,
       V_ann V E W i v1 w2 v2 ->
-      V_ann0 W v1 v2.
+      V_ann0 W v1 w2 v2.
 
   Parameter V_ann_mono :
     forall V E W i j v1 w2 v2,
@@ -111,7 +111,7 @@ Module AnnotateV (VA : VAnn).
         | 0 =>
             match exposedb w2 with
             | true => exposed wv2 /\ V_ex0 v1 v2
-            | false => V_ann0 W v1 v2
+            | false => V_ann0 W v1 w2 v2
             end
 
         | S i0 =>
@@ -274,7 +274,7 @@ Module AnnotateTop.
 
     Definition web_map := unit.
 
-    Definition V_ann0 (_ : web_map) (v1 : A0.val) (v2 : A1.val) : Prop := False.
+    Definition V_ann0 (_ : web_map) (v1 : A0.val) (w2 : web) (v2 : A1.val) : Prop := False.
 
     Definition V_ann
       (V' : nat -> A0.val -> A1.wval -> Prop)
@@ -284,7 +284,7 @@ Module AnnotateTop.
     Lemma V_ann_V_ann0 :
       forall V E W i v1 w2 v2,
         V_ann V E W i v1 w2 v2 ->
-        V_ann0 W v1 v2.
+        V_ann0 W v1 w2 v2.
     Proof. unfold V_ann, V_ann0; auto. Qed.
 
     Lemma V_ann_mono V E W i j v1 w2 v2 :
@@ -767,7 +767,7 @@ Module AnnotateVVTop (VA : VAnn).
       eapply bstep_fuel_exposed_inv in Hstep; eauto; fcrush.
   Qed.
 
-  Lemma V_ex_compat :
+  Lemma exposed_V_ex_relate :
     forall i V1 V2,
       (forall m : nat,
           m < S i ->
@@ -831,7 +831,7 @@ Module AnnotateVVTop (VA : VAnn).
       + fcrush.
       + destruct H3 as [Hlen HV]; subst.
         split; auto.
-        eapply V_ex_compat with (V1 := A.V W); eauto.
+        eapply exposed_V_ex_relate with (V1 := A.V W); eauto.
       + fcrush.
     - destruct i; simpl in *;
         inv H1; split; auto;
@@ -840,7 +840,7 @@ Module AnnotateVVTop (VA : VAnn).
       + fcrush.
       + destruct H3 as [Hlen HV]; subst.
         split; auto.
-        eapply V_ex_compat with (V1 := A.V W); eauto.
+        eapply exposed_V_ex_relate with (V1 := A.V W); eauto.
   Qed.
 
   Lemma exposed_V_relate_Forall :
