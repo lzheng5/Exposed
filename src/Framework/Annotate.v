@@ -708,7 +708,7 @@ Module AnnotateVVTop (VA : VAnn).
 
   Import AnnotateUtil.
 
-  Lemma V_Forall_compat :
+  Lemma exposed_V_relate_Forall_aux :
     forall i (V1 V2 : nat -> A0.val -> A1.wval -> Prop),
       (forall m : nat,
           m < S i ->
@@ -729,7 +729,7 @@ Module AnnotateVVTop (VA : VAnn).
                 eapply IHForall; eauto ].
   Qed.
 
-  Lemma R_compat :
+  Lemma exposed_R_relate_aux :
     forall i V1 V2,
       (forall m : nat,
           m < S i ->
@@ -748,7 +748,7 @@ Module AnnotateVVTop (VA : VAnn).
       eapply H; eauto; try lia.
   Qed.
 
-  Lemma E_compat :
+  Lemma exposed_E_relate_aux :
     forall i V1 V2,
       (forall m : nat,
           m < S i ->
@@ -763,7 +763,7 @@ Module AnnotateVVTop (VA : VAnn).
     intros; split; intros;
       edestruct H1 as [j2 [r2 [Hstep HR]]]; eauto;
       eexists; eexists; split; eauto;
-      eapply R_compat with (V1 := V1); eauto; try lia;
+      eapply exposed_R_relate_aux with (V1 := V1); eauto; try lia;
       eapply bstep_fuel_exposed_inv in Hstep; eauto; fcrush.
   Qed.
 
@@ -795,27 +795,27 @@ Module AnnotateVVTop (VA : VAnn).
       + assert (He : E' V1 true (i - (i - j0)) ρ3 e ρ4 e0).
         {
           eapply H4; eauto.
-          eapply V_Forall_compat; eauto; lia.
+          eapply exposed_V_relate_Forall_aux; eauto; lia.
         }
-        eapply E_compat with (V1 := V1); eauto; lia.
-      + eapply V_Forall_compat with (V1 := V1); eauto; try lia.
+        eapply exposed_E_relate_aux with (V1 := V1); eauto; lia.
+      + eapply exposed_V_relate_Forall_aux with (V1 := V1); eauto; try lia.
         fcrush.
     - destruct v1; destruct v2; try contradiction;
         inv H2; split; auto; intros.
       + assert (He : E' V2 true (i - (i - j0)) ρ3 e ρ4 e0).
         {
           eapply H4; eauto.
-          eapply V_Forall_compat with (V1 := V1); eauto; lia.
+          eapply exposed_V_relate_Forall_aux with (V1 := V1); eauto; lia.
         }
-        eapply E_compat with (V1 := V1); eauto; lia.
-      + eapply V_Forall_compat with (V1 := V1); eauto; try lia.
+        eapply exposed_E_relate_aux with (V1 := V1); eauto; lia.
+      + eapply exposed_V_relate_Forall_aux with (V1 := V1); eauto; try lia.
         fcrush.
   Qed.
 
   Module A := AnnotateV VA.
   Module T := AnnotateTop.
 
-  Theorem V_V_top :
+  Theorem exposed_V_relate :
     forall i W v1 v2,
       exposed v2 ->
       (A.V W i v1 v2 <-> T.V i v1 v2).
@@ -843,7 +843,7 @@ Module AnnotateVVTop (VA : VAnn).
         eapply V_ex_compat with (V1 := A.V W); eauto.
   Qed.
 
-  Lemma V_V_top_Forall :
+  Lemma exposed_V_relate_Forall :
     forall i W vs1 vs2,
       Forall exposed vs2 ->
       (Forall2 (A.V W i) vs1 vs2 <-> Forall2 (T.V i) vs1 vs2).
@@ -853,11 +853,11 @@ Module AnnotateVVTop (VA : VAnn).
     induction H; intros.
     - split; intros; inv H; auto.
     - split; intros; inv H1; constructor; auto;
-        solve [ eapply V_V_top; try lia; eauto |
+        solve [ eapply exposed_V_relate; try lia; eauto |
                 eapply IHForall; eauto ].
   Qed.
 
-  Lemma R_R_top :
+  Lemma exposed_R_relate :
     forall i W r1 r2,
       exposed_res r2 ->
       (A.R W i r1 r2 <-> T.R i r1 r2).
@@ -867,7 +867,7 @@ Module AnnotateVVTop (VA : VAnn).
     split; intros;
       destruct r1; destruct r2; try contradiction; auto;
       inv H;
-      eapply V_V_top; eauto.
+      eapply exposed_V_relate; eauto.
   Qed.
 
 End AnnotateVVTop.

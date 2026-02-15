@@ -7,7 +7,7 @@ Require Import Lia.
 
 From Framework Require Import Util ANF Exposed Refl Id DPE ConstProp Defunc.
 
-Lemma exposed_V_relate_Forall :
+Lemma exposed_V_relate_Forall_aux :
   forall i (V1 V2 : nat -> wval -> wval -> Prop),
     (forall n : nat, n < S i -> forall v1 v2, exposed v1 -> V1 n v1 v2 <-> V2 n v1 v2) ->
     forall j vs1 vs2,
@@ -58,7 +58,7 @@ Module ReflTop.
             inv H0.
             eapply H2 with (vs1 := vs1) (vs2 := vs2); try lia; eauto;
               intros; destruct H4; auto.
-            eapply exposed_V_relate_Forall; eauto; try lia.
+            eapply exposed_V_relate_Forall_aux; eauto; try lia.
           }
 
           unfold Refl.E', E', Refl.R', R' in *.
@@ -74,7 +74,7 @@ Module ReflTop.
         * destruct H2 as [Hc HV]; subst.
           repeat split; auto.
           rewrite normalize_step in *; try lia.
-          eapply exposed_V_relate_Forall with (V1 := V); eauto.
+          eapply exposed_V_relate_Forall_aux with (V1 := V); eauto.
           inv H0; auto.
 
       + unfold V_refl in *.
@@ -86,7 +86,7 @@ Module ReflTop.
           {
             inv H0.
             eapply H2 with (vs1 := vs1) (vs2 := vs2); try lia; eauto.
-            eapply exposed_V_relate_Forall with (V1 := V); eauto; try lia.
+            eapply exposed_V_relate_Forall_aux with (V1 := V); eauto; try lia.
           }
 
           unfold Refl.E', E', Refl.R', R' in *.
@@ -102,7 +102,7 @@ Module ReflTop.
         * destruct H2 as [Hc HV]; subst.
           repeat split; auto.
           rewrite normalize_step in *; try lia.
-          eapply exposed_V_relate_Forall with (V1 := V); eauto.
+          eapply exposed_V_relate_Forall_aux with (V1 := V); eauto.
           inv H0; auto.
   Qed.
 
@@ -202,7 +202,7 @@ Module Top (LM : LSig) (VT : VTrans LM).
              {
                inv H0.
                eapply H2 with (vs1 := vs1) (vs2 := vs2); try lia; eauto.
-               eapply exposed_V_relate_Forall; eauto; try lia.
+               eapply exposed_V_relate_Forall_aux; eauto; try lia.
              }
 
              unfold E', R' in *.
@@ -218,7 +218,7 @@ Module Top (LM : LSig) (VT : VTrans LM).
           -- destruct H2 as [Hc HV]; subst.
              repeat split; auto.
              rewrite normalize_step in *; try lia.
-             eapply exposed_V_relate_Forall with (V1 := IV.V); eauto.
+             eapply exposed_V_relate_Forall_aux with (V1 := IV.V); eauto.
              inv H0; auto.
 
       + destruct (LM.L ! w) eqn:Heq1.
@@ -234,7 +234,7 @@ Module Top (LM : LSig) (VT : VTrans LM).
              {
                inv H0.
                eapply HV with (vs1 := vs1) (vs2 := vs2); try lia; eauto.
-               eapply exposed_V_relate_Forall with (V1 := IV.V); eauto; try lia.
+               eapply exposed_V_relate_Forall_aux with (V1 := IV.V); eauto; try lia.
              }
 
              unfold E', R' in *.
@@ -250,7 +250,7 @@ Module Top (LM : LSig) (VT : VTrans LM).
           -- destruct HV as [Hc HV]; subst.
              repeat split; auto.
              rewrite normalize_step in *; try lia.
-             eapply exposed_V_relate_Forall with (V1 := IV.V); eauto.
+             eapply exposed_V_relate_Forall_aux with (V1 := IV.V); eauto.
              inv H0; auto.
   Qed.
 
