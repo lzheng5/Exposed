@@ -36,8 +36,9 @@ src/Framework/Comp.v
 src/Framework/CompTop.v
 
 # Old
-#src/Framework/TrivialAnnotate.v
-#src/Framework/KnownAnnotate.v
+#src/Framework/old/Annotate.v
+#src/Framework/old/TrivialAnnotate.v
+#src/Framework/old/KnownAnnotate.v
 
 #src/UntypedExposed/Util.v
 #src/UntypedExposed/ANF.v

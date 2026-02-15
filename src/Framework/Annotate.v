@@ -9,7 +9,12 @@ From Framework Require Import Util ANF0 ANF Refl0 Refl.
 Module A0 := ANF0.
 Module A1 := ANF.
 
-(* [TODO] Add comment to point to the concrete/instantiated logical relations. In case this is too abstract. *)
+(* Annotate Functor *)
+
+(* Due to the abstractness, it is probably more intuitive to see what's going on
+   with an instantiated/concrete V relation.
+
+   Take a look at the files inside the `old` for examples. *)
 
 Module AnnotateUtil.
 
