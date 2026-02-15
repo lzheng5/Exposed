@@ -8,6 +8,17 @@ From Hammer Require Import Hammer Tactics Reflect.
 
 From Framework Require Import Util RelComp ANF0 Refl0 Refl0Comp AnnotateComp ANF Refl ReflComp Erase Comp W0.
 
+(* Compositionality of the cross-language pipeline
+
+   Unannotated ANF -> Annotate ANF -> Unannotated ANF
+
+   Assume unique exposed web id
+ *)
+
+(* Adequacy / Preservation of Termination *)
+(* Behavioral Refinement *)
+(* Linking Preservation *)
+
 Module A0 := ANF0.
 Module A1 := ANF.
 
@@ -19,17 +30,6 @@ Module C1 := ReflComp.
 
 Module AC := AnnotateComp.
 Module AM := AC.AM.
-
-(* Compositionality of the cross-language pipeline
-
-   Unannotated ANF -> Annotate ANF -> Unannotated ANF
-
-   Assume unique exposed web id
- *)
-
-(* Adequacy / Preservation of Termination *)
-(* Behavioral Refinement *)
-(* Linking Preservation *)
 
 Module C := Comp.
 
@@ -227,58 +227,3 @@ Section Linking.
   Qed.
 
 End Linking.
-
-Section Correlation.
-
-(*
-    Theorem Top_n_correlate W n e1 e2 :
-      C0.Top_n n e1 e2 ->
-      AM.web_map_inv W ->
-      AM.analysis_spec W e2 ->
-      Top_n W n 0 0 e1 e2.
-    Proof.
-      unfold Top_n, Cross.
-      intros.
-      exists e2; split.
-      - destruct (AM.trans_total W e2) as [e2' HA]; auto.
-        exists e2'; split.
-        + unfold C.Top_n, Cross.
-          exists e2'; split.
-          * exists e2; split; auto.
-            eapply AM.top; eauto.
-          * eapply C1.Top_n_refl; eauto.
-        + destruct (Erase.trans_total e2') as [e2'' HE].
-          erewrite AM.trans_erase; eauto.
-          eapply Erase.top; eauto.
-      - eapply C0.Top_n_refl; eauto.
-    Qed.
-
-    (* Cross Pipeline Linking Preservation *)
-    Theorem Top_n_preserves_linking_cross_l W f x n n' m p e1 e2 e1' e2' :
-      AM.linking_inv W f x ->
-      AM.web_map_inv W ->
-      AM.analysis_spec W e2 ->
-      C0.Top_n n e1 e2 ->
-      Top_n W n' m p e1' e2' ->
-      Top_n W (n + n') m p (A0.link f x e1 e1') (A0.link f x e2 e2').
-    Proof.
-      intros.
-      eapply Top_n_preserves_linking_l; eauto.
-      eapply Top_n_correlate; eauto.
-    Qed.
-
-    Theorem Top_n_preserves_linking_cross_r W f x n n' m p e1 e2 e1' e2' :
-      AM.linking_inv W f x ->
-      AM.web_map_inv W ->
-      AM.analysis_spec W e2' ->
-      Top_n W n m p e1 e2 ->
-      C0.Top_n n' e1' e2' ->
-      Top_n W (n + n') m p (A0.link f x e1 e1') (A0.link f x e2 e2').
-    Proof.
-      intros.
-      eapply Top_n_preserves_linking_r; eauto.
-      eapply Top_n_correlate; eauto.
-    Qed.
- *)
-
-End Correlation.

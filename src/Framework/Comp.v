@@ -8,6 +8,17 @@ From Hammer Require Import Hammer Tactics Reflect.
 
 From Framework Require Import Util RelComp ANF0 Refl0 Refl0Comp AnnotateComp W0 ANF Refl ReflComp.
 
+(* Compositionality of the cross-language pipeline
+
+   Unannotated ANF -> Annotate ANF
+
+   Assume unique exposed web id
+ *)
+
+(* Adequacy / Preservation of Termination *)
+(* Behavioral Refinement *)
+(* Linking Preservation *)
+
 Module A0 := ANF0.
 Module A1 := ANF.
 
@@ -19,17 +30,6 @@ Module C1 := ReflComp.
 
 Module AC := AnnotateComp.
 Module AM := AC.AM.
-
-(* Compositionality of the cross-language pipeline
-
-   Unannotated ANF -> Annotate ANF
-
-   Assume unique exposed web id
- *)
-
-(* Adequacy / Preservation of Termination *)
-(* Behavioral Refinement *)
-(* Linking Preservation *)
 
 Section Comp_n.
 

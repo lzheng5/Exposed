@@ -7,6 +7,8 @@ Require Import Lia.
 
 From Framework Require Import Util ANF.
 
+(* Exposed Functor *)
+
 Module ExposedUtil.
 
   Lemma V_mono_Forall_aux :
@@ -46,6 +48,7 @@ Module ExposedUtil.
     | _, _ => False
     end.
 
+  (* Note to make proofs more reusable we allow internal webs here. *)
   Definition V_refl
     (V' : nat -> wval -> wval -> Prop)
     (E' : nat -> env -> exp -> env -> exp -> Prop)
