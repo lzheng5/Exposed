@@ -1,14 +1,3 @@
-#-Q src/UntypedExposed UntypedExposed
-
-#src/UntypedExposed/Util.v
-#src/UntypedExposed/ANF.v
-#src/UntypedExposed/Unary.v
-#src/UntypedExposed/Refl.v
-#src/UntypedExposed/Refl2.v
-#src/UntypedExposed/DPE.v
-#src/UntypedExposed/Top.v
-##src/UntypedExposed/Top2.v
-
 -Q src/Framework Framework
 
 src/Framework/Util.v
@@ -35,8 +24,7 @@ src/Framework/Label.v
 src/Framework/ANF1.v
 src/Framework/Erase.v
 src/Framework/Annotate.v
-#src/Framework/TrivialAnnotate.v
-#src/Framework/KnownAnnotate.v
+src/Framework/Trivial.v
 
 src/Framework/RelComp.v
 src/Framework/IdComp.v
@@ -45,3 +33,16 @@ src/Framework/Refl0Comp.v
 src/Framework/AnnotateComp.v
 src/Framework/Comp.v
 src/Framework/CompTop.v
+
+# Old
+#src/Framework/TrivialAnnotate.v
+#src/Framework/KnownAnnotate.v
+
+#src/UntypedExposed/Util.v
+#src/UntypedExposed/ANF.v
+#src/UntypedExposed/Unary.v
+#src/UntypedExposed/Refl.v
+#src/UntypedExposed/Refl2.v
+#src/UntypedExposed/DPE.v
+#src/UntypedExposed/Top.v
+##src/UntypedExposed/Top2.v

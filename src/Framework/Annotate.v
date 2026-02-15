@@ -356,6 +356,65 @@ Module AnnotateTop.
     eapply V_exposed_r; eauto.
   Qed.
 
+  Lemma V_exposed_res_r {i v1 v2}:
+    V i v1 v2 ->
+    exposed_res (Res v2).
+  Proof.
+    intros HV.
+    constructor.
+    eapply V_exposed_r; eauto.
+  Qed.
+
+  Lemma R_exposed_res_r {i r1 r2} :
+    R i r1 r2 ->
+    exposed_res r2.
+  Proof.
+    unfold R.
+    intros.
+    destruct r1; destruct r2; try contradiction; auto.
+    constructor.
+    eapply V_exposed_r; eauto.
+  Qed.
+
+  Lemma Vconstr_V i t vs1 vs2 w:
+    (w \in Exposed) ->
+    Forall wf_val vs2 ->
+    Forall2 (V i) vs1 vs2 ->
+    V i (A0.Vconstr t vs1) (Tag w (A1.Vconstr t vs2)).
+  Proof.
+    intros.
+    induction H1.
+    - destruct i; simpl; repeat (split; eauto); simpl;
+        destruct (exposed_reflect w); try contradiction;
+        eauto.
+    - inv H0.
+      assert (Hex : exposed (Tag w (A1.Vconstr t (y :: l')))).
+      {
+        constructor; auto.
+        constructor; auto.
+        eapply V_exposed_r; eauto.
+        eapply V_exposed_Forall_r; eauto.
+      }
+
+      assert (Hwf : wf_val (Tag w (A1.Vconstr t (y :: l')))).
+      {
+        eapply wf_val_Vconstr; eauto.
+        inv Hex; auto.
+      }
+
+      destruct i; simpl.
+      + split; simpl; auto.
+        destruct (exposed_reflect w); try contradiction.
+        repeat (split; fcrush).
+      + unfold V; simpl.
+        split; simpl; auto.
+        destruct (exposed_reflect w); try contradiction.
+        repeat (split; eauto).
+        constructor.
+        eapply V_mono; eauto; lia.
+        eapply V_mono_Forall; eauto; lia.
+  Qed.
+
   (* Top-level Environment Relation *)
   Definition G i Γ1 ρ1 Γ2 ρ2 :=
     wf_env ρ2 /\
@@ -527,7 +586,6 @@ Module AnnotateTop.
   Qed.
 
   (* Compatibility Lemmas *)
-  (* TODO: Generalize *)
   Lemma Vfun_V w e e' :
     trans_correct e e' ->
     (w \in Exposed) ->
