@@ -26,6 +26,7 @@ src/Framework/Erase.v
 src/Framework/Annotate.v
 src/Framework/Trivial.v
 src/Framework/Known.v
+src/Framework/KnownAnnotate.v
 
 src/Framework/RelComp.v
 src/Framework/IdComp.v
@@ -38,7 +39,6 @@ src/Framework/CompTop.v
 # Old
 #src/Framework/old/Annotate.v
 #src/Framework/old/TrivialAnnotate.v
-#src/Framework/old/KnownAnnotate.v
 
 #src/UntypedExposed/Util.v
 #src/UntypedExposed/ANF.v

@@ -14,7 +14,7 @@ Module A1 := ANF.
 (* Due to the abstractness, it is probably more intuitive to see what's going on
    with an instantiated/concrete V relation.
 
-   Take a look at the files inside the `old` for examples. *)
+   Take a look at `KnownAnnotate.v` or `TrivialAnnotate.v` (TODO). *)
 
 Module AnnotateUtil.
 
