@@ -6,7 +6,7 @@ Import ListNotations.
 Require Import Lia.
 From Hammer Require Import Hammer Tactics Reflect.
 
-From Framework Require Import Util W0 ANF0 ANF Annotate Erase.
+From Framework Require Import Util W0 ANF0 ANF Erase.
 
 Module A0 := ANF0.
 Module A1 := ANF.
@@ -104,12 +104,12 @@ Section Known.
   Variable K : known_map.
 
   (* Specification based on `known_fun` but incorporate unknown cases *)
-  Inductive trans_ (Γ : vars) : A0.exp -> A1.exp -> Prop :=
+  Inductive trans (Γ : vars) : A0.exp -> A1.exp -> Prop :=
   | Trans_ret :
     forall x,
       K ! x = None ->
       (x \in Γ) ->
-      trans_ Γ (A0.Eret x) (A1.Eret x)
+      trans Γ (A0.Eret x) (A1.Eret x)
 
   | Trans_fun_known :
     forall {f w xs e k e' k'},
@@ -117,18 +117,18 @@ Section Known.
       (~ w \in Exposed) ->
       Disjoint _ (FromList xs) (Dom_map K) ->
 
-      trans_ (FromList xs :|: (f |: Γ)) e e' ->
-      trans_ (f |: Γ) k k' ->
-      trans_ Γ (A0.Efun f xs e k) (A1.Efun f w xs e' k')
+      trans (FromList xs :|: (f |: Γ)) e e' ->
+      trans (f |: Γ) k k' ->
+      trans Γ (A0.Efun f xs e k) (A1.Efun f w xs e' k')
 
   | Trans_fun_unknown :
     forall {f xs e k e' k'},
       K ! f = None ->
       Disjoint _ (FromList xs) (Dom_map K) ->
 
-      trans_ (FromList xs :|: (f |: Γ)) e e' ->
-      trans_ (f |: Γ) k k' ->
-      trans_ Γ (A0.Efun f xs e k) (A1.Efun f w0 xs e' k')
+      trans (FromList xs :|: (f |: Γ)) e e' ->
+      trans (f |: Γ) k k' ->
+      trans Γ (A0.Efun f xs e k) (A1.Efun f w0 xs e' k')
 
   | Trans_app_known :
     forall {f w xs},
@@ -138,7 +138,7 @@ Section Known.
 
       (f \in Γ) ->
       (FromList xs \subset Γ) ->
-      trans_ Γ (A0.Eapp f xs) (A1.Eapp f w xs)
+      trans Γ (A0.Eapp f xs) (A1.Eapp f w xs)
 
   | Trans_app_unknown :
     forall {f xs},
@@ -147,7 +147,7 @@ Section Known.
 
       (f \in Γ) ->
       (FromList xs \subset Γ) ->
-      trans_ Γ (A0.Eapp f xs) (A1.Eapp f w0 xs)
+      trans Γ (A0.Eapp f xs) (A1.Eapp f w0 xs)
 
   | Trans_letapp_known :
     forall {x f w xs k k'},
@@ -158,8 +158,8 @@ Section Known.
 
       (f \in Γ) ->
       (FromList xs \subset Γ) ->
-      trans_ (x |: Γ) k k' ->
-      trans_ Γ (A0.Eletapp x f xs k) (A1.Eletapp x f w xs k')
+      trans (x |: Γ) k k' ->
+      trans Γ (A0.Eletapp x f xs k) (A1.Eletapp x f w xs k')
 
   | Trans_letapp_unknown :
     forall {x f xs k k'},
@@ -169,8 +169,8 @@ Section Known.
 
       (f \in Γ) ->
       (FromList xs \subset Γ) ->
-      trans_ (x |: Γ) k k' ->
-      trans_ Γ (A0.Eletapp x f xs k) (A1.Eletapp x f w0 xs k')
+      trans (x |: Γ) k k' ->
+      trans Γ (A0.Eletapp x f xs k) (A1.Eletapp x f w0 xs k')
 
   (* data webs are all exposed *)
 
@@ -180,8 +180,8 @@ Section Known.
       Disjoint _ (FromList xs) (Dom_map K) ->
 
       (FromList xs \subset Γ) ->
-      trans_ (x |: Γ) k k' ->
-      trans_ Γ (A0.Econstr x t xs k) (A1.Econstr x w0 t xs k')
+      trans (x |: Γ) k k' ->
+      trans Γ (A0.Econstr x t xs k) (A1.Econstr x w0 t xs k')
 
   | Trans_proj :
     forall {x y k k' n},
@@ -189,28 +189,24 @@ Section Known.
       K ! y = None ->
 
       (y \in Γ) ->
-      trans_ (x |: Γ) k k' ->
-      trans_ Γ (A0.Eproj x n y k) (A1.Eproj x w0 n y k')
+      trans (x |: Γ) k k' ->
+      trans Γ (A0.Eproj x n y k) (A1.Eproj x w0 n y k')
 
   | Trans_case_nil :
     forall {x},
       K ! x = None ->
       (x \in Γ) ->
-      trans_ Γ (A0.Ecase x []) (A1.Ecase x w0 [])
+      trans Γ (A0.Ecase x []) (A1.Ecase x w0 [])
 
   | Trans_case_cons :
     forall {x e e' t cl cl'},
       K ! x = None ->
       (x \in Γ) ->
-      trans_ Γ e e' ->
-      trans_ Γ (A0.Ecase x cl) (A1.Ecase x w0 cl') ->
-      trans_ Γ (A0.Ecase x ((t, e) :: cl)) (A1.Ecase x w0 ((t, e') :: cl')).
+      trans Γ e e' ->
+      trans Γ (A0.Ecase x cl) (A1.Ecase x w0 cl') ->
+      trans Γ (A0.Ecase x ((t, e) :: cl)) (A1.Ecase x w0 ((t, e') :: cl')).
 
-  Hint Constructors trans_ : core.
-
-  Definition trans := trans_.
-
-  Hint Unfold trans : core.
+  Hint Constructors trans : core.
 
   Lemma known_fun_trans e :
     known_map_inv K ->
@@ -294,21 +290,20 @@ Section Known.
     Erase.trans (A1.occurs_free e1') e1' e2 ->
     e1 = e2.
   Proof.
-    unfold trans.
     intro H.
     revert e2.
     induction H; simpl; intros.
     - inv H1; auto.
     - inv H4; auto.
-      erewrite IHtrans_1 with (e2 := e'0); eauto.
-      + erewrite IHtrans_2 with (e2 := k'0); eauto.
+      erewrite IHtrans1 with (e2 := e'0); eauto.
+      + erewrite IHtrans2 with (e2 := k'0); eauto.
         eapply Erase.trans_exp_strengthen; eauto.
         eapply A1.free_fun_k_subset; eauto.
       + eapply Erase.trans_exp_strengthen; eauto.
         eapply A1.free_fun_e_subset; eauto.
     - inv H3; auto.
-      erewrite IHtrans_1 with (e2 := e'0); eauto.
-      + erewrite IHtrans_2 with (e2 := k'0); eauto.
+      erewrite IHtrans1 with (e2 := e'0); eauto.
+      + erewrite IHtrans2 with (e2 := k'0); eauto.
         eapply Erase.trans_exp_strengthen; eauto.
         eapply A1.free_fun_k_subset; eauto.
       + eapply Erase.trans_exp_strengthen; eauto.
@@ -316,27 +311,27 @@ Section Known.
     - inv H4; auto.
     - inv H3; auto.
     - inv H6; auto.
-      erewrite IHtrans_ with (e2 := k'0); eauto.
+      erewrite IHtrans with (e2 := k'0); eauto.
       eapply Erase.trans_exp_strengthen; eauto.
       eapply A1.free_letapp_k_subset; eauto.
     - inv H5; auto.
-      erewrite IHtrans_ with (e2 := k'0); eauto.
+      erewrite IHtrans with (e2 := k'0); eauto.
       eapply Erase.trans_exp_strengthen; eauto.
       eapply A1.free_letapp_k_subset; eauto.
     - inv H3; auto.
-      erewrite IHtrans_ with (e2 := k'0); eauto.
+      erewrite IHtrans with (e2 := k'0); eauto.
       eapply Erase.trans_exp_strengthen; eauto.
       eapply A1.free_constr_k_subset; eauto.
     - inv H3; auto.
-      erewrite IHtrans_ with (e2 := k'0); eauto.
+      erewrite IHtrans with (e2 := k'0); eauto.
       eapply Erase.trans_exp_strengthen; eauto.
       eapply A1.free_proj_k_subset; eauto.
     - inv H1; auto.
     - inv H3; auto.
-      erewrite IHtrans_1 with (e2 := e'0); eauto.
+      erewrite IHtrans1 with (e2 := e'0); eauto.
       assert (A0.Ecase x cl = A0.Ecase x cl'0).
       {
-        erewrite IHtrans_2 with (e2 := (A0.Ecase x cl'0)); eauto.
+        erewrite IHtrans2 with (e2 := (A0.Ecase x cl'0)); eauto.
         eapply Erase.trans_exp_strengthen; eauto.
         eapply A1.free_case_tl_subset; eauto.
       }
