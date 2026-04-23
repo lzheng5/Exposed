@@ -256,6 +256,11 @@ Section Collecting.
         AT.bstep_fuel ex ρ2 e2 j2 r2 /\
         R' P (i - j1) r1 r2.
 
+  Definition web_map_inv ex ρ e :=
+    forall i r,
+      AS.bstep_fuel ρ e i r ->
+      cbstep_fuel ex ρ e i r.
+
   Fixpoint V (i : nat) (wv1 : AS.wval) (wv2 : AT.wval) {struct i} : Prop :=
     wf_val wv2 /\
     match wv1, wv2 with
@@ -281,7 +286,7 @@ Section Collecting.
                   Forall2 (V (i0 - (i0 - j))) vs1 vs2 ->
                   set_lists xs1 vs1 (M.set f1 (AS.Tag l1 (AS.Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
                   set_lists xs2 vs2 (M.set f2 (AT.Tag w2 (AT.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
-                  (* web_map_inv (exposedb w2) (i0 - (i0 - j)) ρ3 e1 ->  *)
+                  web_map_inv (exposedb w2) ρ3 e1 ->
                   E' V (exposedb w2) (i0 - (i0 - j)) ρ3 e1 ρ4 e2
             end
 
@@ -623,15 +628,9 @@ Section Collecting.
   Qed.
 
   (* Compatibility Lemmas *)
-  Definition web_map_inv ex i ρ1 e1 :=
-    forall j1 r1,
-      j1 <= i ->
-      AS.bstep_fuel ρ1 e1 j1 r1 ->
-      cbstep_fuel ex ρ1 e1 j1 r1.
-
   Definition trans_correct Γ e1 e2 :=
     forall ex i ρ1 ρ2,
-      web_map_inv ex i ρ1 e1 ->
+      web_map_inv ex ρ1 e1 ->
       G i Γ ρ1 (AT.occurs_free e2) ρ2 ->
       E ex i ρ1 e1 ρ2 e2.
 
@@ -671,7 +670,6 @@ Section Collecting.
       intros.
 
     apply (He _ (i - (i - j)) ρ3 ρ4); auto.
-    - admit.
     - eapply G_subset with (Γ2 := (FromList xs :|: (f |: Γ2))); eauto.
       eapply G_set_lists; eauto.
       eapply G_set; eauto.
@@ -680,7 +678,7 @@ Section Collecting.
         eapply IHi with (Γ2 := Γ2); eauto.
         apply G_mono with (S i); eauto; lia.
       + apply Included_refl.
-  Admitted.
+  Qed.
 
   Lemma fun_compat Γ e e' k k' f l w xs :
     W ! l = Some w ->
@@ -700,15 +698,15 @@ Section Collecting.
       edestruct (Hk ex (i - 1) (M.set f (AS.Tag l (AS.Vfun f ρ1 xs e)) ρ1) (M.set f (AT.Tag w0 (AT.Vfun f ρ2 xs e')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
       + unfold web_map_inv.
         intros.
-        assert (Hcbstep_k : cbstep_fuel ex ρ1 (AS.Efun f l xs e k) (S j1) r0).
+        assert (Hcbstep_k : cbstep_fuel ex ρ1 (AS.Efun f l xs e k) (S i0) r).
         {
-          eapply (H (S j1)); eauto; try lia.
+          eapply H; eauto; try lia.
         }
-        inv H3; eauto.
+        inv H2; eauto.
         inv Hcbstep_k; auto.
         econstructor; eauto.
-        inv H5.
-        inv H17; auto.
+        inv H4.
+        inv H16; auto.
       + eapply G_subset with (Γ2 := (f |: AT.occurs_free (AT.Efun f w0 xs e' k'))).
         eapply G_set; eauto.
         eapply G_mono with i; eauto; lia.
@@ -731,17 +729,22 @@ Section Collecting.
     (FromList xs \subset Γ) ->
     trans_correct Γ (AS.Eapp f l xs) (AT.Eapp f w xs).
   Proof.
-    unfold trans_correct, E, E'.
+    unfold trans_correct, web_map_inv, E, E'.
     intros HW Hf Hxs.
     intros; simpl.
 
-    inv H1.
+    assert (Hcbstep : cbstep_fuel ex ρ1 (AS.Eapp f l xs) j1 r1).
+    {
+      eapply H; eauto; lia.
+    }
+
+    inv H2.
     - exists 0, A1.OOT; split; simpl; auto.
-    - inv H2; inv H3.
+    - inv Hcbstep; inv H3.
       inv H4; invc.
-      edestruct (G_get H f) as [fv2 [Heqfv2 HV]]; eauto.
+      edestruct (G_get H0 f) as [fv2 [Heqfv2 HV]]; eauto.
       destruct i.
-      inv H0.
+      inv H1.
       destruct fv2; simpl in HV;
         destruct HV as [Hv1 HV];
         destruct v.
@@ -749,21 +752,29 @@ Section Collecting.
 
       destruct HV as [HWl' [Hex [Hlen HV]]]; invc.
 
-      edestruct (G_get_list H xs vs0) as [vs2 [Heqvs2 Vvs]]; eauto.
+      edestruct (G_get_list H0 xs vs0) as [vs2 [Heqvs2 Vvs]]; eauto.
       eapply AT.free_app_xs_subset; eauto.
 
       destruct (set_lists_length3 (M.set v (AT.Tag w (AT.Vfun v t l0 e)) t) l0 vs2) as [ρ4 Heqρ4].
       unfold wval in *.
       rewrite <- (Forall2_length _ _ _ Vvs).
-      rewrite <- (set_lists_length_eq _ _ _ _ H11); auto.
+      rewrite <- (set_lists_length_eq _ _ _ _ H12); auto.
 
       assert (HE : E (exposedb w) (i - (i - i)) ρ''0 e0 ρ4 e).
       {
         eapply (HV i vs0 vs2); eauto.
         intros.
-        destruct H17; auto.
+        destruct H18; auto.
         eapply V_exposed_Forall; eauto.
         apply V_mono_Forall with (S i); auto; lia.
+
+        unfold web_map_inv; intros.
+        assert (Hcbstep_e : cbstep_fuel ex ρ1 (AS.Eapp f l xs) (S i0) r).
+        {
+          eapply H; eauto; try lia.
+        }
+        inv Hcbstep_e.
+        inv H4; invc; auto.
       }
 
       apply (E_mono _ i) in HE; try lia.
@@ -774,7 +785,7 @@ Section Collecting.
       + econstructor; eauto.
         intros.
         destruct (exposed_reflect w); try contradiction; auto; split.
-        * destruct H17; auto.
+        * destruct H18; auto.
           eapply V_exposed_Forall; eauto.
         * pose proof He0 as Hr2.
           destruct (exposed_reflect w); try contradiction.
@@ -845,41 +856,84 @@ Section Collecting.
     trans_correct (x |: Γ) k k' ->
     trans_correct Γ (AS.Eletapp x f l xs k) (AT.Eletapp x f w xs k').
   Proof.
-    unfold trans_correct, E, E'.
+    unfold trans_correct, web_map_inv, E, E'.
     intros HWl Hf Hxs Hk.
     intros; simpl.
 
-    inv H1.
+    pose proof H2 as Hbstep.
+    assert (Hcbstep : cbstep_fuel ex ρ1 (AS.Eletapp x f l xs k) j1 r1) by (eapply H; eauto; lia).
+
+    inv H2.
     - exists 0, A1.OOT; split; simpl; auto.
-    - inv H2.
-      inv H3.
-      + (* BStep_letapp_Res / Cbstep_letapp_Res *)
-        inv H4; invc.
-        * edestruct (G_get H f) as [fv2 [Heqfv2 HV]]; eauto.
-          destruct i. inv H0.
-          destruct fv2; simpl in HV;
-            destruct HV as [Hv1 [Hl' [Hex HV]]]; invc;
-            destruct v1; try contradiction.
-          destruct HV as [Hlen HV].
+    - inv H3.
+      2 : { eexists; eexists; split; eauto.
+            unfold R'; auto. }
+      inv Hcbstep.
+      inv H3; invc.
+      2 : { eexists; eexists; split; eauto.
+            unfold R'; auto. }
+      edestruct (G_get H0 f) as [fv2 [Heqfv2 HV]]; eauto.
+      destruct i. inv H1.
+      destruct fv2; simpl in HV;
+        destruct HV as [Hv1 [Hl' [Hex HV]]]; invc;
+        destruct v1; try contradiction.
+      destruct HV as [Hlen HV].
 
-          edestruct (G_get_list H xs vs0) as [vs2 [Heqvs2 Vvs]]; eauto.
-          eapply AT.free_letapp_xs_subset; eauto.
+      edestruct (G_get_list H0 xs vs0) as [vs2 [Heqvs2 Vvs]]; eauto.
+      eapply AT.free_letapp_xs_subset; eauto.
 
-          destruct (set_lists_length3 (M.set v1 (AT.Tag w (AT.Vfun v1 t l0 e)) t) l0 vs2) as [ρ4 Heqρ4].
+      destruct (set_lists_length3 (M.set v1 (AT.Tag w (AT.Vfun v1 t l0 e)) t) l0 vs2) as [ρ4 Heqρ4].
+      {
+        unfold wval in *.
+        rewrite <- (Forall2_length _ _ _ Vvs).
+        rewrite <- (set_lists_length_eq _ _ _ _ H12); auto.
+      }
+
+      assert (Hc : c0 = c /\ v = v0) by (eapply cbstep_fuel_bstep_fuel; eauto).
+      assert (Hc' : c'0 = c') by lia.
+      inv Hc.
+
+      assert (HE : E (exposedb w) (i - (i - i)) ρ''0 e0 ρ4 e).
+      {
+        eapply (HV i vs0 vs2); eauto.
+        intros.
+        destruct H23; auto.
+        eapply V_exposed_Forall; eauto.
+        apply V_mono_Forall with (S i); auto; lia.
+
+        unfold web_map_inv; intros.
+        destruct r.
+        - inv H2; eauto.
+          econstructor; eauto.
+
+
+
+        (* stuck here *)
+        assert (Hcbstep_e : cbstep_fuel ex ρ1 (AS.Eletapp x f l xs k) (S (i0 + c')) r).
+        {
+          eapply H; eauto; try lia.
+          destruct r.
+          - inv H2; eauto.
+            rewrite_math (0 + c' = c').
+            econstructor; eauto.
+            econstructor; eauto.
+
+
+          assert (Hr : i0 = c /\ r = (AS.Res v0)).
           {
-            unfold wval in *.
-            rewrite <- (Forall2_length _ _ _ Vvs).
-            rewrite <- (set_lists_length_eq _ _ _ _ H13); auto.
+            eapply AS.bstep_fuel_deterministic; eauto.
           }
 
-          assert (HE : E (exposedb w) (i - (i - i)) ρ''0 e0 ρ4 e).
-          {
-            eapply (HV i vs0 vs2); eauto.
-            intros.
-            destruct H22; auto.
-            eapply V_exposed_Forall; eauto.
-            apply V_mono_Forall with (S i); auto; lia.
-          }
+          econstructor; eauto.
+          inv H2; auto.
+          - rewrite_math (0 + c' = c').
+            econstructor; eauto.
+
+        }
+        inv Hcbstep_e.
+        inv H4; invc; auto.
+
+      }
 
           assert (Hc : c0 = c /\ v = v0) by (eapply cbstep_fuel_bstep_fuel; eauto).
           assert (Hc' : c'0 = c') by lia.
@@ -913,13 +967,9 @@ Section Collecting.
                    destruct w1.
                    eapply V_exposed_res; eauto.
              ++ eapply R_mono; eauto; lia.
-        * (* BStep_letapp_OOT / Cbstep_letapp_OOT *)
-          eexists; eexists; split; eauto.
-          unfold R'; auto.
-      + (* BStep_letapp_OOT / Cbstep_letapp_OOT *)
-        eexists; eexists; split; eauto.
-        unfold R'; auto.
   Qed.
+
+
 
   Lemma constr_compat Γ x l w t xs k k' :
     W ! l = Some w ->
