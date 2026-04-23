@@ -18,7 +18,18 @@ Section Collecting.
   (* The analysis result mapping labels to the actual webs. *)
   Variable W : web_map.
 
-  (* `W` is valid with respect to the collecting big-step semantics *)
+  Definition to_exposed (tv : AS.wval) : Prop :=
+    match tv with
+    | AS.TAG _ l v => forall w, W ! l = Some w /\ (w \in Exposed)
+    end.
+
+  Definition to_exposed_res (r : AS.res) : Prop :=
+    match r with
+    | AS.OOT => True
+    | AS.Res v => to_exposed v
+    end.
+
+  (* `W` is a valid perfect analysis result with respect to the collecting big-step semantics *)
   Inductive cbstep (ex : bool) (ρ : AS.env) : AS.exp -> fuel -> AS.res -> Prop :=
   | Cbstep_ret :
     forall {x l w v},
@@ -39,6 +50,7 @@ Section Collecting.
       set_lists xs' vs (M.set f' (AS.Tag l' (AS.Vfun f' ρ' xs' e)) ρ') = Some ρ'' ->
       W ! l = Some w ->
       W ! l' = Some w ->
+      (w \in Exposed -> Forall to_exposed vs /\ to_exposed_res r) ->
       cbstep_fuel (exposedb w) ρ'' e c r ->
       cbstep ex ρ (AS.Eapp f l xs) c r
 
@@ -51,6 +63,7 @@ Section Collecting.
       cbstep_fuel ex (M.set x v ρ) k c' r ->
       W ! l = Some w ->
       W ! l' = Some w ->
+      (w \in Exposed -> Forall to_exposed vs /\ to_exposed v) ->
       cbstep ex ρ (AS.Eletapp x f l xs k) (c + c') r
 
   | Cbstep_letapp_OOT :
@@ -61,6 +74,7 @@ Section Collecting.
       cbstep_fuel (exposedb w) ρ'' e c AS.OOT ->
       W ! l = Some w ->
       W ! l' = Some w ->
+      (w \in Exposed -> Forall to_exposed vs) ->
       cbstep ex ρ (AS.Eletapp x f l xs k) c AS.OOT
 
   | Cbstep_constr :
@@ -94,14 +108,9 @@ Section Collecting.
       cbstep_fuel ex ρ e 0 AS.OOT
 
   | CbstepF_Step :
-    forall {w e c r},
+    forall {e c r},
       cbstep ex ρ e c r ->
-      (if ex
-       then (match r with
-             | AS.OOT => True
-             | AS.Res (AS.TAG _ l v) => W ! l = Some w /\ (w \in Exposed)
-             end)
-       else True) ->
+      (if ex then to_exposed_res r else True) ->
       cbstep_fuel ex ρ e (S c) r.
 
   Hint Constructors cbstep : core.
@@ -133,46 +142,29 @@ Section Collecting.
                                                  r = AS.Res v -> r' = AS.Res v' ->
                                                  v = v' /\ c = c');
       intros; subst.
-    - inv H1; inv H2.
-      rewrite H in H5; inv H5; auto.
+    - inv H1; inv H2; invc; auto.
     - inv H1.
       edestruct IHcbstep; eauto.
-    - inv H5.
-      rewrite H in H9; inv H9.
-      rewrite H0 in H10; inv H10.
-      rewrite H1 in H11; inv H11.
-      rewrite H2 in H12; inv H12.
+    - inv H6; invc.
       edestruct IHcbstep; eauto.
-    - inv H6.
-      rewrite H in H12; inv H12.
-      rewrite H0 in H13; inv H13.
-      rewrite H1 in H14; inv H14.
-      rewrite H4 in H19; inv H19.
+    - inv H7; invc.
       edestruct IHcbstep; eauto.
       subst.
       edestruct IHcbstep0; eauto.
-    - inv H6.
-    - inv H2.
-      rewrite H0 in H11; inv H11.
-      rewrite H in H10; inv H10.
+    - inv H7.
+    - inv H2; invc.
       edestruct IHcbstep; eauto.
-    - inv H4.
-      rewrite H in H10; inv H10.
-      rewrite H0 in H13; inv H13.
+    - inv H4; invc.
       edestruct IHcbstep; eauto.
-    - inv H4.
-      rewrite H in H8; inv H8.
+    - inv H4; invc.
       destruct (find_tag_deterministic H0 H9); subst.
       edestruct IHcbstep; eauto.
     - inv H0.
-    - destruct ex.
-      + destruct v.
-        inv H1.
-        destruct v'.
-        inv H3.
+    - destruct ex; inv H1.
+      + unfold to_exposed_res, to_exposed in *.
+        destruct v; destruct v'.
         edestruct IHcbstep; eauto.
-      + inv H1.
-        edestruct IHcbstep; eauto.
+      + edestruct IHcbstep; eauto.
   Qed.
 
   Theorem cbstep_fuel_deterministic v v' {ex ρ e c c' r r'}:
@@ -351,33 +343,39 @@ Section Collecting.
   Qed.
 
   (* Exposed Lemmas *)
-  Lemma V_exposed : forall {i l w v1 v2},
-      V i (AS.TAG _ l v1) v2 ->
-      W ! l = Some w ->
-      (w \in Exposed) ->
-      exposed v2.
+  Lemma V_exposed {i v1 v2} :
+    V i v1 v2 ->
+    to_exposed v1 ->
+    exposed v2.
   Proof.
+    unfold to_exposed.
     intros.
-    destruct v2;
+    destruct v1; destruct v2;
       destruct i; try contradiction; auto;
       simpl in H;
       destruct H as [Hv1 [Hv2 [Hw HV]]]; subst;
-      destruct v1; destruct v; try contradiction;
+      destruct v; destruct v0; try contradiction;
       simpl in *;
-      invc; auto.
+      invc; sauto.
   Qed.
 
-  Lemma V_exposed_res : forall {i l w v1 v2},
-      V i (AS.TAG _ l v1) v2 ->
-      W ! l = Some w ->
-      (w \in Exposed) ->
-      exposed_res (Res v2).
+  Lemma V_exposed_Forall : forall {i vs1 vs2},
+      Forall2 (V i) vs1 vs2 ->
+      Forall to_exposed vs1 ->
+      Forall exposed vs2.
   Proof.
     intros.
+    induction H; intros; auto.
     inv H0.
-    constructor.
+    constructor; auto.
     eapply V_exposed; eauto.
   Qed.
+
+  Lemma V_exposed_res {i v1 v2} :
+      V i v1 v2 ->
+      to_exposed v1 ->
+      exposed_res (Res v2).
+  Proof. strivial use: Exp_Res, @V_exposed. Qed.
 
   (* Environment Relation *)
   Definition G i Γ1 ρ1 Γ2 ρ2 :=
@@ -643,9 +641,130 @@ Section Collecting.
       exists 1, (AT.Res v2); split; simpl; eauto.
       econstructor; eauto.
       destruct ex; simpl in *; auto.
-      + inv H7; invc.
+      + invc.
         eapply V_exposed_res; eauto.
       + eapply V_mono; eauto; lia.
+  Qed.
+
+  Lemma Vfun_V Γ1 f l w xs e e' :
+    W ! l = Some w ->
+    trans_correct (FromList xs :|: (f |: Γ1)) e e' ->
+    forall {i Γ2 ρ1 ρ2},
+      wf_env ρ2 ->
+      G i Γ1 ρ1 Γ2 ρ2 ->
+      A1.occurs_free e' \subset (FromList xs :|: (f |: Γ2)) ->
+      V i (AS.Tag l (AS.Vfun f ρ1 xs e)) (AT.Tag w (AT.Vfun f ρ2 xs e')).
+  Proof.
+    unfold trans_correct.
+    intros HW He i.
+    induction i; simpl; intros; auto;
+      repeat (split; auto);
+      intros; (repeat split; auto);
+      intros.
+
+    apply (He _ (i - (i - j)) ρ3 ρ4); auto.
+    - eapply G_subset with (Γ2 := (FromList xs :|: (f |: Γ2))); eauto.
+      eapply G_set_lists; eauto.
+      eapply G_set; eauto.
+      + apply G_mono with (S i); eauto; lia.
+      + apply V_mono with i; try lia.
+        eapply IHi with (Γ2 := Γ2); eauto.
+        apply G_mono with (S i); eauto; lia.
+      + apply Included_refl.
+  Qed.
+
+  Lemma fun_compat Γ e e' k k' f l w xs :
+    W ! l = Some w ->
+    trans_correct (FromList xs :|: (f |: Γ)) e e' ->
+    trans_correct (f |: Γ) k k' ->
+    trans_correct Γ (AS.Efun f l xs e k) (AT.Efun f w xs e' k').
+  Proof.
+    unfold trans_correct, E, E'.
+    intros HWl He Hk.
+    intros.
+    inv H1.
+    - exists 0, A1.OOT; split; simpl; eauto.
+    - inv H2; inv H3.
+      inv H4.
+      invc.
+      edestruct (Hk ex (i - 1) (M.set f (AS.Tag l (AS.Vfun f ρ1 xs e)) ρ1) (M.set f (AT.Tag w0 (AT.Vfun f ρ2 xs e')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+      + eapply G_subset with (Γ2 := (f |: AT.occurs_free (AT.Efun f w0 xs e' k'))).
+        eapply G_set; eauto.
+        eapply G_mono with i; eauto; lia.
+        * eapply Vfun_V; eauto.
+          -- eapply G_wf_env_r; eauto.
+          -- apply G_mono with i; eauto; lia.
+          -- apply A1.free_fun_e_subset.
+        * apply Included_refl.
+        * apply A1.free_fun_k_subset.
+      + exists (S j2), r2; split; auto.
+        * constructor; simpl; auto.
+          destruct ex; simpl in *; auto.
+          eapply bstep_fuel_exposed_inv; eauto.
+        * eapply R_mono; eauto; lia.
+  Qed.
+
+  Lemma app_compat Γ xs f l w :
+    (W ! l = Some w) ->
+    (f \in Γ) ->
+    (FromList xs \subset Γ) ->
+    trans_correct Γ (AS.Eapp f l xs) (AT.Eapp f w xs).
+  Proof.
+    unfold trans_correct, E, E'.
+    intros HW Hf Hxs.
+    intros; simpl.
+
+    inv H1.
+    - exists 0, A1.OOT; split; simpl; auto.
+    - inv H2; inv H3.
+      inv H4; invc.
+      edestruct (G_get H f) as [fv2 [Heqfv2 HV]]; eauto.
+      destruct i.
+      inv H0.
+      destruct fv2; simpl in HV;
+        destruct HV as [Hv1 HV];
+        destruct v.
+      2 : { destruct HV as [_ [_ Hc]]; contradiction. }
+
+      destruct HV as [HWl' [Hex [Hlen HV]]]; invc.
+
+      edestruct (G_get_list H xs vs0) as [vs2 [Heqvs2 Vvs]]; eauto.
+      eapply AT.free_app_xs_subset; eauto.
+
+      destruct (set_lists_length3 (M.set v (AT.Tag w (AT.Vfun v t l0 e)) t) l0 vs2) as [ρ4 Heqρ4].
+      unfold wval in *.
+      rewrite <- (Forall2_length _ _ _ Vvs).
+      rewrite <- (set_lists_length_eq _ _ _ _ H11); auto.
+
+      assert (HE : E (exposedb w) (i - (i - i)) ρ''0 e0 ρ4 e).
+      {
+        eapply (HV i vs0 vs2); eauto.
+        intros.
+        destruct H17; auto.
+        eapply V_exposed_Forall; eauto.
+        apply V_mono_Forall with (S i); auto; lia.
+      }
+
+      apply (E_mono _ i) in HE; try lia.
+      unfold E in HE.
+      destruct (HE c r1) as [j2 [r2 [He0 Rr]]]; try lia; auto.
+      exists (S j2), r2; split; eauto.
+      constructor; auto.
+      + econstructor; eauto.
+        intros.
+        destruct (exposed_reflect w); try contradiction; auto; split.
+        * destruct H17; auto.
+          eapply V_exposed_Forall; eauto.
+        * pose proof He0 as Hr2.
+          destruct (exposed_reflect w); try contradiction.
+          apply bstep_fuel_exposed_inv in Hr2; auto.
+      + destruct ex; simpl in *; auto.
+        unfold R' in Rr.
+        destruct r1.
+        * destruct r2; auto; contradiction.
+        * destruct r2; try contradiction.
+          destruct w1.
+          eapply V_exposed_res; eauto.
   Qed.
 
 End Collecting.
