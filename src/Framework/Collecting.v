@@ -20,7 +20,7 @@ Section Collecting.
 
   Definition to_exposed (tv : AS.wval) : Prop :=
     match tv with
-    | AS.TAG _ l v => forall w, W ! l = Some w /\ (w \in Exposed)
+    | AS.TAG _ l v => exists w, W ! l = Some w /\ (w \in Exposed)
     end.
 
   Definition to_exposed_res (r : AS.res) : Prop :=
@@ -356,7 +356,7 @@ Section Collecting.
       destruct H as [Hv1 [Hv2 [Hw HV]]]; subst;
       destruct v; destruct v0; try contradiction;
       simpl in *;
-      invc; sauto.
+      invc; hauto b: on.
   Qed.
 
   Lemma V_exposed_Forall : forall {i vs1 vs2},
