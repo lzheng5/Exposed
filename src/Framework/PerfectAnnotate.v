@@ -252,7 +252,6 @@ Section Collecting.
     forall j1 r1,
       j1 <= i ->
       AS.bstep_fuel ρ1 e1 j1 r1 ->
-      cbstep_fuel ex ρ1 e1 j1 r1 ->
       exists j2 r2,
         AT.bstep_fuel ex ρ2 e2 j2 r2 /\
         R' P (i - j1) r1 r2.
@@ -282,6 +281,7 @@ Section Collecting.
                   Forall2 (V (i0 - (i0 - j))) vs1 vs2 ->
                   set_lists xs1 vs1 (M.set f1 (AS.Tag l1 (AS.Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
                   set_lists xs2 vs2 (M.set f2 (AT.Tag w2 (AT.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
+                  (* web_map_inv (exposedb w2) (i0 - (i0 - j)) ρ3 e1 ->  *)
                   E' V (exposedb w2) (i0 - (i0 - j)) ρ3 e1 ρ4 e2
             end
 
@@ -623,8 +623,15 @@ Section Collecting.
   Qed.
 
   (* Compatibility Lemmas *)
+  Definition web_map_inv ex i ρ1 e1 :=
+    forall j1 r1,
+      j1 <= i ->
+      AS.bstep_fuel ρ1 e1 j1 r1 ->
+      cbstep_fuel ex ρ1 e1 j1 r1.
+
   Definition trans_correct Γ e1 e2 :=
     forall ex i ρ1 ρ2,
+      web_map_inv ex i ρ1 e1 ->
       G i Γ ρ1 (AT.occurs_free e2) ρ2 ->
       E ex i ρ1 e1 ρ2 e2.
 
@@ -632,13 +639,13 @@ Section Collecting.
     (x \in Γ) ->
     trans_correct Γ (AS.Eret x) (AT.Eret x).
   Proof.
-    unfold trans_correct, E, E', R, R', Ensembles.Included, Ensembles.In.
+    unfold trans_correct, web_map_inv, E, E', R, R', Ensembles.Included, Ensembles.In.
     intros; simpl.
-    inv H2.
+    assert (Hcbstep : cbstep_fuel ex ρ1 (AS.Eret x) j1 r1) by (eapply H0; eauto; try lia).
+    inv H3.
     - exists 0, AT.OOT; split; auto.
-    - inv H3; inv H4.
-      inv H5.
-      edestruct (G_get H0) as [v2 [Heqv2 HV]]; eauto.
+    - inv H4; inv Hcbstep.
+      edestruct (G_get H1) as [v2 [Heqv2 HV]]; eauto.
       exists 1, (AT.Res v2); split; simpl; eauto.
       econstructor; eauto.
       destruct ex; simpl in *; auto.
@@ -664,6 +671,7 @@ Section Collecting.
       intros.
 
     apply (He _ (i - (i - j)) ρ3 ρ4); auto.
+    - admit.
     - eapply G_subset with (Γ2 := (FromList xs :|: (f |: Γ2))); eauto.
       eapply G_set_lists; eauto.
       eapply G_set; eauto.
@@ -672,7 +680,7 @@ Section Collecting.
         eapply IHi with (Γ2 := Γ2); eauto.
         apply G_mono with (S i); eauto; lia.
       + apply Included_refl.
-  Qed.
+  Admitted.
 
   Lemma fun_compat Γ e e' k k' f l w xs :
     W ! l = Some w ->
@@ -683,12 +691,24 @@ Section Collecting.
     unfold trans_correct, E, E'.
     intros HWl He Hk.
     intros.
-    inv H1.
+    unfold web_map_inv in H.
+    assert (Hcbstep : cbstep_fuel ex ρ1 (AS.Efun f l xs e k) j1 r1) by (eapply H; eauto; lia).
+    inv H2.
     - exists 0, A1.OOT; split; simpl; eauto.
-    - inv H2; inv H3.
-      inv H4.
-      invc.
+    - inv Hcbstep; inv H3.
+      inv H4; invc.
       edestruct (Hk ex (i - 1) (M.set f (AS.Tag l (AS.Vfun f ρ1 xs e)) ρ1) (M.set f (AT.Tag w0 (AT.Vfun f ρ2 xs e')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+      + unfold web_map_inv.
+        intros.
+        assert (Hcbstep_k : cbstep_fuel ex ρ1 (AS.Efun f l xs e k) (S j1) r0).
+        {
+          eapply (H (S j1)); eauto; try lia.
+        }
+        inv H3; eauto.
+        inv Hcbstep_k; auto.
+        econstructor; eauto.
+        inv H5.
+        inv H17; auto.
       + eapply G_subset with (Γ2 := (f |: AT.occurs_free (AT.Efun f w0 xs e' k'))).
         eapply G_set; eauto.
         eapply G_mono with i; eauto; lia.
