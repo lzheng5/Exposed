@@ -211,6 +211,7 @@ Proof.
     edestruct IHbstep; eauto.
 Qed.
 
+(* TODO: refactoring *)
 Theorem bstep_fuel_deterministic v v' {ρ e c c' r r'}:
     bstep_fuel ρ e c r ->
     bstep_fuel ρ e c' r' ->
@@ -222,6 +223,90 @@ Proof.
   inv H; inv H0; try discriminate.
   edestruct (bstep_deterministic v v' H3 H); eauto.
 Qed.
+
+Lemma bstep_lt_Res_not_OOT_aux ρ e c r v :
+  bstep ρ e c r ->
+  r = Res v ->
+  forall c0,
+    c <= c0 ->
+    ~ (bstep ρ e c0 OOT).
+Proof.
+  intros.
+  generalize dependent c0.
+  generalize dependent v.
+  induction H using bstep_ind' with (P := fun ρ e c r =>
+                                            forall v,
+                                              r = Res v ->
+                                              forall c0,
+                                                c <= c0 ->
+                                                ~ bstep ρ e c0 OOT)
+                                    (P0 := fun ρ e c r =>
+                                             forall v,
+                                               r = Res v ->
+                                               forall c0,
+                                                 c <= c0 ->
+                                                 ~ bstep_fuel ρ e c0 OOT);
+    intros; intro Hc.
+  - inv H0.
+    inv Hc.
+  - inv H0.
+    inv Hc.
+    eapply IHbstep; eauto.
+  - inv H3.
+    inv Hc; invc.
+    eapply IHbstep; eauto.
+  - inv H4.
+    inv Hc; invc.
+    2 : { eapply IHbstep with (c0 := c0); eauto; lia. }
+    assert (Hcv : v = v1 /\ c = c1).
+    {
+      eapply bstep_fuel_deterministic; eauto.
+    }
+    inv Hcv.
+    eapply IHbstep0 with (c0 := c'0); eauto; lia.
+  - inv H3.
+  - inv H1.
+    inv Hc; invc.
+    eapply IHbstep; eauto.
+  - inv H2.
+    inv Hc; invc.
+    eapply IHbstep; eauto.
+  - inv H2.
+    inv Hc; invc.
+    assert (He : e = e0).
+    {
+      eapply find_tag_deterministic; eauto.
+    }
+    inv He.
+    eapply IHbstep; eauto.
+  - inv H.
+  - inv H0.
+    inv Hc.
+    inv H1.
+    eapply IHbstep with (c0 := c1); eauto; lia.
+Qed.
+
+Lemma bstep_lt_Res_not_OOT ρ e c v :
+  bstep ρ e c (Res v) ->
+  forall c0,
+    c <= c0 ->
+    ~ (bstep ρ e c0 OOT).
+Proof. eauto using bstep_lt_Res_not_OOT_aux. Qed.
+
+Lemma bstep_fuel_lt_Res_not_OOT ρ e c v :
+  bstep_fuel ρ e c (Res v) ->
+  forall c0,
+    c <= c0 ->
+    ~ (bstep_fuel ρ e c0 OOT).
+Proof.
+  intros.
+  inv H.
+  intro Hc.
+  inv Hc.
+  inv H0.
+  eapply bstep_lt_Res_not_OOT with (c0 := c); eauto; lia.
+Qed.
+
 
 (* Free Variables *)
 Inductive occurs_free : exp -> vars :=

@@ -180,6 +180,56 @@ Section Collecting.
     edestruct (cbstep_deterministic v v' H3 H); eauto.
   Qed.
 
+  (* Collecting steps refine labeled steps: cbstep adds W-consistency side-conditions,
+     so every cbstep derivation projects down to a bstep derivation on the same
+     expression with the same fuel and result. *)
+  Lemma cbstep_to_bstep ex ρ e c r :
+    cbstep ex ρ e c r ->
+    AS.bstep ρ e c r.
+  Proof.
+    intros H.
+    induction H using cbstep_ind' with
+      (P := fun ex ρ e c r => AS.bstep ρ e c r)
+      (P0 := fun ex ρ e c r => AS.bstep_fuel ρ e c r);
+      intros; econstructor; eauto.
+  Qed.
+
+  Lemma cbstep_fuel_to_bstep_fuel ex ρ e c r :
+    cbstep_fuel ex ρ e c r ->
+    AS.bstep_fuel ρ e c r.
+  Proof.
+    intros H.
+    inv H.
+    - apply AS.BStepF_OOT.
+    - eapply AS.BStepF_Step; eauto.
+      eapply cbstep_to_bstep; eauto.
+  Qed.
+
+  (* Correlation lemmas: bstep and cbstep that both terminate on the same expression
+     agree on fuel and value. Follows from cbstep's refinement of bstep plus
+     AS.bstep_deterministic. *)
+  Lemma cbstep_bstep ex ρ e c1 c2 v1 v2 :
+    AS.bstep ρ e c1 (AS.Res v1) ->
+    cbstep ex ρ e c2 (AS.Res v2) ->
+    c1 = c2 /\ v1 = v2.
+  Proof.
+    intros Hb Hc.
+    apply cbstep_to_bstep in Hc.
+    destruct (AS.bstep_deterministic v1 v2 Hb Hc eq_refl eq_refl) as [Hv Hceq].
+    split; auto.
+  Qed.
+
+  Lemma cbstep_fuel_bstep_fuel ex ρ e c1 c2 v1 v2 :
+    AS.bstep_fuel ρ e c1 (AS.Res v1) ->
+    cbstep_fuel ex ρ e c2 (AS.Res v2) ->
+    c1 = c2 /\ v1 = v2.
+  Proof.
+    intros Hb Hc.
+    apply cbstep_fuel_to_bstep_fuel in Hc.
+    destruct (AS.bstep_fuel_deterministic v1 v2 Hb Hc eq_refl eq_refl) as [Hv Hceq].
+    split; auto.
+  Qed.
+
   (* Transformation Specification *)
   Inductive trans (Γ : vars) : AS.exp -> AT.exp -> Prop :=
   | Trans_ret :
@@ -799,139 +849,6 @@ Section Collecting.
           eapply V_exposed_res; eauto.
   Qed.
 
-  (* Collecting steps refine labeled steps: cbstep adds W-consistency side-conditions,
-     so every cbstep derivation projects down to a bstep derivation on the same
-     expression with the same fuel and result. *)
-  Lemma cbstep_to_bstep ex ρ e c r :
-    cbstep ex ρ e c r ->
-    AS.bstep ρ e c r.
-  Proof.
-    intros H.
-    induction H using cbstep_ind' with
-      (P := fun ex ρ e c r => AS.bstep ρ e c r)
-      (P0 := fun ex ρ e c r => AS.bstep_fuel ρ e c r);
-      intros; econstructor; eauto.
-  Qed.
-
-  Lemma cbstep_fuel_to_bstep_fuel ex ρ e c r :
-    cbstep_fuel ex ρ e c r ->
-    AS.bstep_fuel ρ e c r.
-  Proof.
-    intros H.
-    inv H.
-    - apply AS.BStepF_OOT.
-    - eapply AS.BStepF_Step; eauto.
-      eapply cbstep_to_bstep; eauto.
-  Qed.
-
-  (* Correlation lemmas: bstep and cbstep that both terminate on the same expression
-     agree on fuel and value. Follows from cbstep's refinement of bstep plus
-     AS.bstep_deterministic. *)
-  Lemma cbstep_bstep ex ρ e c1 c2 v1 v2 :
-    AS.bstep ρ e c1 (AS.Res v1) ->
-    cbstep ex ρ e c2 (AS.Res v2) ->
-    c1 = c2 /\ v1 = v2.
-  Proof.
-    intros Hb Hc.
-    apply cbstep_to_bstep in Hc.
-    destruct (AS.bstep_deterministic v1 v2 Hb Hc eq_refl eq_refl) as [Hv Hceq].
-    split; auto.
-  Qed.
-
-  Lemma cbstep_fuel_bstep_fuel ex ρ e c1 c2 v1 v2 :
-    AS.bstep_fuel ρ e c1 (AS.Res v1) ->
-    cbstep_fuel ex ρ e c2 (AS.Res v2) ->
-    c1 = c2 /\ v1 = v2.
-  Proof.
-    intros Hb Hc.
-    apply cbstep_fuel_to_bstep_fuel in Hc.
-    destruct (AS.bstep_fuel_deterministic v1 v2 Hb Hc eq_refl eq_refl) as [Hv Hceq].
-    split; auto.
-  Qed.
-
-  Lemma bstep_lt_Res_not_OOT_aux ρ e c r v :
-    AS.bstep ρ e c r ->
-    r = AS.Res v ->
-    forall c0,
-      c <= c0 ->
-      ~ (AS.bstep ρ e c0 AS.OOT).
-  Proof.
-    intros.
-    generalize dependent c0.
-    generalize dependent v.
-    induction H using AS.bstep_ind' with (P := fun ρ e c r =>
-                                                 forall v,
-                                                   r = AS.Res v ->
-                                                   forall c0,
-                                                     c <= c0 ->
-                                                     ~ AS.bstep ρ e c0 AS.OOT)
-                                         (P0 := fun ρ e c r =>
-                                                  forall v,
-                                                    r = AS.Res v ->
-                                                    forall c0,
-                                                      c <= c0 ->
-                                                      ~ AS.bstep_fuel ρ e c0 AS.OOT);
-      intros; intro Hc.
-    - inv H0.
-      inv Hc.
-    - inv H0.
-      inv Hc.
-      eapply IHbstep; eauto.
-    - inv H3.
-      inv Hc; invc.
-      eapply IHbstep; eauto.
-    - inv H4.
-      inv Hc; invc.
-      2 : { eapply IHbstep with (c0 := c0); eauto; lia. }
-      assert (Hcv : v = v1 /\ c = c1).
-      {
-        eapply AS.bstep_fuel_deterministic; eauto.
-      }
-      inv Hcv.
-      eapply IHbstep0 with (c0 := c'0); eauto; lia.
-    - inv H3.
-    - inv H1.
-      inv Hc; invc.
-      eapply IHbstep; eauto.
-    - inv H2.
-      inv Hc; invc.
-      eapply IHbstep; eauto.
-    - inv H2.
-      inv Hc; invc.
-      assert (He : e = e0).
-      {
-        eapply find_tag_deterministic; eauto.
-      }
-      inv He.
-      eapply IHbstep; eauto.
-    - inv H.
-    - inv H0.
-      inv Hc.
-      inv H1.
-      eapply IHbstep with (c0 := c1); eauto; lia.
-  Qed.
-
-  Lemma bstep_lt_Res_not_OOT ρ e c v :
-    AS.bstep ρ e c (AS.Res v) ->
-    forall c0,
-      c <= c0 ->
-      ~ (AS.bstep ρ e c0 AS.OOT).
-  Proof. eauto using bstep_lt_Res_not_OOT_aux. Qed.
-
-  Lemma bstep_fuel_lt_Res_not_OOT ρ e c v :
-    AS.bstep_fuel ρ e c (AS.Res v) ->
-    forall c0,
-      c <= c0 ->
-      ~ (AS.bstep_fuel ρ e c0 AS.OOT).
-  Proof.
-    intros.
-    inv H.
-    intro Hc.
-    inv Hc.
-    inv H0.
-    eapply bstep_lt_Res_not_OOT with (c0 := c); eauto; lia.
-  Qed.
-
   Lemma letapp_compat Γ k k' xs x f l w :
     W ! l = Some w ->
     (f \in Γ) ->
@@ -997,7 +914,7 @@ Section Collecting.
             eapply cbstep_fuel_bstep_fuel; eauto.
           }
           inv Hc.
-          eapply bstep_fuel_lt_Res_not_OOT with (c0 := (c0 + c'0)) in H13; eauto; try lia.
+          eapply AS.bstep_fuel_lt_Res_not_OOT with (c0 := (c0 + c'0)) in H13; eauto; try lia.
           contradiction.
         - assert (Hcv : v0 = w0 /\ c = i0).
           {
@@ -1036,7 +953,7 @@ Section Collecting.
           inv Hcv.
           rewrite_math (c'0 = i0); eauto.
         * eapply cbstep_fuel_to_bstep_fuel in H26; eauto.
-          eapply bstep_fuel_lt_Res_not_OOT with (c0 := (c + i0)) in H26; eauto; try lia.
+          eapply AS.bstep_fuel_lt_Res_not_OOT with (c0 := (c + i0)) in H26; eauto; try lia.
       + eapply G_subset with (Γ2 := (x |: (AT.occurs_free (AT.Eletapp x f w xs k')))).
         ++ eapply G_set; eauto.
            eapply G_mono with (S i); eauto; lia.
