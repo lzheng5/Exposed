@@ -849,6 +849,89 @@ Section Collecting.
     split; auto.
   Qed.
 
+  Lemma bstep_lt_Res_not_OOT_aux ρ e c r v :
+    AS.bstep ρ e c r ->
+    r = AS.Res v ->
+    forall c0,
+      c <= c0 ->
+      ~ (AS.bstep ρ e c0 AS.OOT).
+  Proof.
+    intros.
+    generalize dependent c0.
+    generalize dependent v.
+    induction H using AS.bstep_ind' with (P := fun ρ e c r =>
+                                                 forall v,
+                                                   r = AS.Res v ->
+                                                   forall c0,
+                                                     c <= c0 ->
+                                                     ~ AS.bstep ρ e c0 AS.OOT)
+                                         (P0 := fun ρ e c r =>
+                                                  forall v,
+                                                    r = AS.Res v ->
+                                                    forall c0,
+                                                      c <= c0 ->
+                                                      ~ AS.bstep_fuel ρ e c0 AS.OOT);
+      intros; intro Hc.
+    - inv H0.
+      inv Hc.
+    - inv H0.
+      inv Hc.
+      eapply IHbstep; eauto.
+    - inv H3.
+      inv Hc; invc.
+      eapply IHbstep; eauto.
+    - inv H4.
+      inv Hc; invc.
+      2 : { eapply IHbstep with (c0 := c0); eauto; lia. }
+      assert (Hcv : v = v1 /\ c = c1).
+      {
+        eapply AS.bstep_fuel_deterministic; eauto.
+      }
+      inv Hcv.
+      eapply IHbstep0 with (c0 := c'0); eauto; lia.
+    - inv H3.
+    - inv H1.
+      inv Hc; invc.
+      eapply IHbstep; eauto.
+    - inv H2.
+      inv Hc; invc.
+      eapply IHbstep; eauto.
+    - inv H2.
+      inv Hc; invc.
+      assert (He : e = e0).
+      {
+        eapply find_tag_deterministic; eauto.
+      }
+      inv He.
+      eapply IHbstep; eauto.
+    - inv H.
+    - inv H0.
+      inv Hc.
+      inv H1.
+      eapply IHbstep with (c0 := c1); eauto; lia.
+  Qed.
+
+  Lemma bstep_lt_Res_not_OOT ρ e c v :
+    AS.bstep ρ e c (AS.Res v) ->
+    forall c0,
+      c <= c0 ->
+      ~ (AS.bstep ρ e c0 AS.OOT).
+  Proof. eauto using bstep_lt_Res_not_OOT_aux. Qed.
+
+  Lemma bstep_fuel_lt_Res_not_OOT ρ e c v :
+    AS.bstep_fuel ρ e c (AS.Res v) ->
+    forall c0,
+      c <= c0 ->
+      ~ (AS.bstep_fuel ρ e c0 AS.OOT).
+  Proof.
+    intros.
+    inv H.
+    intro Hc.
+    inv Hc.
+    inv H0.
+    eapply bstep_lt_Res_not_OOT with (c0 := c); eauto; lia.
+  Qed.
+
   Lemma letapp_compat Γ k k' xs x f l w :
     W ! l = Some w ->
     (f \in Γ) ->
@@ -903,73 +986,77 @@ Section Collecting.
 
         unfold web_map_inv; intros.
         destruct r.
-        - inv H2; eauto.
-          econstructor; eauto.
-
-
-
-        (* stuck here *)
-        assert (Hcbstep_e : cbstep_fuel ex ρ1 (AS.Eletapp x f l xs k) (S (i0 + c')) r).
-        {
-          eapply H; eauto; try lia.
-          destruct r.
-          - inv H2; eauto.
-            rewrite_math (0 + c' = c').
-            econstructor; eauto.
-            econstructor; eauto.
-
-
-          assert (Hr : i0 = c /\ r = (AS.Res v0)).
+        - assert (Hcbstep_e : cbstep_fuel ex ρ1 (AS.Eletapp x f l xs k) (S i0) AS.OOT).
+          {
+            eapply H; eauto; try lia.
+          }
+          inv Hcbstep_e.
+          inv H4; invc; eauto.
+          assert (Hc : c = c0 /\ v0 = v).
+          {
+            eapply cbstep_fuel_bstep_fuel; eauto.
+          }
+          inv Hc.
+          eapply bstep_fuel_lt_Res_not_OOT with (c0 := (c0 + c'0)) in H13; eauto; try lia.
+          contradiction.
+        - assert (Hcv : v0 = w0 /\ c = i0).
           {
             eapply AS.bstep_fuel_deterministic; eauto.
           }
+          inv Hcv.
 
-          econstructor; eauto.
-          inv H2; auto.
-          - rewrite_math (0 + c' = c').
-            econstructor; eauto.
-
-        }
-        inv Hcbstep_e.
-        inv H4; invc; auto.
-
+          assert (Hcbstep_e : cbstep_fuel ex ρ1 (AS.Eletapp x f l xs k) (S (i0 + c')) r1).
+          {
+            eapply H; eauto; try lia.
+          }
+          inv Hcbstep_e.
+          inv H4; invc; eauto.
       }
 
-          assert (Hc : c0 = c /\ v = v0) by (eapply cbstep_fuel_bstep_fuel; eauto).
-          assert (Hc' : c'0 = c') by lia.
-          inv Hc.
+      apply (E_mono _ i) in HE; try lia.
+      unfold E in HE.
+      destruct (HE c (AS.Res v0)) as [j1 [ra [Hap Rra]]]; try lia; auto.
 
-          apply (E_mono _ i) in HE; try lia.
-          unfold E in HE.
-          destruct (HE c (AS.Res v0)) as [j1 [ra [Hap Rra]]]; try lia; auto.
+      simpl in Rra.
+      destruct ra; try contradiction.
 
-          simpl in Rra.
-          destruct ra; try contradiction.
-
-          edestruct (Hk ex (i - c) (M.set x v0 ρ1) (M.set x w0 ρ2))
-            with (j1 := c') (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
-          -- eapply G_subset with (Γ2 := (x |: (AT.occurs_free (AT.Eletapp x f w xs k')))).
-             ++ eapply G_set; eauto.
-                eapply G_mono with (S i); eauto; lia.
-             ++ apply Included_refl.
-             ++ apply AT.free_letapp_k_subset.
-          -- exists (S (j1 + j2)), r2; split.
-             ++ constructor; auto.
-                ** eapply AT.BStep_letapp_Res; eauto.
-                   intros.
-                   destruct H22; auto.
-                   split.
-                   --- eapply V_exposed_Forall; eauto.
-                   --- eapply V_exposed; eauto.
-                ** destruct ex; simpl in *; auto.
-                   unfold R' in Rr.
-                   destruct r1; destruct r2; try contradiction; auto.
-                   destruct w1.
-                   eapply V_exposed_res; eauto.
-             ++ eapply R_mono; eauto; lia.
+      edestruct (Hk ex (i - c) (M.set x v0 ρ1) (M.set x w0 ρ2))
+        with (j1 := c') (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+      + intros.
+        assert (Hcbstep : cbstep_fuel ex ρ1 (AS.Eletapp x f l xs k) (S (c + i0)) r).
+        {
+          eapply H; eauto; try lia.
+        }
+        inv Hcbstep.
+        inv H4; invc; eauto.
+        * assert (Hcv : v0 = v /\ c = c0).
+          {
+            eapply cbstep_fuel_deterministic; eauto.
+          }
+          inv Hcv.
+          rewrite_math (c'0 = i0); eauto.
+        * eapply cbstep_fuel_to_bstep_fuel in H26; eauto.
+          eapply bstep_fuel_lt_Res_not_OOT with (c0 := (c + i0)) in H26; eauto; try lia.
+      + eapply G_subset with (Γ2 := (x |: (AT.occurs_free (AT.Eletapp x f w xs k')))).
+        ++ eapply G_set; eauto.
+           eapply G_mono with (S i); eauto; lia.
+        ++ apply Included_refl.
+        ++ apply AT.free_letapp_k_subset.
+      + exists (S (j1 + j2)), r2; split.
+        ++ constructor; auto.
+           ** eapply AT.BStep_letapp_Res; eauto.
+              intros.
+              destruct H23; auto.
+              split.
+              --- eapply V_exposed_Forall; eauto.
+              --- eapply V_exposed; eauto.
+           ** destruct ex; simpl in *; auto.
+              unfold R' in Rr.
+              destruct r1; destruct r2; try contradiction; auto.
+              destruct w1.
+              eapply V_exposed_res; eauto.
+        ++ eapply R_mono; eauto; lia.
   Qed.
-
-
 
   Lemma constr_compat Γ x l w t xs k k' :
     W ! l = Some w ->
@@ -981,11 +1068,13 @@ Section Collecting.
     intros HWl Hxs Hk.
     intros; simpl.
 
-    inv H1.
+    assert (Hcbstep : cbstep_fuel ex ρ1 (AS.Econstr x l t xs k) j1 r1) by (eapply H; eauto).
+
+    inv H2.
     - exists 0, A1.OOT; split; simpl; auto.
-    - inv H2; inv H3.
+    - inv Hcbstep; inv H3.
       inv H4; invc.
-      edestruct (G_get_list H xs vs0) as [vs' [Heqvs' Vvs]]; eauto.
+      edestruct (G_get_list H0 xs vs0) as [vs' [Heqvs' Vvs]]; eauto.
       eapply AT.free_constr_xs_subset; eauto.
 
       assert (Hlen : length vs0 = length vs').
@@ -995,6 +1084,14 @@ Section Collecting.
       edestruct (Hk ex i (M.set x (AS.Tag l (AS.Vconstr t vs0)) ρ1)
                       (M.set x (AT.Tag w0 (AT.Vconstr t vs')) ρ2))
         with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+      + unfold web_map_inv in *.
+        intros.
+        assert (Hcbstep : cbstep_fuel ex ρ1 (AS.Econstr x l t xs k) (S i0) r).
+        {
+          eapply H; eauto.
+        }
+        inv Hcbstep.
+        inv H4; invc; eauto.
       + eapply G_subset with (Γ2 := (x |: (AT.occurs_free (AT.Econstr x w0 t xs k')))).
         * eapply G_set; eauto.
 
@@ -1037,22 +1134,28 @@ Section Collecting.
     intros HWl Hy Hk.
     intros; simpl.
 
-    inv H1.
+    assert (Hcbstep : cbstep_fuel ex ρ1 (AS.Eproj x l n y k) j1 r1) by (eapply H; eauto).
+
+    inv H2.
     - exists 0, A1.OOT; split; simpl; auto.
-    - inv H2; inv H3.
+    - inv Hcbstep; inv H3.
       inv H4; invc.
-      edestruct (G_get H y) as [v2 [Heqv2 HV]]; eauto.
-      destruct i. inv H0.
+      edestruct (G_get H0 y) as [v2 [Heqv2 HV]]; eauto.
+      destruct i. inv H1.
       destruct v2; simpl in HV;
         destruct HV as [Hv1 HV];
         destruct v.
-      { destruct HV as [_ [_ Hc]]; contradiction. }
+      destruct HV as [_ [_ Hc]]; contradiction.
       destruct HV as [HWl' [Hex [Heqt HFvs]]]; subst; invc.
 
-      destruct (Forall2_nth_error H12 HFvs) as [v2' [Heqv2' HVv]].
+      destruct (Forall2_nth_error H13 HFvs) as [v2' [Heqv2' HVv]].
 
       edestruct (Hk ex i (M.set x v0 ρ1) (M.set x v2' ρ2))
         with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+      + unfold web_map_inv in *; intros.
+        assert (Hcbstep : cbstep_fuel ex ρ1 (AS.Eproj x l n y k) (S i0) r) by (eapply H; eauto).
+        inv Hcbstep.
+        inv H4; invc; eauto.
       + eapply G_subset with (Γ2 := (x |: (AT.occurs_free (AT.Eproj x w n y k')))).
         * eapply G_set; eauto.
           eapply G_mono with (S i); eauto; lia.
@@ -1077,11 +1180,10 @@ Section Collecting.
     unfold trans_correct, E, E'.
     intros HWl Hx.
     intros; simpl.
-    inv H1.
+    inv H2.
     - exists 0, A1.OOT; split; simpl; auto.
-    - inv H2; inv H3.
-      inv H4; invc.
-      inv H8.
+    - inv H3.
+      inv H9.
   Qed.
 
   Lemma case_cons_compat Γ x l w t e e' cl cl' :
@@ -1095,12 +1197,14 @@ Section Collecting.
     intros HWl Hx He Hcl.
     intros; simpl.
 
-    inv H1.
+    assert (Hcbstep : cbstep_fuel ex ρ1 (AS.Ecase x l ((t, e) :: cl)) j1 r1) by (eapply H; eauto).
+
+    inv H2.
     - exists 0, A1.OOT; split; simpl; auto.
-    - inv H2; inv H3.
+    - inv Hcbstep; inv H3.
       inv H4; invc.
-      edestruct (G_get H x) as [v2 [Heqv2 HV]]; eauto.
-      destruct i. inv H0.
+      edestruct (G_get H0 x) as [v2 [Heqv2 HV]]; eauto.
+      destruct i. inv H1.
       destruct v2; simpl in HV;
         destruct HV as [Hv1 HV];
         destruct v.
@@ -1112,10 +1216,21 @@ Section Collecting.
         eapply find_tag_deterministic; eauto.
       }
 
-      inv H8; invc.
+      inv H9; invc.
       + (* head tag matches *)
         edestruct (He ex (S i) ρ1 ρ2)
           with (j1 := c) (r1 := r1) as [j2 [r2 [He2 Rr]]]; eauto; try lia.
+        * unfold web_map_inv in *; intros.
+
+          assert (Hcbstep : cbstep_fuel ex ρ1 (AS.Ecase x l ((c0, e1) :: cl)) (S i0) r) by (eapply H; eauto).
+          inv Hcbstep.
+          inv H4; invc.
+
+          assert (Heqe : e = e1).
+          {
+            eapply find_tag_deterministic; eauto.
+          }
+          inv Heqe; eauto.
         * eapply G_subset; eauto.
           apply Included_refl.
           apply AT.free_case_hd_subset.
@@ -1127,15 +1242,28 @@ Section Collecting.
           econstructor; eauto.
           eapply R_mono; eauto; lia.
       + (* tail: recurse on cl/cl' *)
-        inv H10; try contradiction.
+        inv H11; try contradiction.
         edestruct (Hcl ex (S i) ρ1 ρ2)
           with (j1 := S c) (r1 := r1) as [j2 [r2 [Hcl2 Rr]]]; eauto; try lia.
+        * unfold web_map_inv in *; intros.
+          inv H2; auto.
+          inv H3; invc.
+          assert (Hcbstep : cbstep_fuel ex ρ1 (AS.Ecase x l ((t, e) :: cl)) (S c1) r).
+          {
+            eapply H; eauto.
+          }
+          assert (Heqe : e1 = e0) by (eapply find_tag_deterministic; eauto).
+          inv Heqe.
+
+          inv Hcbstep.
+          inv H3; invc.
+          inv H17; eauto; contradiction.
         * eapply G_subset; eauto.
           apply Included_refl.
           apply AT.free_case_tl_subset; auto.
         * exists j2, r2; split; auto.
           inv Hcl2; auto.
-          inv H1; invc; eauto.
+          inv H2; invc; eauto.
   Qed.
 
   (* Fundamental Property *)
