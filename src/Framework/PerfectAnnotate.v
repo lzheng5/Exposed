@@ -1476,8 +1476,8 @@ Section Top.
   Definition trans_correct_top W etop etop' :=
     AT.occurs_free etop' \subset AS.occurs_free etop /\
       forall i W' ρ1 ρ2,
-        web_map_inv W true ρ1 etop ->
         leq W W' ->
+        web_map_inv W' true ρ1 etop ->
         G_top W' i (AS.occurs_free etop) ρ1 (AT.occurs_free etop') ρ2 ->
         E W' true i ρ1 etop ρ2 etop'.
 
@@ -1506,57 +1506,31 @@ Section Top.
   Theorem top W etop etop':
     (forall W',
         leq W W' ->
-        trans W' (AS.occurs_free etop) etop etop') ->
+        exists etop'', trans W' (AS.occurs_free etop) etop etop'') ->
     trans_correct_top W etop etop'.
   Proof.
     unfold trans_correct_top.
     intros H.
     split.
-    - specialize (H W).
-      assert (leq W W) by (apply leq_refl; auto).
-      eapply trans_exp_inv; eauto.
-    - intros.
-      specialize (H _ H1).
-      specialize (fundamental_property _ H);
-        unfold trans_correct; intros.
-      eapply H3; eauto.
-      eapply web_map_inv_approx; eauto.
-      eapply G_top_G; eauto.
-  Qed.
+    - admit.
+    - intros i W' ρ1 ρ2 Hleq Hwm Hg.
+      specialize (H _ Hleq).
+      destruct H as [etop'' HT].
+      specialize (fundamental_property _ HT);
+        unfold trans_correct; intros Htc.
+  Abort.
 
-  Theorem trans_correct_upward_approx W1 e1 e2 :
-    (forall W2,
-        leq W1 W2 ->
-        trans_correct_top W2 e1 e2) ->
-    trans_correct_top W1 e1 e2.
-  Proof.
-    unfold trans_correct_top.
-    intros.
-    split.
-    - specialize (H W1).
-      assert (leq W1 W1) by (apply leq_refl; auto).
-      firstorder.
-    - intros.
-      eapply H; eauto.
-      eapply web_map_inv_approx; eauto.
-      apply leq_refl.
-  Qed.
-
-  Theorem trans_correct_downward_approx W2 e1 e2 :
-    (forall W1,
-        leq W1 W2 ->
-        trans_correct_top W1 e1 e2) ->
+  Theorem trans_correct_downward_approx W1 W2 e1 e2 :
+    leq W1 W2 ->
+    trans_correct_top W1 e1 e2 ->
     trans_correct_top W2 e1 e2.
   Proof.
     unfold trans_correct_top.
-    intros.
-    split.
-    - specialize (H W2).
-      assert (leq W2 W2) by (apply leq_refl; auto).
-      firstorder.
-    - intros.
-      eapply H; eauto.
-      apply leq_refl.
+    intros Hleq [Hsubset Hbody].
+    split; auto.
+    intros i W' ρ1 ρ2 Hleq2 Hwm Hg.
+    eapply Hbody; eauto.
+    eapply leq_trans; eauto.
   Qed.
 
 End Top.
