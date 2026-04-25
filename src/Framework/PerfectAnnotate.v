@@ -289,6 +289,23 @@ Section Collecting.
 
   Hint Constructors trans : core.
 
+  Lemma trans_exp_inv {Γ e e'} :
+    trans Γ e e' ->
+    (AT.occurs_free e') \subset (AS.occurs_free e).
+  Proof.
+    unfold Ensembles.Included, Ensembles.In.
+    intros H.
+    induction H; simpl; intros; auto.
+    - inv H0; auto.
+    - inv H2; auto.
+    - inv H2; auto.
+    - inv H3; auto.
+    - inv H2; auto.
+    - inv H2; auto.
+    - inv H1; auto.
+    - inv H3; auto.
+  Qed.
+
   (* Cross-language Logical Relations *)
   (* Note these are parameterized by the web_map, `W` *)
   Definition R' (P : nat -> AS.wval -> AT.wval -> Prop) (i : nat) (r1 : AS.res) (r2 : AT.res) :=
@@ -1337,7 +1354,7 @@ Section Approx.
       fcrush.
   Qed.
 
-  (* We rely on `exposed_singleton` so that we don't need to reannotate v2 *)
+  (* This doesn't work because of the <-> *)
   Lemma V_approx :
     forall i W1 W2 v1 v2,
       exposed v2 ->
@@ -1381,19 +1398,148 @@ Section Approx.
           eapply V_approx_Forall_aux with (W1 := W1); eauto.
           fcrush.
     - admit.
-
   Abort.
-
-
-  Lemma web_map_inv_approx_r W1 W2 ex ρ e:
-    leq W1 W2 ->
-    web_map_inv W2 ex ρ e ->
-    web_map_inv W1 ex ρ e.
-  Proof.
-    unfold web_map_inv.
-    intros.
-    eapply H0 in H1; eauto.
-  Abort.
-
 
 End Approx.
+
+Section Top.
+
+  (* Top Level *)
+  Definition G_top W i Γ1 ρ1 Γ2 ρ2 :=
+    wf_env ρ2 /\
+    Γ2 \subset Γ1 /\
+    forall x,
+      (x \in Γ1) ->
+      exists v1 v2,
+        M.get x ρ1 = Some v1 /\
+        M.get x ρ2 = Some v2 /\
+        exposed v2 /\
+        V W i v1 v2.
+
+  Lemma G_top_wf_env_r W i Γ1 ρ1 Γ2 ρ2 :
+    G_top W i Γ1 ρ1 Γ2 ρ2 ->
+    wf_env ρ2.
+  Proof.
+    unfold G_top.
+    intros; tauto.
+  Qed.
+
+  Lemma G_top_subset W i Γ1 ρ1 Γ2 ρ2 Γ3 Γ4 :
+    G_top W i Γ1 ρ1 Γ2 ρ2 ->
+    Γ3 \subset Γ1 ->
+    Γ4 \subset Γ3 ->
+    G_top W i Γ3 ρ1 Γ4 ρ2.
+  Proof.
+    unfold G_top.
+    intros.
+    destruct H as [Hr [Hs HG]].
+    repeat (split; auto).
+  Qed.
+
+  Lemma G_top_G :
+    forall {W i Γ1 ρ1 Γ2 ρ2},
+      G_top W i Γ1 ρ1 Γ2 ρ2 ->
+      G W i Γ1 ρ1 Γ2 ρ2.
+  Proof.
+    unfold G_top, G.
+    intros.
+    destruct H as [HΓ [Hρ HG]].
+    unfold Ensembles.Included, Ensembles.In, Dom_map in *.
+    split; auto; intros.
+    edestruct HG as [v1' [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; eauto.
+    rewrite Heqv1 in H0; inv H0; eauto.
+  Qed.
+
+  Definition trans_correct_top W etop etop' :=
+    AT.occurs_free etop' \subset AS.occurs_free etop /\
+      forall i W' ρ1 ρ2,
+        web_map_inv W true ρ1 etop ->
+        leq W W' ->
+        G_top W' i (AS.occurs_free etop) ρ1 (AT.occurs_free etop') ρ2 ->
+        E W' true i ρ1 etop ρ2 etop'.
+
+  Lemma trans_correct_top_subset W e1 e2 :
+    trans_correct_top W e1 e2 ->
+    AT.occurs_free e2 \subset AS.occurs_free e1.
+  Proof.
+    unfold trans_correct_top.
+    intros.
+    inv H; auto.
+  Qed.
+
+  Lemma leq_refl W :
+    leq W W.
+  Proof.
+    unfold leq.
+    exists (fun x => x).
+    sfirstorder.
+  Qed.
+
+  Theorem top W etop etop':
+    (forall W',
+        leq W W' ->
+        trans W' (AS.occurs_free etop) etop etop') ->
+    trans_correct_top W etop etop'.
+  Proof.
+    unfold trans_correct_top.
+    intros H.
+    split.
+    - specialize (H W).
+      assert (leq W W) by (apply leq_refl; auto).
+      eapply trans_exp_inv; eauto.
+    - intros.
+      specialize (H _ H1).
+      specialize (fundamental_property _ H);
+        unfold trans_correct; intros.
+      eapply H3; eauto.
+      eapply web_map_inv_approx; eauto.
+      eapply G_top_G; eauto.
+  Qed.
+
+(*
+  Theorem top' W etop etop':
+    trans W (AS.occurs_free etop) etop etop' ->
+    trans_correct_top W etop etop'.
+  Proof.
+    unfold trans_correct_top.
+    intros H.
+    split.
+    - eapply trans_exp_inv; eauto.
+    - intros.
+      specialize (fundamental_property _ H);
+        unfold trans_correct; intros.
+      eapply H3; eauto.
+      eapply web_map_inv_approx; eauto.
+      eapply G_top_G; eauto.
+  Qed.
+*)
+
+  Lemma leq_trans W1 W2 W3 :
+    leq W1 W2 ->
+    leq W2 W3 ->
+    leq W1 W3.
+  Proof.
+    intros [f1 [Hf1_iff Hf1_W]] [f2 [Hf2_iff Hf2_W]].
+    exists (fun w => f2 (f1 w)).
+    split.
+    - intro w. rewrite Hf1_iff. apply Hf2_iff.
+    - intros l w HW1.
+      apply Hf1_W in HW1.
+      apply Hf2_W in HW1.
+      exact HW1.
+  Qed.
+
+  Theorem trans_correct_approx W1 W2 e1 e2 :
+    leq W1 W2 ->
+    trans_correct_top W2 e1 e2 ->
+    trans_correct_top W1 e1 e2.
+  Proof.
+    unfold trans_correct_top.
+    intros.
+    inv H0.
+    split; auto; intros.
+    eapply H2; eauto.
+    eapply web_map_inv_approx; eauto.
+    eapply leq_trans; eauto.
+    admit.
+  Admitted.
