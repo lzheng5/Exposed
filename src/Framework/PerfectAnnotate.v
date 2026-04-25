@@ -1200,3 +1200,107 @@ Section Collecting.
   Qed.
 
 End Collecting.
+
+Section Approx.
+
+  Definition leq W1 W2 :=
+    forall l w,
+      W1 ! l = Some w ->
+      (w \in Exposed) ->
+      W2 ! l = Some w.
+
+  Lemma leq_exposed l w v W1 W2:
+    W1 ! l = Some w ->
+    leq W1 W2 ->
+    exposed (TAG val w v) ->
+    W2 ! l = Some w.
+  Proof. hauto lq: on unfold: wval, Tag, Ensembles.In, leq inv: exposed. Qed.
+
+  Lemma V_approx_Forall_aux :
+    forall i W1 W2,
+      (forall m : nat,
+          m < S i ->
+          forall W1 W2 v1 v2,
+            exposed v2 ->
+            leq W1 W2 ->
+            V W1 m v1 v2 <-> V W2 m v1 v2) ->
+      leq W1 W2 ->
+      forall j vs1 vs2,
+        j <= i ->
+        Forall exposed vs2 ->
+        Forall2 (V W1 j) vs1 vs2 <-> Forall2 (V W2 j) vs1 vs2.
+  Proof.
+    intros.
+    revert vs1 j H1.
+    induction H2; simpl; intros.
+    - split; intros; inv H2; auto.
+    - split; intros; inv H4; constructor; auto;
+        try solve [ eapply H; try lia; eauto |
+                    eapply IHForall; eauto ].
+      fcrush.
+  Qed.
+
+  Lemma V_approx :
+    forall i W1 W2 v1 v2,
+      exposed v2 ->
+      leq W1 W2 ->
+      (V W1 i v1 v2 <-> V W2 i v1 v2).
+  Proof.
+    intro i.
+    induction i using lt_wf_rec; intros.
+    split; intros.
+    - destruct i; simpl in *;
+        inv H2; split; auto;
+        destruct v1; destruct v2.
+      + fcrush.
+      + destruct H4 as [Hl [Hex HV]].
+        repeat (split; auto).
+        eapply leq_exposed; eauto.
+        destruct v; destruct v0; try contradiction.
+        * destruct HV as [Hlen HV].
+          split; auto; intros.
+
+          assert (HE : E' (V W1) (exposedb w) (i - (i - j)) ρ3 e ρ4 e0).
+          {
+            eapply HV; eauto.
+            eapply V_approx_Forall_aux; eauto; try lia.
+            fcrush.
+            admit.
+          }
+          unfold E' in *; intros.
+          edestruct HE as [j2 [r2 [Hstep HR]]]; eauto.
+          eexists; eexists; split; eauto.
+          unfold R' in *.
+          destruct r1; destruct r2; auto.
+          eapply H with (W1 := W1); eauto; try lia.
+          destruct (exposed_reflect w); try contradiction.
+          eapply AT.bstep_fuel_exposed_inv in Hstep; eauto; fcrush.
+          exfalso.
+          inv H0; contradiction.
+        * inv HV.
+          split; auto.
+          eapply V_approx_Forall_aux with (W1 := W1); eauto.
+          fcrush.
+    - admit.
+
+  Abort.
+
+  Lemma web_map_inv_approx W1 W2 ex ρ e:
+    leq W1 W2 ->
+    web_map_inv W1 ex ρ e ->
+    web_map_inv W2 ex ρ e.
+  Proof.
+    unfold web_map_inv.
+    intros.
+    eapply H0 in H1; eauto.
+  Abort.
+
+  Lemma cbstep_approx W1 W2 ex ρ e i r :
+    leq W1 W2 ->
+    cbstep W1 ex ρ e i r ->
+    cbstep W2 ex ρ e i r.
+  Proof.
+    (* by induction using cbstep_ind' *)
+  Admitted.
+
+End Approx.
