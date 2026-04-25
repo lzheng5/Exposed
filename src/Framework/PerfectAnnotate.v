@@ -1225,6 +1225,29 @@ Section Approx.
       (forall w, w \in Exposed <-> f w \in Exposed) /\
       (forall l w, W1 ! l = Some w -> W2 ! l = Some (f w)).
 
+  Lemma leq_refl W :
+    leq W W.
+  Proof.
+    unfold leq.
+    exists (fun x => x).
+    sfirstorder.
+  Qed.
+
+  Lemma leq_trans W1 W2 W3 :
+    leq W1 W2 ->
+    leq W2 W3 ->
+    leq W1 W3.
+  Proof.
+    intros [f1 [Hf1_iff Hf1_W]] [f2 [Hf2_iff Hf2_W]].
+    exists (fun w => f2 (f1 w)).
+    split.
+    - intro w. rewrite Hf1_iff. apply Hf2_iff.
+    - intros l w HW1.
+      apply Hf1_W in HW1.
+      apply Hf2_W in HW1.
+      exact HW1.
+  Qed.
+
   Lemma leq_exposed l w1 v W1 W2:
     W1 ! l = Some w1 ->
     leq W1 W2 ->
@@ -1467,13 +1490,18 @@ Section Top.
     inv H; auto.
   Qed.
 
-  Lemma leq_refl W :
-    leq W W.
+  Theorem top W etop etop':
+    trans W (AS.occurs_free etop) etop etop' ->
+    trans_correct_top W etop etop'.
   Proof.
-    unfold leq.
-    exists (fun x => x).
-    sfirstorder.
-  Qed.
+    unfold trans_correct_top.
+    intros H.
+    split.
+    - eapply trans_exp_inv; eauto.
+    - intros.
+      specialize (fundamental_property _ H);
+        unfold trans_correct; intros.
+  Abort.
 
   Theorem top W etop etop':
     (forall W',
@@ -1496,50 +1524,39 @@ Section Top.
       eapply G_top_G; eauto.
   Qed.
 
-(*
-  Theorem top' W etop etop':
-    trans W (AS.occurs_free etop) etop etop' ->
-    trans_correct_top W etop etop'.
-  Proof.
-    unfold trans_correct_top.
-    intros H.
-    split.
-    - eapply trans_exp_inv; eauto.
-    - intros.
-      specialize (fundamental_property _ H);
-        unfold trans_correct; intros.
-      eapply H3; eauto.
-      eapply web_map_inv_approx; eauto.
-      eapply G_top_G; eauto.
-  Qed.
-*)
-
-  Lemma leq_trans W1 W2 W3 :
-    leq W1 W2 ->
-    leq W2 W3 ->
-    leq W1 W3.
-  Proof.
-    intros [f1 [Hf1_iff Hf1_W]] [f2 [Hf2_iff Hf2_W]].
-    exists (fun w => f2 (f1 w)).
-    split.
-    - intro w. rewrite Hf1_iff. apply Hf2_iff.
-    - intros l w HW1.
-      apply Hf1_W in HW1.
-      apply Hf2_W in HW1.
-      exact HW1.
-  Qed.
-
-  Theorem trans_correct_approx W1 W2 e1 e2 :
-    leq W1 W2 ->
-    trans_correct_top W2 e1 e2 ->
+  Theorem trans_correct_upward_approx W1 e1 e2 :
+    (forall W2,
+        leq W1 W2 ->
+        trans_correct_top W2 e1 e2) ->
     trans_correct_top W1 e1 e2.
   Proof.
     unfold trans_correct_top.
     intros.
-    inv H0.
-    split; auto; intros.
-    eapply H2; eauto.
-    eapply web_map_inv_approx; eauto.
-    eapply leq_trans; eauto.
-    admit.
-  Admitted.
+    split.
+    - specialize (H W1).
+      assert (leq W1 W1) by (apply leq_refl; auto).
+      firstorder.
+    - intros.
+      eapply H; eauto.
+      eapply web_map_inv_approx; eauto.
+      apply leq_refl.
+  Qed.
+
+  Theorem trans_correct_downward_approx W2 e1 e2 :
+    (forall W1,
+        leq W1 W2 ->
+        trans_correct_top W1 e1 e2) ->
+    trans_correct_top W2 e1 e2.
+  Proof.
+    unfold trans_correct_top.
+    intros.
+    split.
+    - specialize (H W2).
+      assert (leq W2 W2) by (apply leq_refl; auto).
+      firstorder.
+    - intros.
+      eapply H; eauto.
+      apply leq_refl.
+  Qed.
+
+End Top.
