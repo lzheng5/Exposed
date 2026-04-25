@@ -1204,17 +1204,114 @@ End Collecting.
 Section Approx.
 
   Definition leq W1 W2 :=
-    forall l w,
-      W1 ! l = Some w ->
-      (w \in Exposed) ->
-      W2 ! l = Some w.
+    exists f : web -> web,
+      (forall w, w \in Exposed <-> f w \in Exposed) /\
+      (forall l w, W1 ! l = Some w -> W2 ! l = Some (f w)).
 
-  Lemma leq_exposed l w v W1 W2:
+  Lemma leq_exposed l w1 v W1 W2:
+    W1 ! l = Some w1 ->
+    leq W1 W2 ->
+    exposed (TAG val w1 v) ->
+    exists w2, W2 ! l = Some w2 /\ (w2 \in Exposed).
+  Proof. qauto unfold: wval, Tag, Ensembles.In, leq inv: exposed. Qed.
+
+  (* We rely on `exposed_singleton` so that we can look up the same exposed web *)
+  Lemma leq_single_exposed l w v W1 W2:
     W1 ! l = Some w ->
     leq W1 W2 ->
     exposed (TAG val w v) ->
     W2 ! l = Some w.
-  Proof. hauto lq: on unfold: wval, Tag, Ensembles.In, leq inv: exposed. Qed.
+  Proof.
+    intros HW1 Hleq Hexp.
+    destruct (leq_exposed _ _ _ _ _ HW1 Hleq Hexp) as [w2 [HW2 Hw2_exp]].
+    assert (Hw_exp : w \in Exposed) by (inv Hexp; auto).
+    apply Exposed_singleton in Hw_exp.
+    apply Exposed_singleton in Hw2_exp.
+    congruence.
+  Qed.
+
+  Lemma cbstep_approx W1 W2 ex ρ e i r :
+    leq W1 W2 ->
+    cbstep W1 ex ρ e i r ->
+    cbstep W2 ex ρ e i r.
+  Proof.
+    intros Hleq Hcb.
+    destruct Hleq as [f [Hf_iff Hf_W]].
+    assert (Hexposedb : forall w, exposedb (f w) = exposedb w).
+    { intro w.
+      destruct (exposed_reflect w), (exposed_reflect (f w)); auto.
+      - exfalso. apply n. apply -> Hf_iff; auto.
+      - exfalso. apply n. apply Hf_iff; auto. }
+    assert (Hto_exposed : forall v, to_exposed W1 v -> to_exposed W2 v).
+    { intros [l_v v_inner] [w' [HW1' Hw'_exp]].
+      exists (f w'); split; auto.
+      apply -> Hf_iff; auto. }
+    assert (Hto_exposed_res : forall r0, to_exposed_res W1 r0 -> to_exposed_res W2 r0).
+    { intros [|v_r] Hr; simpl in *; auto. }
+    assert (Hto_exposed_F : forall vs, Forall (to_exposed W1) vs -> Forall (to_exposed W2) vs).
+    { intros vs Hvs; induction Hvs; constructor; auto. }
+    induction Hcb using cbstep_ind' with
+      (P  := fun ex ρ e i r => cbstep W2 ex ρ e i r)
+      (P0 := fun ex ρ e i r => cbstep_fuel W2 ex ρ e i r); intros.
+    - eapply Cbstep_ret; eauto.
+    - eapply Cbstep_fun; eauto.
+    - eapply Cbstep_app with (w := f w); eauto.
+      + intros Hfw_exp.
+        assert (Hw_exp : w \in Exposed) by (apply Hf_iff; auto).
+        destruct (H4 Hw_exp) as [Hvs Hr].
+        split; auto.
+      + rewrite Hexposedb; auto.
+    - eapply Cbstep_letapp_Res with (w := f w); eauto.
+      + rewrite Hexposedb; auto.
+      + intros Hfw_exp.
+        assert (Hw_exp : w \in Exposed) by (apply Hf_iff; auto).
+        destruct (H6 Hw_exp) as [Hvs Hv].
+        split; auto.
+    - eapply Cbstep_letapp_OOT with (w := f w); eauto.
+      + rewrite Hexposedb; auto.
+      + intros Hfw_exp.
+        assert (Hw_exp : w \in Exposed) by (apply Hf_iff; auto).
+        apply Hto_exposed_F; auto.
+    - eapply Cbstep_constr; eauto.
+      intros Hfw_exp.
+      assert (Hw_exp : w \in Exposed) by (apply Hf_iff; auto).
+      apply Hto_exposed_F; auto.
+    - eapply Cbstep_proj with (w := f w); eauto.
+    - eapply Cbstep_case with (w := f w); eauto.
+    - constructor.
+    - constructor; auto.
+      destruct ex; auto.
+  Qed.
+
+  Lemma cbstep_fuel_approx W1 W2 ex ρ e i r :
+    leq W1 W2 ->
+    cbstep_fuel W1 ex ρ e i r ->
+    cbstep_fuel W2 ex ρ e i r.
+  Proof.
+    intros Hleq Hcbf.
+    inv Hcbf.
+    - constructor.
+    - constructor.
+      + eapply cbstep_approx; eauto.
+      + destruct ex; auto.
+        destruct r as [|[l_v v_inner]]; simpl in *; auto.
+        destruct Hleq as [f [Hf_iff Hf_W]].
+        destruct H0 as [w' [HW1' Hw'_exp]].
+        exists (f w'); split.
+        * apply Hf_W; auto.
+        * apply -> Hf_iff; auto.
+  Qed.
+
+  Lemma web_map_inv_approx W1 W2 ex ρ e:
+    leq W1 W2 ->
+    web_map_inv W1 ex ρ e ->
+    web_map_inv W2 ex ρ e.
+  Proof.
+    unfold web_map_inv.
+    intros.
+    eapply H0 in H1; eauto.
+    eapply cbstep_fuel_approx; eauto.
+  Qed.
 
   Lemma V_approx_Forall_aux :
     forall i W1 W2,
@@ -1240,6 +1337,7 @@ Section Approx.
       fcrush.
   Qed.
 
+  (* We rely on `exposed_singleton` so that we don't need to reannotate v2 *)
   Lemma V_approx :
     forall i W1 W2 v1 v2,
       exposed v2 ->
@@ -1252,10 +1350,11 @@ Section Approx.
     - destruct i; simpl in *;
         inv H2; split; auto;
         destruct v1; destruct v2.
-      + fcrush.
+      + assert (HW2 : W2 ! l = Some w) by (eapply leq_single_exposed; fcrush).
+        fcrush.
       + destruct H4 as [Hl [Hex HV]].
         repeat (split; auto).
-        eapply leq_exposed; eauto.
+        eapply leq_single_exposed; eauto.
         destruct v; destruct v0; try contradiction.
         * destruct HV as [Hlen HV].
           split; auto; intros.
@@ -1285,22 +1384,16 @@ Section Approx.
 
   Abort.
 
-  Lemma web_map_inv_approx W1 W2 ex ρ e:
+
+  Lemma web_map_inv_approx_r W1 W2 ex ρ e:
     leq W1 W2 ->
-    web_map_inv W1 ex ρ e ->
-    web_map_inv W2 ex ρ e.
+    web_map_inv W2 ex ρ e ->
+    web_map_inv W1 ex ρ e.
   Proof.
     unfold web_map_inv.
     intros.
     eapply H0 in H1; eauto.
   Abort.
 
-  Lemma cbstep_approx W1 W2 ex ρ e i r :
-    leq W1 W2 ->
-    cbstep W1 ex ρ e i r ->
-    cbstep W2 ex ρ e i r.
-  Proof.
-    (* by induction using cbstep_ind' *)
-  Admitted.
 
 End Approx.
