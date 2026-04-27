@@ -27,7 +27,7 @@ src/Framework/Annotate.v
 src/Framework/Trivial.v
 src/Framework/Known.v
 src/Framework/KnownAnnotate.v
-src/Framework/PerfectAnnotate.v
+src/Framework/CheckingAnnotate.v
 
 src/Framework/RelComp.v
 src/Framework/IdComp.v

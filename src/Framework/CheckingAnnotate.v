@@ -13,7 +13,9 @@ Module AT := ANF.
 
 Definition web_map := M.t web.
 
-Section Collecting.
+(* Annotate Based on The Checking Semantics *)
+
+Section Checking.
 
   (* The analysis result mapping labels to the actual webs. *)
   Variable W : web_map.
@@ -29,7 +31,7 @@ Section Collecting.
     | AS.Res v => to_exposed v
     end.
 
-  (* `W` is a valid perfect analysis result with respect to the collecting big-step semantics *)
+  (* `W` is a valid perfect analysis result with respect to the checking big-step semantics *)
   Inductive cbstep (ex : bool) (ρ : AS.env) : AS.exp -> fuel -> AS.res -> Prop :=
   | Cbstep_ret :
     forall {x l w v},
@@ -180,7 +182,7 @@ Section Collecting.
     edestruct (cbstep_deterministic v v' H3 H); eauto.
   Qed.
 
-  (* Collecting steps refine labeled steps: cbstep adds W-consistency side-conditions,
+  (* Checking steps refine labeled steps: cbstep adds W-consistency side-conditions,
      so every cbstep derivation projects down to a bstep derivation on the same
      expression with the same fuel and result. *)
   Lemma cbstep_to_bstep ex ρ e c r :
@@ -1216,7 +1218,7 @@ Section Collecting.
     - eapply case_cons_compat; eauto.
   Qed.
 
-End Collecting.
+End Checking.
 
 Section Approx.
 
