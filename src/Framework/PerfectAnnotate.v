@@ -1475,11 +1475,11 @@ Section Top.
 
   Definition trans_correct_top W etop etop' :=
     AT.occurs_free etop' \subset AS.occurs_free etop /\
-      forall i W' ρ1 ρ2,
-        leq W W' ->
-        web_map_inv W' true ρ1 etop ->
-        G_top W' i (AS.occurs_free etop) ρ1 (AT.occurs_free etop') ρ2 ->
-        E W' true i ρ1 etop ρ2 etop'.
+    forall i ρ1 ρ2,
+      web_map_inv W true ρ1 etop ->
+      G_top W i (AS.occurs_free etop) ρ1 (AT.occurs_free etop') ρ2 ->
+      E W true i ρ1 etop ρ2 etop'.
+
 
   Lemma trans_correct_top_subset W e1 e2 :
     trans_correct_top W e1 e2 ->
@@ -1501,36 +1501,63 @@ Section Top.
     - intros.
       specialize (fundamental_property _ H);
         unfold trans_correct; intros.
-  Abort.
+      eapply H2; eauto.
+      eapply G_top_G; eauto.
+  Qed.
 
-  Theorem top W etop etop':
-    (forall W',
-        leq W W' ->
-        exists etop'', trans W' (AS.occurs_free etop) etop etop'') ->
-    trans_correct_top W etop etop'.
-  Proof.
-    unfold trans_correct_top.
-    intros H.
-    split.
-    - admit.
-    - intros i W' ρ1 ρ2 Hleq Hwm Hg.
-      specialize (H _ Hleq).
-      destruct H as [etop'' HT].
-      specialize (fundamental_property _ HT);
-        unfold trans_correct; intros Htc.
-  Abort.
-
-  Theorem trans_correct_downward_approx W1 W2 e1 e2 :
+  Lemma trans_approx W1 W2 e1 e2 :
     leq W1 W2 ->
-    trans_correct_top W1 e1 e2 ->
-    trans_correct_top W2 e1 e2.
+    trans W1 (AS.occurs_free e1) e1 e2 ->
+    exists e2', trans W2 (AS.occurs_free e1) e1 e2'.
   Proof.
-    unfold trans_correct_top.
-    intros Hleq [Hsubset Hbody].
-    split; auto.
-    intros i W' ρ1 ρ2 Hleq2 Hwm Hg.
-    eapply Hbody; eauto.
-    eapply leq_trans; eauto.
+    intros HW HT.
+    destruct HW as [f' [Hf_iff Hf_W]].
+    enough (Hgen : forall Γ e e', trans W1 Γ e e' -> exists e'', trans W2 Γ e e'')
+      by (eapply Hgen; eauto).
+    clear HT.
+    intros Γ e e' HT.
+    induction HT.
+    - eexists; econstructor; eauto.
+    - destruct IHHT1 as [ee Hee].
+      destruct IHHT2 as [kk Hkk].
+      apply Hf_W in H.
+      eexists; econstructor; eauto.
+    - apply Hf_W in H.
+      eexists; econstructor; eauto.
+    - destruct IHHT as [kk Hkk].
+      apply Hf_W in H.
+      eexists; econstructor; eauto.
+    - destruct IHHT as [kk Hkk].
+      apply Hf_W in H.
+      eexists; econstructor; eauto.
+    - destruct IHHT as [kk Hkk].
+      apply Hf_W in H.
+      eexists; econstructor; eauto.
+    - apply Hf_W in H.
+      eexists; econstructor; eauto.
+    - destruct IHHT1 as [ee Hee].
+      destruct IHHT2 as [c2 Hc2].
+      apply Hf_W in H.
+      inv Hc2; invc.
+      + inv HT2.
+        exists (AT.Ecase x (f' w) [(t, ee)]).
+        econstructor; eauto.
+        econstructor; eauto.
+      + exists (AT.Ecase x (f' w) ((t, ee) :: (t0, e'0) :: cl'0)).
+        eapply Trans_case_cons; eauto.
+        eapply Trans_case_cons; eauto.
+  Qed.
+
+  Lemma top_approx W1 W2 e1 e2 :
+    leq W1 W2 ->
+    trans W1 (AS.occurs_free e1) e1 e2 ->
+    exists e2', trans_correct_top W2 e1 e2'.
+  Proof.
+    intros HW HT.
+    eapply trans_approx in HT; eauto.
+    destruct HT as [e2' HT'].
+    exists e2'.
+    eapply top; eauto.
   Qed.
 
 End Top.
