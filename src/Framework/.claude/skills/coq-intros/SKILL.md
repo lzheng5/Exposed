@@ -16,37 +16,43 @@ To eliminate "ghost" hypotheses and indexing errors by strictly enforcing explic
 ## Professional Naming Conventions
 
 ### 1. Variables (Data)
-- **Natural Numbers**: `n`, `m`, `p`, `q`, `i`, `j`, `k`.
-- **Booleans**: `b`, `b'`, `b1`, `b2`.
-- **Lists / Sequences**: `l`, `l1`, `l2`, `s`, `s'`.
-- **Functions**: `f`, `g`, `h`.
-- **Generic Types**: `A`, `B`, `T`, `U`.
-- **Generic Elements**: `x`, `y`, `z`.
+- **Variations & Successors**: Use the prime symbol (`'`) to denote a modified version or successor.
+  - If a base variable `n` exists, use `n'`, `n''`, etc.
+  - Useful for transition states: `s` (current state) → `s'` (next state).
+- **Suffix & Version Management**:
+  - **The 3-Prime Limit**: Use primes for up to three generations (e.g., `x'''`).
+  - **Numeric Transition**: At the 4th generation, switch to numbers (e.g., `x4` instead of `x''''`).
+  - **Long Sequences**: If many versions are expected, start with `x1`, `x2`, `x3` immediately.
+  - **Contextual Refresh**: Rename heavily transformed variables to reflect state (e.g., `s''''` → `s_final`).
+- **Standard Letters**:
+  - **Natural Numbers**: `n`, `m`, `p`, `q`, `i`, `j`, `k`.
+  - **Booleans**: `b`, `b1`, `b2`.
+  - **Lists / Sequences**: `l`, `l1`, `l2`, `s`, `s'`.
+  - **Functions**: `f`, `g`, `h`.
+  - **Generic Types/Elements**: `A`, `B`, `T`, `U` (Types) | `x`, `y`, `z` (Elements).
 
 ### 2. Hypotheses (Logic)
-- **Property-Based**: Name after the predicate. 
-  - `even n` → `Heven` or `H_even`.
-  - `is_some x` → `H_some`.
-- **Relational**: 
+- **Property-Based**: Name after the predicate (e.g., `even n` → `Heven`).
+- **Relational**:
   - `n < m` → `Hlt` or `H_nm_lt`.
   - `n = m` → `Heq` or `H_nm_eq`.
-  - The negated relational should use `Hnlt` or `Hneq`. 
+  - Negations use `n` (e.g., `Hnlt`, `Hneq`).
 - **Logical Connectives (Intro Patterns)**:
-  - Conjunctive (`A /\ B`): Use `intros [HA HB].`
-  - Disjunctive (`A \/ B`): Use `intros [HA | HB].`
-  - Existential (`exists x, P x`): Use `intros [x Hx].`
-- **Implications**: `A -> B` → `H_AB` or `H_implies` with a nice name for `A` and `B`. 
+  - Conjunctive (`A /\ B`): `intros [HA HB].`
+  - Disjunctive (`A \/ B`): `intros [HA | HB].`
+  - Existential (`exists x, P x`): `intros [x Hx].`
+- **Implications**: `A -> B` → `H_AB` or `H_implies`.
 
 ### 3. Proof Context
-- **Inductive Hypotheses**: ALWAYS `IH` + the variable name (e.g., `IHn`, `IHl`).
-- **Inversion Results**: Immediately use `subst` or name the results `Hinv`, `Heq_inv`.
+- **Inductive Hypotheses**: ALWAYS `IH` + variable name (e.g., `IHn`, `IHl`).
+- **Inversion Results**: Immediately use `subst` or name results `Hinv`, `Heq_inv`.
 - **Contradictions**: `Hc`, `Hcontra`, or `Hfalse`.
-- **Assert**: Always name `assert`. 
+- **Assert**: Always name `assert (H: P)`.
 
 ## Forbidden Actions
 - **NO BARE TACTICS**: Never use `intros.`, `destruct n.`, or `inversion H.` without explicit names or `as` patterns.
-- **NO SHADOWING**: Before naming a hypothesis, check the current context. Do not use a name that already exists.
-- **NO ANONYMOUS BULLETS**: Always use bullets (`-`, `+`, `*`, `{ }`) to guard subgoals after tactics that generate multiple goals (like `induction` or `split`).
+- **NO SHADOWING**: Do not reuse names existing in the current context.
+- **NO ANONYMOUS BULLETS**: Always use bullets (`-`, `+`, `*`, `{ }`) to guard subgoals after tactics like `induction` or `split`.
 
 ## Workflow Example
 **Goal**: `forall n m : nat, n = m -> m = n`
