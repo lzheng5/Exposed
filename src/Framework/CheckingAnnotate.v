@@ -1562,4 +1562,15 @@ Section Top.
     eapply top; eauto.
   Qed.
 
+  Lemma trans_correct_top_approx W1 W2 e1 e2 :
+    leq W1 W2 ->
+    trans_correct_top W1 e1 e2 ->
+    trans_correct_top W2 e1 e2.
+  Proof.
+    unfold trans_correct_top.
+    intros HW HT.
+    destruct HT as [e2' HT'].
+    split; auto; intros.
+  Abort.
+
 End Top.
