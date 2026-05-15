@@ -325,7 +325,7 @@ Section Checking.
         AT.bstep_fuel ex ρ2 e2 j2 r2 /\
         R' P (i - j1) r1 r2.
 
-  Definition web_map_inv ex ρ e :=
+  Definition well_annotated ex ρ e :=
     forall i r,
       AS.bstep_fuel ρ e i r ->
       cbstep_fuel ex ρ e i r.
@@ -355,7 +355,7 @@ Section Checking.
                   Forall2 (V (i0 - (i0 - j))) vs1 vs2 ->
                   set_lists xs1 vs1 (M.set f1 (AS.Tag l1 (AS.Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
                   set_lists xs2 vs2 (M.set f2 (AT.Tag w2 (AT.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
-                  web_map_inv (exposedb w2) ρ3 e1 ->
+                  well_annotated (exposedb w2) ρ3 e1 ->
                   E' V (exposedb w2) (i0 - (i0 - j)) ρ3 e1 ρ4 e2
             end
 
@@ -699,7 +699,7 @@ Section Checking.
   (* Compatibility Lemmas *)
   Definition trans_correct Γ e1 e2 :=
     forall ex i ρ1 ρ2,
-      web_map_inv ex ρ1 e1 ->
+      well_annotated ex ρ1 e1 ->
       G i Γ ρ1 (AT.occurs_free e2) ρ2 ->
       E ex i ρ1 e1 ρ2 e2.
 
@@ -707,7 +707,7 @@ Section Checking.
     (x \in Γ) ->
     trans_correct Γ (AS.Eret x) (AT.Eret x).
   Proof.
-    unfold trans_correct, web_map_inv, E, E', R, R', Ensembles.Included, Ensembles.In.
+    unfold trans_correct, well_annotated, E, E', R, R', Ensembles.Included, Ensembles.In.
     intros; simpl.
     assert (Hcbstep : cbstep_fuel ex ρ1 (AS.Eret x) j1 r1) by (eapply H0; eauto; try lia).
     inv H3.
@@ -758,14 +758,14 @@ Section Checking.
     unfold trans_correct, E, E'.
     intros HWl He Hk.
     intros.
-    unfold web_map_inv in H.
+    unfold well_annotated in H.
     assert (Hcbstep : cbstep_fuel ex ρ1 (AS.Efun f l xs e k) j1 r1) by (eapply H; eauto; lia).
     inv H2.
     - exists 0, A1.OOT; split; simpl; eauto.
     - inv Hcbstep; inv H3.
       inv H4; invc.
       edestruct (Hk ex (i - 1) (M.set f (AS.Tag l (AS.Vfun f ρ1 xs e)) ρ1) (M.set f (AT.Tag w0 (AT.Vfun f ρ2 xs e')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
-      + unfold web_map_inv.
+      + unfold well_annotated.
         intros.
         assert (Hcbstep_k : cbstep_fuel ex ρ1 (AS.Efun f l xs e k) (S i0) r).
         {
@@ -798,7 +798,7 @@ Section Checking.
     (FromList xs \subset Γ) ->
     trans_correct Γ (AS.Eapp f l xs) (AT.Eapp f w xs).
   Proof.
-    unfold trans_correct, web_map_inv, E, E'.
+    unfold trans_correct, well_annotated, E, E'.
     intros HW Hf Hxs.
     intros; simpl.
 
@@ -837,7 +837,7 @@ Section Checking.
         eapply V_exposed_Forall; eauto.
         apply V_mono_Forall with (S i); auto; lia.
 
-        unfold web_map_inv; intros.
+        unfold well_annotated; intros.
         assert (Hcbstep_e : cbstep_fuel ex ρ1 (AS.Eapp f l xs) (S i0) r).
         {
           eapply H; eauto; try lia.
@@ -875,7 +875,7 @@ Section Checking.
     trans_correct (x |: Γ) k k' ->
     trans_correct Γ (AS.Eletapp x f l xs k) (AT.Eletapp x f w xs k').
   Proof.
-    unfold trans_correct, web_map_inv, E, E'.
+    unfold trans_correct, well_annotated, E, E'.
     intros HWl Hf Hxs Hk.
     intros; simpl.
 
@@ -920,7 +920,7 @@ Section Checking.
         eapply V_exposed_Forall; eauto.
         apply V_mono_Forall with (S i); auto; lia.
 
-        unfold web_map_inv; intros.
+        unfold well_annotated; intros.
         destruct r.
         - assert (Hcbstep_e : cbstep_fuel ex ρ1 (AS.Eletapp x f l xs k) (S i0) AS.OOT).
           {
@@ -1020,7 +1020,7 @@ Section Checking.
       edestruct (Hk ex i (M.set x (AS.Tag l (AS.Vconstr t vs0)) ρ1)
                       (M.set x (AT.Tag w0 (AT.Vconstr t vs')) ρ2))
         with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
-      + unfold web_map_inv in *.
+      + unfold well_annotated in *.
         intros.
         assert (Hcbstep : cbstep_fuel ex ρ1 (AS.Econstr x l t xs k) (S i0) r).
         {
@@ -1088,7 +1088,7 @@ Section Checking.
 
       edestruct (Hk ex i (M.set x v0 ρ1) (M.set x v2' ρ2))
         with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
-      + unfold web_map_inv in *; intros.
+      + unfold well_annotated in *; intros.
         assert (Hcbstep : cbstep_fuel ex ρ1 (AS.Eproj x l n y k) (S i0) r) by (eapply H; eauto).
         inv Hcbstep.
         inv H4; invc; eauto.
@@ -1156,7 +1156,7 @@ Section Checking.
       + (* head tag matches *)
         edestruct (He ex (S i) ρ1 ρ2)
           with (j1 := c) (r1 := r1) as [j2 [r2 [He2 Rr]]]; eauto; try lia.
-        * unfold web_map_inv in *; intros.
+        * unfold well_annotated in *; intros.
 
           assert (Hcbstep : cbstep_fuel ex ρ1 (AS.Ecase x l ((c0, e1) :: cl)) (S i0) r) by (eapply H; eauto).
           inv Hcbstep.
@@ -1181,7 +1181,7 @@ Section Checking.
         inv H11; try contradiction.
         edestruct (Hcl ex (S i) ρ1 ρ2)
           with (j1 := S c) (r1 := r1) as [j2 [r2 [Hcl2 Rr]]]; eauto; try lia.
-        * unfold web_map_inv in *; intros.
+        * unfold well_annotated in *; intros.
           inv H2; auto.
           inv H3; invc.
           assert (Hcbstep : cbstep_fuel ex ρ1 (AS.Ecase x l ((t, e) :: cl)) (S c1) r).
@@ -1344,12 +1344,12 @@ Section Approx.
         * apply -> Hf_iff; auto.
   Qed.
 
-  Lemma web_map_inv_approx W1 W2 ex ρ e:
+  Lemma well_annotated_approx W1 W2 ex ρ e:
     leq W1 W2 ->
-    web_map_inv W1 ex ρ e ->
-    web_map_inv W2 ex ρ e.
+    well_annotated W1 ex ρ e ->
+    well_annotated W2 ex ρ e.
   Proof.
-    unfold web_map_inv.
+    unfold well_annotated.
     intros.
     eapply H0 in H1; eauto.
     eapply cbstep_fuel_approx; eauto.
@@ -1478,7 +1478,7 @@ Section Top.
   Definition trans_correct_top W etop etop' :=
     AT.occurs_free etop' \subset AS.occurs_free etop /\
     forall i ρ1 ρ2,
-      web_map_inv W true ρ1 etop ->
+      well_annotated W true ρ1 etop ->
       G_top W i (AS.occurs_free etop) ρ1 (AT.occurs_free etop') ρ2 ->
       E W true i ρ1 etop ρ2 etop'.
 
