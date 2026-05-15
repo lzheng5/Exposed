@@ -31,7 +31,7 @@ Section Checking.
     | AS.Res v => to_exposed v
     end.
 
-  (* `W` is a valid perfect analysis result with respect to the checking big-step semantics *)
+  (* `W` is a valid analysis result with respect to the checking big-step semantics *)
   Inductive cbstep (ex : bool) (ρ : AS.env) : AS.exp -> fuel -> AS.res -> Prop :=
   | Cbstep_ret :
     forall {x l w v},
