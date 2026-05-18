@@ -413,6 +413,166 @@ Section Approx.
     intros; eapply to_exposed_leq; eauto.
   Qed.
 
+  Lemma to_exposed_res_leq W1 W2 r:
+    annotate_info_inv W1 ->
+    leq W1 W2 ->
+    to_exposed_res W1 r ->
+    to_exposed_res W2 r.
+  Proof.
+    intros.
+    destruct r; auto; simpl in *.
+    eapply to_exposed_leq; eauto.
+  Qed.
+
+  Lemma interact_with_to_exposed_leq W1 W2 (f_map : web -> web) w v:
+    (forall l w', (fst W1) ! l = Some w' -> (fst W2) ! l = Some (f_map w')) ->
+    (forall w' im,
+        (snd W1) ! w' = Some im ->
+        if exposedb (f_map w')
+        then (snd W2) ! (f_map w') = None /\
+               (forall w'', w'' \in im -> f_map w'' \in Exposed)
+        else exists im',
+            (snd W2) ! (f_map w') = Some im' /\
+              (forall w'', w'' \in im -> f_map w'' \in im')) ->
+    f_map w \in Exposed ->
+    interact_with W1 w v ->
+    to_exposed W2 v.
+  Proof.
+    intros Hfst Hsnd Hfw Hiv.
+    destruct v as [lv vv].
+    destruct Hiv as [wv [imv [Hlv [Hw_im Hwv_in]]]].
+    specialize (Hsnd w imv Hw_im).
+    destruct (exposed_reflect (f_map w)); [| contradiction].
+    destruct Hsnd as [_ Hexposed].
+    exists (f_map wv); split; [apply Hfst; exact Hlv | apply Hexposed; exact Hwv_in].
+  Qed.
+
+  Lemma interact_with_to_exposed_leq_Forall W1 W2 (f_map : web -> web) w vs:
+    (forall l w', (fst W1) ! l = Some w' -> (fst W2) ! l = Some (f_map w')) ->
+    (forall w' im,
+        (snd W1) ! w' = Some im ->
+        if exposedb (f_map w')
+        then (snd W2) ! (f_map w') = None /\
+               (forall w'', w'' \in im -> f_map w'' \in Exposed)
+        else exists im',
+            (snd W2) ! (f_map w') = Some im' /\
+              (forall w'', w'' \in im -> f_map w'' \in im')) ->
+    f_map w \in Exposed ->
+    Forall (interact_with W1 w) vs ->
+    Forall (to_exposed W2) vs.
+  Proof.
+    intros Hfst Hsnd Hfw HF.
+    eapply Forall_impl; [| exact HF].
+    intros v Hiv.
+    eapply interact_with_to_exposed_leq; eauto.
+  Qed.
+
+  Lemma interact_with_to_exposed_res_leq W1 W2 (f_map : web -> web) w r:
+    (forall l w', (fst W1) ! l = Some w' -> (fst W2) ! l = Some (f_map w')) ->
+    (forall w' im,
+        (snd W1) ! w' = Some im ->
+        if exposedb (f_map w')
+        then (snd W2) ! (f_map w') = None /\
+               (forall w'', w'' \in im -> f_map w'' \in Exposed)
+        else exists im',
+            (snd W2) ! (f_map w') = Some im' /\
+              (forall w'', w'' \in im -> f_map w'' \in im')) ->
+    f_map w \in Exposed ->
+    interact_with_res W1 w r ->
+    to_exposed_res W2 r.
+  Proof.
+    intros Hfst Hsnd Hfw Hir.
+    destruct r; simpl in *; [exact I |].
+    eapply interact_with_to_exposed_leq; eauto.
+  Qed.
+
+  Lemma interact_with_leq W1 W2 (f_map : web -> web) w v:
+    (forall l w', (fst W1) ! l = Some w' -> (fst W2) ! l = Some (f_map w')) ->
+    (forall w' im,
+        (snd W1) ! w' = Some im ->
+        if exposedb (f_map w')
+        then (snd W2) ! (f_map w') = None /\
+               (forall w'', w'' \in im -> f_map w'' \in Exposed)
+        else exists im',
+            (snd W2) ! (f_map w') = Some im' /\
+              (forall w'', w'' \in im -> f_map w'' \in im')) ->
+    ~ f_map w \in Exposed ->
+    interact_with W1 w v ->
+    interact_with W2 (f_map w) v.
+  Proof.
+    intros Hfst Hsnd Hnfw Hiv.
+    destruct v as [lv vv].
+    destruct Hiv as [wv [imv [Hlv [Hw_im Hwv_in]]]].
+    specialize (Hsnd w imv Hw_im).
+    destruct (exposed_reflect (f_map w)); [contradiction |].
+    destruct Hsnd as [im' [Him' Himf]].
+    exists (f_map wv), im'.
+    split; [apply Hfst; exact Hlv | split; [exact Him' | apply Himf; exact Hwv_in]].
+  Qed.
+
+  Lemma interact_with_leq_Forall W1 W2 (f_map : web -> web) w vs:
+    (forall l w', (fst W1) ! l = Some w' -> (fst W2) ! l = Some (f_map w')) ->
+    (forall w' im,
+        (snd W1) ! w' = Some im ->
+        if exposedb (f_map w')
+        then (snd W2) ! (f_map w') = None /\
+               (forall w'', w'' \in im -> f_map w'' \in Exposed)
+        else exists im',
+            (snd W2) ! (f_map w') = Some im' /\
+              (forall w'', w'' \in im -> f_map w'' \in im')) ->
+    ~ f_map w \in Exposed ->
+    Forall (interact_with W1 w) vs ->
+    Forall (interact_with W2 (f_map w)) vs.
+  Proof.
+    intros Hfst Hsnd Hnfw HF.
+    eapply Forall_impl; [| exact HF].
+    intros v Hiv.
+    eapply interact_with_leq; eauto.
+  Qed.
+
+  Lemma interact_with_res_leq W1 W2 (f_map : web -> web) w r:
+    (forall l w', (fst W1) ! l = Some w' -> (fst W2) ! l = Some (f_map w')) ->
+    (forall w' im,
+        (snd W1) ! w' = Some im ->
+        if exposedb (f_map w')
+        then (snd W2) ! (f_map w') = None /\
+               (forall w'', w'' \in im -> f_map w'' \in Exposed)
+        else exists im',
+            (snd W2) ! (f_map w') = Some im' /\
+              (forall w'', w'' \in im -> f_map w'' \in im')) ->
+    ~ f_map w \in Exposed ->
+    interact_with_res W1 w r ->
+    interact_with_res W2 (f_map w) r.
+  Proof.
+    intros Hfst Hsnd Hnfw Hir.
+    destruct r; simpl in *; [exact I |].
+    eapply interact_with_leq; eauto.
+  Qed.
+
+  Lemma cbstep_to_exposed_res W ex ρ e c r :
+    cbstep W ex ρ e c r ->
+    to_exposed_res W r ->
+    cbstep W true ρ e c r.
+  Proof.
+    intros Hstep.
+    induction Hstep using cbstep_ind' with
+      (P  := fun ex ρ e c r =>
+               to_exposed_res W r -> cbstep W true ρ e c r)
+      (P0 := fun ex ρ e c r =>
+               to_exposed_res W r -> cbstep_fuel W true ρ e c r);
+      intros; econstructor; eauto.
+  Qed.
+
+  Lemma cbstep_fuel_to_exposed_res W ex ρ e c r :
+    cbstep_fuel W ex ρ e c r ->
+    to_exposed_res W r ->
+    cbstep_fuel W true ρ e c r.
+  Proof.
+    intros Hfuel Hto.
+    inversion Hfuel; subst; econstructor; eauto.
+    eapply cbstep_to_exposed_res; eauto.
+  Qed.
+
   Lemma cbstep_approx W1 W2 ex ρ e i r :
     annotate_info_inv W1 ->
     leq W1 W2 ->
@@ -430,90 +590,159 @@ Section Approx.
                forall W2,
                  leq W1 W2 ->
                  cbstep_fuel W2 ex ρ e i r); intros.
-    - unfold leq in H2.
-      admit.
-    - admit.
-    - (* Cbstep_app case
-         H0  : ρ ! f = Some (AS.Tag l' (AS.Vfun f' ρ' xs' e))
-         H1  : get_list xs ρ = Some vs
-         H2  : set_lists xs' vs ... = Some ρ''
-         H3  : (fst W1) ! l = Some w
-         H4  : (fst W1) ! l' = Some w
-         H5  : if exposedb w then [to_exposed W1 conds] else [interact_with W1 w conds]
-         H6  : cbstep_fuel W1 (exposedb w) ρ'' e c r
-         IHcbstep : ∀ W2, leq W1 W2 → cbstep_fuel W2 (exposedb w) ρ'' e c r
-         W2  : annotate_info
-         H7  : leq W1 W2 *)
+    - (* Cbstep_ret *)
+      destruct H2 as [f_map [_ [Hfst _]]].
+      eapply Cbstep_ret; [exact H0 | apply Hfst; exact H1].
+    - (* Cbstep_fun *)
+      pose proof H2 as Hleq.
+      destruct H2 as [f_map [_ [Hfst _]]].
+      eapply Cbstep_fun; [apply Hfst; exact H0 | apply IHcbstep; exact Hleq].
+    - (* Cbstep_app *)
       pose proof H7 as Hleq.
       destruct H7 as [f_map [Hexp [Hfst [Hsnd Hsurj]]]].
-      eapply Cbstep_app.
-      + exact H0.
-      + exact H1.
-      + exact H2.
-      + apply Hfst; exact H3.     (* (fst W2) ! l  = Some (f_map w) *)
-      + apply Hfst; exact H4.     (* (fst W2) ! l' = Some (f_map w) *)
-      + (* if exposedb (f_map w) then [to_exposed W2 conds] else [interact_with W2 (f_map w) conds] *)
-        destruct (exposed_reflect (f_map w)) as [Hfw | Hnfw].
-        * (* f_map w ∈ Exposed *)
-          split.
-          { (* Forall (to_exposed W2) vs *)
-            destruct (exposed_reflect w) as [Hw | Hnw].
-            - (* w ∈ Exposed: H5 then-branch gives Forall (to_exposed W1) vs *)
-              destruct H5 as [Hfal _].
-              eapply to_exposed_leq_Forall; eauto.
-            - (* w ∉ Exposed, f_map w ∈ Exposed: H5 else-branch gives interact_with W1 w *)
-              destruct H5 as [Hfal _].
-              eapply Forall_impl; [| exact Hfal].
-              intros v Hiv. destruct v. simpl in *.
-              destruct Hiv as [wv [imv [Hlv [Hw_im Hwv_in]]]].
-              specialize (Hsnd w imv Hw_im).
-              destruct (exposed_reflect (f_map w)); [| contradiction].
-              destruct Hsnd as [_ Hexposed].
-              exists (f_map wv); split; [apply Hfst; exact Hlv | apply Hexposed; exact Hwv_in]. }
-          { (* to_exposed_res W2 r *)
-            destruct r; simpl; [exact I |].
-            destruct (exposed_reflect w) as [Hw | Hnw].
-            - destruct H5 as [_ Hres]. simpl in Hres.
-              eapply to_exposed_leq; eauto.
-            - destruct H5 as [_ Hres]. simpl in Hres.
-              destruct w0.
-              simpl in Hres.
-              destruct Hres as [wv [imv [Hlv [Hw_im Hwv_in]]]].
-              specialize (Hsnd w imv Hw_im).
-              destruct (exposed_reflect (f_map w)); [| contradiction].
-              destruct Hsnd as [_ Hexposed].
-              exists (f_map wv); split; [apply Hfst; exact Hlv | apply Hexposed; exact Hwv_in]. }
-        * (* f_map w ∉ Exposed → w ∉ Exposed (contrapositive of Hexp) *)
-          assert (Hnw : ~ w \in Exposed) by (intro Hw; apply Hnfw; apply Hexp; exact Hw).
+      eapply Cbstep_app; eauto.
+      + destruct (exposed_reflect (f_map w)) as [Hfw | Hnfw].
+        * split.
+          { destruct (exposed_reflect w) as [Hw | Hnw].
+            - destruct H5 as [Hfal _]. eapply to_exposed_leq_Forall; eauto.
+            - destruct H5 as [Hfal _]. eapply interact_with_to_exposed_leq_Forall; eauto. }
+          { destruct (exposed_reflect w) as [Hw | Hnw].
+            - destruct H5 as [_ Hres]. simpl in Hres. eapply to_exposed_res_leq; eauto.
+            - destruct H5 as [_ Hres]. eapply interact_with_to_exposed_res_leq; eauto. }
+        * assert (Hnw : ~ w \in Exposed) by (intro Hw; apply Hnfw; apply Hexp; exact Hw).
           destruct (exposed_reflect w) as [Hw | _]; [contradiction |].
           destruct H5 as [Hfal Hiwres].
           split.
-          { eapply Forall_impl; [| exact Hfal].
-            intros v Hiv. destruct v. simpl in *.
-            destruct Hiv as [wv [imv [Hlv [Hw_im Hwv_in]]]].
-            specialize (Hsnd w imv Hw_im).
-            destruct (exposed_reflect (f_map w)); [contradiction |].
-            destruct Hsnd as [im' [Him' Himf]].
-            exists (f_map wv), im'.
-            split; [apply Hfst; exact Hlv | split; [exact Him' | apply Himf; exact Hwv_in]]. }
-          { destruct r; simpl; [exact I |].
-            destruct w0; simpl in Hiwres.
-            destruct Hiwres as [wv [imv [Hlv [Hw_im Hwv_in]]]].
-            specialize (Hsnd w imv Hw_im).
-            destruct (exposed_reflect (f_map w)); [contradiction |].
-            destruct Hsnd as [im' [Him' Himf]].
-            exists (f_map wv), im'.
-            split; [apply Hfst; exact Hlv | split; [exact Him' | apply Himf; exact Hwv_in]]. }
-      + (* *** THE ISSUE ***
-           IHcbstep : ∀ W2, leq W1 W2 → cbstep_fuel W2 (exposedb w)        ρ'' e c r
-           Goal     :                    cbstep_fuel W2 (exposedb (f_map w)) ρ'' e c r
+          { eapply interact_with_leq_Forall; eauto. }
+          { eapply interact_with_res_leq; eauto. }
+      + specialize (IHcbstep _ Hleq).
+        destruct (exposed_reflect w) as [Hw | Hnw];
+          destruct (exposed_reflect (f_map w)) as [Hfw | Hnfw]; eauto.
+        * exfalso. apply Hnfw. apply Hexp. exact Hw.
+        * eapply cbstep_fuel_to_exposed_res; eauto.
+          destruct H5 as [_ Hres].
+          eapply interact_with_to_exposed_res_leq; eauto.
+    - (* Cbstep_letapp_Res *)
+      pose proof H8 as Hleq.
+      destruct H8 as [f_map [Hexp [Hfst [Hsnd Hsurj]]]].
+      eapply Cbstep_letapp_Res with (w := (f_map w)); eauto.
+      + (* cbstep_fuel (exposedb (f_map w)) ρ'' e c (Res v) *)
+        specialize (IHcbstep _ Hleq).
+        destruct (exposed_reflect w) as [Hw | Hnw];
+          destruct (exposed_reflect (f_map w)) as [Hfw | Hnfw]; eauto.
+        * exfalso. apply Hnfw. apply Hexp. exact Hw.
+        * eapply cbstep_fuel_to_exposed_res; eauto.
+          destruct H7 as [_ Hv]. simpl.
+          eapply interact_with_to_exposed_leq; eauto.
+      + destruct (exposed_reflect (f_map w)) as [Hfw | Hnfw].
+        * split.
+          { destruct (exposed_reflect w) as [Hw | Hnw].
+            - destruct H7 as [Hfal _]. eapply to_exposed_leq_Forall; eauto.
+            - destruct H7 as [Hfal _]. eapply interact_with_to_exposed_leq_Forall; eauto. }
+          { destruct (exposed_reflect w) as [Hw | Hnw].
+            - destruct H7 as [_ Hv]. eapply to_exposed_leq; eauto.
+            - destruct H7 as [_ Hv]. eapply interact_with_to_exposed_leq; eauto. }
+        * assert (Hnw : ~ w \in Exposed) by (intro Hw; apply Hnfw; apply Hexp; exact Hw).
+          destruct (exposed_reflect w) as [Hw | _]; [contradiction |].
+          destruct H7 as [Hfal Hv].
+          split.
+          { eapply interact_with_leq_Forall; eauto. }
+          { eapply interact_with_leq; eauto. }
+    - (* Cbstep_letapp_OOT *)
+      pose proof H7 as Hleq.
+      destruct H7 as [f_map [Hexp [Hfst [Hsnd Hsurj]]]].
+      eapply Cbstep_letapp_OOT with (w := (f_map w)); eauto.
+      + (* cbstep_fuel (exposedb (f_map w)) ρ'' e c OOT *)
+        specialize (IHcbstep _ Hleq).
+        destruct (exposed_reflect w) as [Hw | Hnw];
+          destruct (exposed_reflect (f_map w)) as [Hfw | Hnfw]; eauto.
+        * exfalso. apply Hnfw. apply Hexp. exact Hw.
+        * eapply cbstep_fuel_to_exposed_res; eauto. exact I.
+      + destruct (exposed_reflect (f_map w)) as [Hfw | Hnfw].
+        * destruct (exposed_reflect w) as [Hw | Hnw].
+          { eapply to_exposed_leq_Forall; eauto. }
+          { eapply interact_with_to_exposed_leq_Forall; eauto. }
+        * assert (Hnw : ~ w \in Exposed) by (intro Hw; apply Hnfw; apply Hexp; exact Hw).
+          destruct (exposed_reflect w) as [Hw | _]; [contradiction |].
+          eapply interact_with_leq_Forall; eauto.
+    - (* Cbstep_constr *)
+      pose proof H4 as Hleq.
+      destruct H4 as [f_map [Hexp [Hfst [Hsnd Hsurj]]]].
+      eapply Cbstep_constr; eauto.
+      + destruct (exposed_reflect (f_map w)) as [Hfw | Hnfw].
+        * destruct (exposed_reflect w) as [Hw | Hnw].
+          { eapply to_exposed_leq_Forall; eauto. }
+          { eapply interact_with_to_exposed_leq_Forall; eauto. }
+        * assert (Hnw : ~ w \in Exposed) by (intro Hw; apply Hnfw; apply Hexp; exact Hw).
+          destruct (exposed_reflect w) as [Hw | _]; [contradiction |].
+          eapply interact_with_leq_Forall; eauto.
+    - (* Cbstep_proj *)
+      pose proof H5 as Hleq.
+      destruct H5 as [f_map [_ [Hfst _]]].
+      eapply Cbstep_proj;
+        [exact H0 | exact H1 | apply Hfst; exact H2 | apply Hfst; exact H3
+        | apply IHcbstep; exact Hleq].
+    - (* Cbstep_case *)
+      pose proof H5 as Hleq.
+      destruct H5 as [f_map [_ [Hfst _]]].
+      eapply Cbstep_case;
+        [exact H0 | exact H1 | apply Hfst; exact H2 | apply Hfst; exact H3
+        | apply IHcbstep; exact Hleq].
+    - (* CbstepF_OOT *)
+      constructor.
+    - (* CbstepF_Step *)
+      pose proof H2 as Hleq.
+      destruct H2 as [f_map [_ [Hfst _]]].
+      eapply CbstepF_Step; [apply IHcbstep; exact Hleq |].
+      destruct ex; [| exact I].
+      eapply to_exposed_res_leq; eauto.
+  Qed.
 
-           leq allows a non-exposed web in W1 (exposedb w = false) to map to an
-           exposed web in W2 (exposedb (f_map w) = true).  In that case the two
-           ex flags differ and IHcbstep cannot be applied directly.
-           The P0 IH must be generalized over ex to cross this boundary. *)
-        admit.
-  Admitted.
+  Lemma cbstep_fuel_approx W1 W2 ex ρ e i r :
+    annotate_info_inv W1 ->
+    leq W1 W2 ->
+    cbstep_fuel W1 ex ρ e i r ->
+    cbstep_fuel W2 ex ρ e i r.
+  Proof.
+    intros Hinv Hleq Hfuel.
+    inversion Hfuel; subst.
+    - constructor.
+    - eapply CbstepF_Step.
+      + eapply cbstep_approx; eauto.
+      + destruct ex; [| exact I].
+        eapply to_exposed_res_leq; eauto.
+  Qed.
 
+  Definition W_trivial (W : annotate_info) : Prop :=
+    match W with
+    | (wm, im) => (forall l, wm ! l = Some w0) /\ im = M.empty _
+    end.
+
+  Lemma W_trivial_annotate_info_inv WT :
+    W_trivial WT ->
+    annotate_info_inv WT.
+  Proof.
+    destruct WT as [wm im].
+    intros [_ Him]. simpl.
+    intros w [v Hv].
+    rewrite Him, M.gempty in Hv. discriminate.
+  Qed.
+
+  Lemma W_trivial_leq_top WT :
+    W_trivial WT ->
+    forall W, leq W WT.
+  Proof.
+    destruct WT as [wm im].
+    intros [Hwm Him] W.
+    exists (fun _ => w0).
+    split; [intros w _; exact w0_exposed |].
+    split; [intros l w' Hl; simpl; rewrite Hwm; reflexivity |].
+    split.
+    - intros w' im' Hget. simpl. rewrite w0_exposedb.
+      split.
+      + rewrite Him. apply M.gempty.
+      + intros w'' _. exact w0_exposed.
+    - intros w' [v Hv]. simpl in Hv. rewrite Him, M.gempty in Hv. discriminate.
+  Qed.
 
 End Approx.
