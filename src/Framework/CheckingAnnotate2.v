@@ -19,14 +19,14 @@ Definition web_map : Type := M.t web.
 (* Maps internal webs, `w`, to webs that interact with. `w` *)
 Definition internal_web_map : Type := M.t webs.
 
-Definition annotate_info : Type := web_map * internal_web_map.
+Definition analysis_info : Type := web_map * internal_web_map.
 
-(* Invariants for [annotate_info] *)
+(* Invariants for [analysis_info] *)
 (* 1. Dom of internal_web_map only contains non-exposed web ids (encoded) *)
 (* 2. Dom of internal_web_map is isomorphic to (Im of web_map \ Exposed) *)
 (* 3. Each set in (Im of internal_web_map) is a subset of (Im of web_map U Exposed) *)
 
-Definition annotate_info_inv (ainfo : annotate_info) : Prop :=
+Definition analysis_info_inv (ainfo : analysis_info) : Prop :=
   match ainfo with
   | (wm, im) =>
       (forall w, (w \in Dom_map im) -> ~ (w \in Exposed))
@@ -34,7 +34,7 @@ Definition annotate_info_inv (ainfo : annotate_info) : Prop :=
 
 Section Checking.
 
-  Variable W : annotate_info.
+  Variable W : analysis_info.
 
   Definition to_exposed (tv : AS.wval) : Prop :=
     match tv with
@@ -63,7 +63,7 @@ Section Checking.
     | AS.Res v => interact_with w v
     end.
 
-  (* `W` is a valid analysis result with respect to the checking big-step semantics *)
+  (* `W` is valid with respect to the checking big-step semantics *)
   Inductive cbstep (ex : bool) (ρ : AS.env) : AS.exp -> fuel -> AS.res -> Prop :=
   | Cbstep_ret :
     forall {x l w v},
@@ -276,9 +276,9 @@ End Checking.
 
 Section Approx.
 
-  (* W1 \leq W2 iff W2 over-approximates W1 and annotate_info_inv are preserved *)
+  (* W1 \leq W2 iff W2 over-approximates W1 and analysis_info_inv are preserved *)
   (* We describe over-approximation via a web -> web mapping *)
-  Definition leq (W1 W2 : annotate_info) :=
+  Definition leq (W1 W2 : analysis_info) :=
     exists f : web -> web,
       (forall w, w \in Exposed -> f w \in Exposed) /\
       (forall l w, (fst W1) ! l = Some w -> (fst W2) ! l = Some (f w)) /\
@@ -299,7 +299,7 @@ Section Approx.
             w \in Dom_map (snd W1) /\ f w = w').
 
   Lemma leq_refl W :
-    annotate_info_inv W ->
+    analysis_info_inv W ->
     leq W W.
   Proof.
     destruct W as [wm im]. simpl. intros Hinv.
@@ -316,10 +316,10 @@ Section Approx.
       exists w'; split; [eexists; eauto | auto].
   Qed.
 
-  Lemma leq_preserves_annotate_info_inv W1 W2:
+  Lemma leq_preserves_analysis_info_inv W1 W2:
     leq W1 W2 ->
-    annotate_info_inv W1 ->
-    annotate_info_inv W2.
+    analysis_info_inv W1 ->
+    analysis_info_inv W2.
   Proof.
     destruct W1 as [wm1 im1]. destruct W2 as [wm2 im2]. simpl.
     intros [f [Hexp [Hfst [Hsnd Hsurj]]]] Hinv1.
@@ -390,7 +390,7 @@ Section Approx.
   Qed.
 
   Lemma to_exposed_leq W1 W2 v:
-    annotate_info_inv W1 ->
+    analysis_info_inv W1 ->
     leq W1 W2 ->
     to_exposed W1 v ->
     to_exposed W2 v.
@@ -403,7 +403,7 @@ Section Approx.
   Qed.
 
   Lemma to_exposed_leq_Forall W1 W2 vs:
-    annotate_info_inv W1 ->
+    analysis_info_inv W1 ->
     leq W1 W2 ->
     Forall (to_exposed W1) vs ->
     Forall (to_exposed W2) vs.
@@ -414,7 +414,7 @@ Section Approx.
   Qed.
 
   Lemma to_exposed_res_leq W1 W2 r:
-    annotate_info_inv W1 ->
+    analysis_info_inv W1 ->
     leq W1 W2 ->
     to_exposed_res W1 r ->
     to_exposed_res W2 r.
@@ -574,7 +574,7 @@ Section Approx.
   Qed.
 
   Lemma cbstep_approx W1 W2 ex ρ e i r :
-    annotate_info_inv W1 ->
+    analysis_info_inv W1 ->
     leq W1 W2 ->
     cbstep W1 ex ρ e i r ->
     cbstep W2 ex ρ e i r.
@@ -699,7 +699,7 @@ Section Approx.
   Qed.
 
   Lemma cbstep_fuel_approx W1 W2 ex ρ e i r :
-    annotate_info_inv W1 ->
+    analysis_info_inv W1 ->
     leq W1 W2 ->
     cbstep_fuel W1 ex ρ e i r ->
     cbstep_fuel W2 ex ρ e i r.
@@ -713,14 +713,14 @@ Section Approx.
         eapply to_exposed_res_leq; eauto.
   Qed.
 
-  Definition W_trivial (W : annotate_info) : Prop :=
+  Definition W_trivial (W : analysis_info) : Prop :=
     match W with
     | (wm, im) => (forall l, wm ! l = Some w0) /\ im = M.empty _
     end.
 
-  Lemma W_trivial_annotate_info_inv WT :
+  Lemma W_trivial_analysis_info_inv WT :
     W_trivial WT ->
-    annotate_info_inv WT.
+    analysis_info_inv WT.
   Proof.
     destruct WT as [wm im].
     intros [_ Him]. simpl.
