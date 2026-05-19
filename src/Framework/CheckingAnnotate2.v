@@ -869,16 +869,17 @@ Section Relation.
             match i with
             | 0 => True
             | S i0 =>
-                forall j W1 vs1 vs2 ρ3 ρ4,
+                forall j W1 w2' vs1 vs2 ρ3 ρ4,
                   j <= i0 ->
-                  leq W W1 -> (* Specify all overapproximation of `W` works for the function body *)
-                  (* REVISIT: vs1 and W1? Also r1 (result of applying e1)? *)
-                  (w2 \in Exposed -> Forall exposed vs2) ->
+                  leq W W1 ->
+
+                  (fst W1) ! l1 = Some w2' ->
+                  (w2' \in Exposed -> Forall exposed vs2) ->
                   Forall2 (V (i0 - (i0 - j)) W1) vs1 vs2 ->
                   set_lists xs1 vs1 (M.set f1 (AS.Tag l1 (AS.Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
-                  set_lists xs2 vs2 (M.set f2 (AT.Tag w2 (AT.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
-                  well_annotated (exposedb w2) W1 ρ3 e1 ->
-                  E' V (exposedb w2) (i0 - (i0 - j)) W1 ρ3 e1 ρ4 e2
+                  set_lists xs2 vs2 (M.set f2 (AT.Tag w2' (AT.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
+                  well_annotated (exposedb w2') W1 ρ3 e1 ->
+                  E' V (exposedb w2') (i0 - (i0 - j)) W1 ρ3 e1 ρ4 e2
             end
 
         | _, _ => False
@@ -932,10 +933,10 @@ Section Relation.
       + destruct HV as [Hlen HV]; subst.
         repeat split; auto; intros.
         destruct (exposed_reflect w).
-        * specialize (HV j0 W1 vs1 vs2 ρ3 ρ4).
+        * specialize (HV j0 W1 w2' vs1 vs2 ρ3 ρ4).
           rewrite normalize_step in *; try lia.
           eapply HV; eauto; lia.
-        * specialize (HV j0 W1 vs1 vs2 ρ3 ρ4).
+        * specialize (HV j0 W1 w2' vs1 vs2 ρ3 ρ4).
           rewrite normalize_step in *; try lia.
           eapply HV; eauto; lia.
       + destruct HV as [Heqc HV]; subst.
