@@ -743,3 +743,223 @@ Section Approx.
   Qed.
 
 End Approx.
+
+Section Trans.
+
+  Variable W : analysis_info.
+
+  (* Transformation Specification *)
+  Inductive trans (Γ : vars) : AS.exp -> AT.exp -> Prop :=
+  | Trans_ret :
+    forall x,
+      (x \in Γ) ->
+      trans Γ (AS.Eret x) (AT.Eret x)
+
+  | Trans_fun :
+    forall {f l w xs e k e' k'},
+      (fst W) ! l = Some w ->
+      trans (FromList xs :|: (f |: Γ)) e e' ->
+      trans (f |: Γ) k k' ->
+      trans Γ (AS.Efun f l xs e k) (AT.Efun f w xs e' k')
+
+  | Trans_app :
+    forall {f l w xs},
+      (fst W) ! l = Some w ->
+      (f \in Γ) ->
+      (FromList xs \subset Γ) ->
+      trans Γ (AS.Eapp f l xs) (AT.Eapp f w xs)
+
+  | Trans_letapp :
+    forall {x f l w xs k k'},
+      (fst W) ! l = Some w ->
+      (f \in Γ) ->
+      (FromList xs \subset Γ) ->
+      trans (x |: Γ) k k' ->
+      trans Γ (AS.Eletapp x f l xs k) (AT.Eletapp x f w xs k')
+
+  | Trans_constr :
+    forall {x l w t xs k k'},
+      (fst W) ! l = Some w ->
+      (FromList xs \subset Γ) ->
+      trans (x |: Γ) k k' ->
+      trans Γ (AS.Econstr x l t xs k) (AT.Econstr x w t xs k')
+
+  | Trans_proj :
+    forall {l w x y k k' n},
+      (fst W) ! l = Some w ->
+      (y \in Γ) ->
+      trans (x |: Γ) k k' ->
+      trans Γ (AS.Eproj x l n y k) (AT.Eproj x w n y k')
+
+  | Trans_case_nil :
+    forall {l w x},
+      (fst W) ! l = Some w ->
+      (x \in Γ) ->
+      trans Γ (AS.Ecase x l []) (AT.Ecase x w [])
+
+  | Trans_case_cons :
+    forall {x l w e e' t cl cl'},
+      (fst W) ! l = Some w ->
+      (x \in Γ) ->
+      trans Γ e e' ->
+      trans Γ (AS.Ecase x l cl) (AT.Ecase x w cl') ->
+      trans Γ (AS.Ecase x l ((t, e) :: cl)) (AT.Ecase x w ((t, e') :: cl')).
+
+  Hint Constructors trans : core.
+
+  Lemma trans_exp_inv {Γ e e'} :
+    trans Γ e e' ->
+    (AT.occurs_free e') \subset (AS.occurs_free e).
+  Proof.
+    unfold Ensembles.Included, Ensembles.In.
+    intros H.
+    induction H; simpl; intros; auto.
+    - inv H0; auto.
+    - inv H2; auto.
+    - inv H2; auto.
+    - inv H3; auto.
+    - inv H2; auto.
+    - inv H2; auto.
+    - inv H1; auto.
+    - inv H3; auto.
+  Qed.
+
+End Trans.
+
+Section Relation.
+
+  (* Cross-language Logical Relations *)
+  Definition R' (P : nat -> analysis_info -> AS.wval -> AT.wval -> Prop) (i : nat) (W : analysis_info) (r1 : AS.res) (r2 : AT.res) :=
+    match r1, r2 with
+    | AS.OOT, AT.OOT => True
+    | AS.Res v1, AT.Res v2 => P i W v1 v2
+    | _, _ => False
+    end.
+
+  Definition E' (P : nat -> analysis_info -> AS.wval -> AT.wval -> Prop) (ex : bool) (i : nat) (W : analysis_info) (ρ1 : AS.env) (e1 :AS.exp) (ρ2 : AT.env) (e2 : AT.exp) : Prop :=
+    forall j1 r1,
+      j1 <= i ->
+      AS.bstep_fuel ρ1 e1 j1 r1 ->
+      exists j2 r2,
+        AT.bstep_fuel ex ρ2 e2 j2 r2 /\
+        R' P (i - j1) W r1 r2.
+
+  (* An expression is well-annotated with respect to some analysis info, `W` *)
+  Definition well_annotated ex W ρ e :=
+    forall i r,
+      AS.bstep_fuel ρ e i r ->
+      cbstep_fuel W ex ρ e i r.
+
+  Fixpoint V (i : nat) (W : analysis_info) (wv1 : AS.wval) (wv2 : AT.wval) {struct i} : Prop :=
+    wf_val wv2 /\
+    match wv1, wv2 with
+    | AS.TAG _ l1 v1, AT.TAG _ w2 v2 =>
+        (fst W) ! l1 = Some w2 /\
+        (w2 \in Exposed -> exposed wv2) /\
+        match v1, v2 with
+        | AS.Vconstr c1 vs1, AT.Vconstr c2 vs2 =>
+            c1 = c2 /\
+            match i with
+            | 0 => length vs1 = length vs2
+            | S i0 => Forall2 (V i0 W) vs1 vs2
+            end
+
+        | AS.Vfun f1 ρ1 xs1 e1, AT.Vfun f2 ρ2 xs2 e2 =>
+            length xs1 = length xs2 /\
+            match i with
+            | 0 => True
+            | S i0 =>
+                forall j W1 vs1 vs2 ρ3 ρ4,
+                  j <= i0 ->
+                  leq W W1 -> (* Specify all overapproximation of `W` works for the function body *)
+                  (* REVISIT: vs1 and W1? Also r1 (result of applying e1)? *)
+                  (w2 \in Exposed -> Forall exposed vs2) ->
+                  Forall2 (V (i0 - (i0 - j)) W1) vs1 vs2 ->
+                  set_lists xs1 vs1 (M.set f1 (AS.Tag l1 (AS.Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
+                  set_lists xs2 vs2 (M.set f2 (AT.Tag w2 (AT.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
+                  well_annotated (exposedb w2) W1 ρ3 e1 ->
+                  E' V (exposedb w2) (i0 - (i0 - j)) W1 ρ3 e1 ρ4 e2
+            end
+
+        | _, _ => False
+        end
+    end.
+
+  Definition R := (R' V).
+
+  Definition E := (E' V).
+
+  (* Monotonicity Lemmas *)
+  Lemma V_mono_Forall_aux :
+    forall i j W (V : nat -> analysis_info -> AS.wval -> AT.wval -> Prop) vs1 vs2,
+      (forall k : nat,
+          k < S i ->
+          forall (j : nat) v1 v2, V k W v1 v2 -> j <= k -> V j W v1 v2) ->
+      Forall2 (V i W) vs1 vs2 ->
+      j <= i ->
+      Forall2 (V j W) vs1 vs2.
+  Proof.
+    intros.
+    revert vs2 H0.
+    induction vs1; intros; inv H0; auto.
+    rename l' into vs2.
+    constructor; auto.
+    eapply H; eauto; lia.
+  Qed.
+
+  Lemma V_mono i W :
+    forall {j v1 v2},
+      V i W v1 v2 ->
+      j <= i ->
+      V j W v1 v2.
+  Proof.
+    induction i using lt_wf_rec; intros.
+    destruct v1; destruct v2.
+    destruct i; simpl in H0;
+      destruct j; simpl; intros;
+      destruct H0 as [Hv1 [Hl [Hex HV]]]; subst.
+    - repeat (split; auto).
+    - inv H1.
+    - repeat (split; auto).
+      destruct v; destruct v0; try contradiction.
+      + destruct HV.
+        destruct (exposed_reflect w); fcrush.
+      + destruct HV as [Hc HV]; subst.
+        repeat split; auto.
+        eapply Forall2_length; eauto.
+    - repeat (split; auto).
+      destruct v; destruct v0; try contradiction.
+      + destruct HV as [Hlen HV]; subst.
+        repeat split; auto; intros.
+        destruct (exposed_reflect w).
+        * specialize (HV j0 W1 vs1 vs2 ρ3 ρ4).
+          rewrite normalize_step in *; try lia.
+          eapply HV; eauto; lia.
+        * specialize (HV j0 W1 vs1 vs2 ρ3 ρ4).
+          rewrite normalize_step in *; try lia.
+          eapply HV; eauto; lia.
+      + destruct HV as [Heqc HV]; subst.
+        repeat split; auto.
+        eapply V_mono_Forall_aux; eauto; lia.
+  Qed.
+
+  Lemma well_annotated_approx W1 W2 ex ρ e:
+    leq W1 W2 ->
+    well_annotated ex W1 ρ e ->
+    well_annotated ex W2 ρ e.
+  Proof.
+    unfold well_annotated.
+    intros.
+    eapply H0 in H1; eauto.
+    eapply cbstep_fuel_approx; eauto.
+  Qed.
+
+  Lemma V_mono_W i W :
+    forall {W1 v1 v2},
+      V i W v1 v2 ->
+      leq W W1 ->
+      exists v3, V i W1 v1 v3.
+  Proof.
+  Admitted.
+
+End Relation.

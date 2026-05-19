@@ -1430,6 +1430,45 @@ End Approx.
 Section Top.
 
   (* Top Level *)
+
+  Fixpoint V_top (i : nat) (wv1 : AS.wval) (wv2 : AT.wval) {struct i} : Prop :=
+    wf_val wv2 /\
+    exposed wv2 /\
+    match wv1, wv2 with
+    | AS.TAG _ l1 v1, AT.TAG _ w2 v2 =>
+        match v1, v2 with
+        | AS.Vconstr c1 vs1, AT.Vconstr c2 vs2 =>
+            c1 = c2 /\
+              match i with
+              | 0 => length vs1 = length vs2
+              | S i0 => Forall2 (V_top i0) vs1 vs2
+              end
+
+        | AS.Vfun f1 ρ1 xs1 e1, AT.Vfun f2 ρ2 xs2 e2 =>
+            (* note function arguments and result are always exposed regardless of whether a function is known or unknown *)
+            length xs1 = length xs2 /\
+              match i with
+              | 0 => True
+              | S i0 =>
+                  forall j vs1 vs2 ρ3 ρ4,
+                    j <= i0 ->
+                    Forall exposed vs2 ->
+                    Forall2 (V_top (i0 - (i0 - j))) vs1 vs2 ->
+                    set_lists xs1 vs1 (M.set f1 (AS.Tag l1 (AS.Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
+                    set_lists xs2 vs2 (M.set f2 (AT.Tag w2 (AT.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
+                    E' V_top true (i0 - (i0 - j)) ρ3 e1 ρ4 e2
+              end
+
+          | _, _ => False
+          end
+      end.
+
+  (* This doesn't work either due to the well_annotated for the exposed values in V *)
+  Lemma V_V_top i v1 v2:
+    V_top i v1 v2 <-> exists W, V W i v1 v2.
+  Proof.
+  Abort.
+
   Definition G_top W i Γ1 ρ1 Γ2 ρ2 :=
     wf_env ρ2 /\
     Γ2 \subset Γ1 /\
