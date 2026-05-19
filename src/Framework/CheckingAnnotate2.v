@@ -280,25 +280,27 @@ Section Approx.
 
   (* W1 \leq W2 iff W2 over-approximates W1 and analysis_info_inv are preserved *)
   (* We describe over-approximation via a web -> web mapping *)
+  Definition leq_with (f : web -> web) (W1 W2 : analysis_info) :=
+    (forall w, w \in Exposed -> f w \in Exposed) /\
+    (forall l w, (fst W1) ! l = Some w -> (fst W2) ! l = Some (f w)) /\
+    (* (snd W1) -> (snd W2) *)
+    (forall w im,
+        (snd W1) ! w = Some im ->
+        (if exposedb (f w)
+         then ((snd W2) ! (f w) = None /\
+               (forall w', (w' \in im) -> (f w' \in Exposed)))
+         else exists im',
+               (snd W2) ! (f w) = Some im' /\
+               (* im' ⊆ f(im) *)
+               (forall w', (w' \in im) -> f w' \in im'))) /\
+    (* (snd W1) <- (snd W2) *)
+    (forall w',
+        (w' \in Dom_map (snd W2)) ->
+        exists w,
+          w \in Dom_map (snd W1) /\ f w = w').
+
   Definition leq (W1 W2 : analysis_info) :=
-    exists f : web -> web,
-      (forall w, w \in Exposed -> f w \in Exposed) /\
-      (forall l w, (fst W1) ! l = Some w -> (fst W2) ! l = Some (f w)) /\
-      (* (snd W1) -> (snd W2) *)
-      (forall w im,
-          (snd W1) ! w = Some im ->
-          (if exposedb (f w)
-           then ((snd W2) ! (f w) = None /\
-                 (forall w', (w' \in im) -> (f w' \in Exposed)))
-           else exists im',
-                  (snd W2) ! (f w) = Some im' /\
-                  (* im' ⊆ f(im) *)
-                  (forall w', (w' \in im) -> f w' \in im'))) /\
-      (* (snd W1) <- (snd W2) *)
-      (forall w',
-          (w' \in Dom_map (snd W2)) ->
-          exists w,
-            w \in Dom_map (snd W1) /\ f w = w').
+    exists f : web -> web, leq_with f W1 W2.
 
   Lemma leq_refl W :
     analysis_info_inv W ->
@@ -826,6 +828,8 @@ Section Trans.
 
 End Trans.
 
+(*
+
 Section Relation.
 
   (* Cross-language Logical Relations *)
@@ -850,6 +854,43 @@ Section Relation.
       AS.bstep_fuel ρ e i r ->
       cbstep_fuel W ex ρ e i r.
 
+  Inductive relabel (f : web -> web) : AT.wval -> AT.wval -> Prop :=
+  | Relabel_TAG :
+    forall w v v',
+      relabel_val' f v v' ->
+      relabel f (AT.TAG _ w v) (AT.TAG _ (f w) v')
+
+  with relabel_val' (f : web -> web) : AT.val -> AT.val -> Prop :=
+  | Relabel_Vfun :
+    forall fn ρ ρ' xs e,
+      relabel_env f ρ ρ' ->
+      relabel_val' f (AT.Vfun fn ρ xs e) (AT.Vfun fn ρ' xs e)
+
+  | Relabel_Vconstr_nil :
+    forall c,
+      relabel_val' f (AT.Vconstr c []) (AT.Vconstr c [])
+
+  | Relabel_Vconstr_cons :
+    forall c v v' vs vs',
+      relabel f v v' ->
+      relabel_val' f (AT.Vconstr c vs) (AT.Vconstr c vs') ->
+      relabel_val' f (AT.Vconstr c (v :: vs)) (AT.Vconstr c (v' :: vs'))
+
+  with relabel_env (f : web -> web) : AT.env -> AT.env -> Prop :=
+  | Relabel_env :
+    forall ρ ρ',
+      (forall x v,  ρ  ! x = Some v  -> exists v', ρ' ! x = Some v' /\ relabel f v v') ->
+      (forall x v', ρ' ! x = Some v' -> exists v,  ρ  ! x = Some v  /\ relabel f v v') ->
+      relabel_env f ρ ρ'.
+
+  Hint Constructors relabel : core.
+  Hint Constructors relabel_val' : core.
+  Hint Constructors relabel_env : core.
+
+  Scheme relabel_mut := Induction for relabel Sort Prop
+  with relabel_val'_mut := Induction for relabel_val' Sort Prop
+  with relabel_env_mut := Induction for relabel_env Sort Prop.
+
   Fixpoint V (i : nat) (W : analysis_info) (wv1 : AS.wval) (wv2 : AT.wval) {struct i} : Prop :=
     wf_val wv2 /\
     match wv1, wv2 with
@@ -869,15 +910,15 @@ Section Relation.
             match i with
             | 0 => True
             | S i0 =>
-                forall j W1 w2' vs1 vs2 ρ3 ρ4,
+                forall j f_map W1 vs1 vs2 ρ2' ρ3 ρ4,
                   j <= i0 ->
-                  leq W W1 ->
-
-                  (fst W1) ! l1 = Some w2' ->
+                  leq_with f_map W W1 ->
+                  let w2' := f_map w2 in
                   (w2' \in Exposed -> Forall exposed vs2) ->
                   Forall2 (V (i0 - (i0 - j)) W1) vs1 vs2 ->
                   set_lists xs1 vs1 (M.set f1 (AS.Tag l1 (AS.Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
-                  set_lists xs2 vs2 (M.set f2 (AT.Tag w2' (AT.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
+                  relabel_env f_map ρ2 ρ2' ->
+                  set_lists xs2 vs2 (M.set f2 (AT.Tag w2' (AT.Vfun f2 ρ2 xs2 e2)) ρ2') = Some ρ4 ->
                   well_annotated (exposedb w2') W1 ρ3 e1 ->
                   E' V (exposedb w2') (i0 - (i0 - j)) W1 ρ3 e1 ρ4 e2
             end
@@ -933,10 +974,10 @@ Section Relation.
       + destruct HV as [Hlen HV]; subst.
         repeat split; auto; intros.
         destruct (exposed_reflect w).
-        * specialize (HV j0 W1 w2' vs1 vs2 ρ3 ρ4).
+        * specialize (HV j0 f_map W1 vs1 vs2 ρ2' ρ3 ρ4).
           rewrite normalize_step in *; try lia.
           eapply HV; eauto; lia.
-        * specialize (HV j0 W1 w2' vs1 vs2 ρ3 ρ4).
+        * specialize (HV j0 f_map W1 vs1 vs2 ρ2' ρ3 ρ4).
           rewrite normalize_step in *; try lia.
           eapply HV; eauto; lia.
       + destruct HV as [Heqc HV]; subst.
@@ -955,12 +996,38 @@ Section Relation.
     eapply cbstep_fuel_approx; eauto.
   Qed.
 
-  Lemma V_mono_W i W :
-    forall {W1 v1 v2},
-      V i W v1 v2 ->
-      leq W W1 ->
-      exists v3, V i W1 v1 v3.
+  Lemma relabel_wf_val f v1 v2 :
+    relabel f v1 v2 ->
+    wf_val v1 ->
+    wf_val v2.
   Proof.
+    intros HR.
+    induction HR using relabel_mut with (P0 := fun v v0 Hr => wf_val' v -> wf_val' v0)
+                                        (P1 := fun ρ ρ0 Hr => wf_env ρ -> wf_env ρ0);
+      intros.
+    - inv H.
+      econstructor; eauto.
+      intros.
+  Abort.
+
+  Lemma V_mono_W i :
+    forall {f W W1 v1 v2 v3},
+      V i W v1 v2 ->
+      leq_with f W W1 ->
+      relabel f v2 v3 ->
+      V i W1 v1 v3.
+  Proof.
+    induction i using lt_wf_rec; intros.
+    destruct v1; destruct v2; destruct v3.
+    destruct i.
+    - simpl in *.
+      inv H2.
+      destruct H0 as [Hwf [Hfst [Hex HV]]].
+      destruct v; destruct v0.
+      + inv H4.
+        inv H7.
   Admitted.
 
+
 End Relation.
+*)
