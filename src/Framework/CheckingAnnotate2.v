@@ -11,6 +11,8 @@ From Framework Require Import Util W0 ANF1 ANF Annotate Erase.
 Module AS := ANF1.
 Module AT := ANF.
 
+(* TODO: name the invariants *)
+
 (* Annotate Based on The Checking Semantics *)
 
 (* Maps labels to the actual webs. *)
@@ -390,12 +392,11 @@ Section Approx.
   Qed.
 
   Lemma to_exposed_leq W1 W2 v:
-    analysis_info_inv W1 ->
     leq W1 W2 ->
     to_exposed W1 v ->
     to_exposed W2 v.
   Proof.
-    intros Hinv1 [f [Hexp [Hfst [Hsnd Hsurj]]]] Hte.
+    intros [f [Hexp [Hfst [Hsnd Hsurj]]]] Hte.
     destruct v as [l vv].
     simpl in *.
     destruct Hte as [w [Hwm Hwexp]].
@@ -403,7 +404,6 @@ Section Approx.
   Qed.
 
   Lemma to_exposed_leq_Forall W1 W2 vs:
-    analysis_info_inv W1 ->
     leq W1 W2 ->
     Forall (to_exposed W1) vs ->
     Forall (to_exposed W2) vs.
@@ -414,7 +414,6 @@ Section Approx.
   Qed.
 
   Lemma to_exposed_res_leq W1 W2 r:
-    analysis_info_inv W1 ->
     leq W1 W2 ->
     to_exposed_res W1 r ->
     to_exposed_res W2 r.
@@ -574,14 +573,13 @@ Section Approx.
   Qed.
 
   Lemma cbstep_approx W1 W2 ex ρ e i r :
-    analysis_info_inv W1 ->
     leq W1 W2 ->
     cbstep W1 ex ρ e i r ->
     cbstep W2 ex ρ e i r.
   Proof.
     intros.
     generalize dependent W2.
-    induction H1 using cbstep_ind' with
+    induction H0 using cbstep_ind' with
       (P  := fun ex ρ e i r =>
                forall W2,
                  leq W1 W2 ->
@@ -591,27 +589,27 @@ Section Approx.
                  leq W1 W2 ->
                  cbstep_fuel W2 ex ρ e i r); intros.
     - (* Cbstep_ret *)
-      destruct H2 as [f_map [_ [Hfst _]]].
-      eapply Cbstep_ret; [exact H0 | apply Hfst; exact H1].
+      destruct H1 as [f_map [_ [Hfst _]]].
+      eapply Cbstep_ret; [exact H | apply Hfst; exact H0].
     - (* Cbstep_fun *)
-      pose proof H2 as Hleq.
-      destruct H2 as [f_map [_ [Hfst _]]].
-      eapply Cbstep_fun; [apply Hfst; exact H0 | apply IHcbstep; exact Hleq].
+      pose proof H1 as Hleq.
+      destruct H1 as [f_map [_ [Hfst _]]].
+      eapply Cbstep_fun; [apply Hfst; exact H | apply IHcbstep; exact Hleq].
     - (* Cbstep_app *)
-      pose proof H7 as Hleq.
-      destruct H7 as [f_map [Hexp [Hfst [Hsnd Hsurj]]]].
+      pose proof H6 as Hleq.
+      destruct H6 as [f_map [Hexp [Hfst [Hsnd Hsurj]]]].
       eapply Cbstep_app; eauto.
       + destruct (exposed_reflect (f_map w)) as [Hfw | Hnfw].
         * split.
           { destruct (exposed_reflect w) as [Hw | Hnw].
-            - destruct H5 as [Hfal _]. eapply to_exposed_leq_Forall; eauto.
-            - destruct H5 as [Hfal _]. eapply interact_with_to_exposed_leq_Forall; eauto. }
+            - destruct H4 as [Hfal _]. eapply to_exposed_leq_Forall; eauto.
+            - destruct H4 as [Hfal _]. eapply interact_with_to_exposed_leq_Forall; eauto. }
           { destruct (exposed_reflect w) as [Hw | Hnw].
-            - destruct H5 as [_ Hres]. simpl in Hres. eapply to_exposed_res_leq; eauto.
-            - destruct H5 as [_ Hres]. eapply interact_with_to_exposed_res_leq; eauto. }
+            - destruct H4 as [_ Hres]. simpl in Hres. eapply to_exposed_res_leq; eauto.
+            - destruct H4 as [_ Hres]. eapply interact_with_to_exposed_res_leq; eauto. }
         * assert (Hnw : ~ w \in Exposed) by (intro Hw; apply Hnfw; apply Hexp; exact Hw).
           destruct (exposed_reflect w) as [Hw | _]; [contradiction |].
-          destruct H5 as [Hfal Hiwres].
+          destruct H4 as [Hfal Hiwres].
           split.
           { eapply interact_with_leq_Forall; eauto. }
           { eapply interact_with_res_leq; eauto. }
@@ -620,11 +618,11 @@ Section Approx.
           destruct (exposed_reflect (f_map w)) as [Hfw | Hnfw]; eauto.
         * exfalso. apply Hnfw. apply Hexp. exact Hw.
         * eapply cbstep_fuel_to_exposed_res; eauto.
-          destruct H5 as [_ Hres].
+          destruct H4 as [_ Hres].
           eapply interact_with_to_exposed_res_leq; eauto.
     - (* Cbstep_letapp_Res *)
-      pose proof H8 as Hleq.
-      destruct H8 as [f_map [Hexp [Hfst [Hsnd Hsurj]]]].
+      pose proof H7 as Hleq.
+      destruct H7 as [f_map [Hexp [Hfst [Hsnd Hsurj]]]].
       eapply Cbstep_letapp_Res with (w := (f_map w)); eauto.
       + (* cbstep_fuel (exposedb (f_map w)) ρ'' e c (Res v) *)
         specialize (IHcbstep _ Hleq).
@@ -632,25 +630,25 @@ Section Approx.
           destruct (exposed_reflect (f_map w)) as [Hfw | Hnfw]; eauto.
         * exfalso. apply Hnfw. apply Hexp. exact Hw.
         * eapply cbstep_fuel_to_exposed_res; eauto.
-          destruct H7 as [_ Hv]. simpl.
+          destruct H6 as [_ Hv]. simpl.
           eapply interact_with_to_exposed_leq; eauto.
       + destruct (exposed_reflect (f_map w)) as [Hfw | Hnfw].
         * split.
           { destruct (exposed_reflect w) as [Hw | Hnw].
-            - destruct H7 as [Hfal _]. eapply to_exposed_leq_Forall; eauto.
-            - destruct H7 as [Hfal _]. eapply interact_with_to_exposed_leq_Forall; eauto. }
+            - destruct H6 as [Hfal _]. eapply to_exposed_leq_Forall; eauto.
+            - destruct H6 as [Hfal _]. eapply interact_with_to_exposed_leq_Forall; eauto. }
           { destruct (exposed_reflect w) as [Hw | Hnw].
-            - destruct H7 as [_ Hv]. eapply to_exposed_leq; eauto.
-            - destruct H7 as [_ Hv]. eapply interact_with_to_exposed_leq; eauto. }
+            - destruct H6 as [_ Hv]. eapply to_exposed_leq; eauto.
+            - destruct H6 as [_ Hv]. eapply interact_with_to_exposed_leq; eauto. }
         * assert (Hnw : ~ w \in Exposed) by (intro Hw; apply Hnfw; apply Hexp; exact Hw).
           destruct (exposed_reflect w) as [Hw | _]; [contradiction |].
-          destruct H7 as [Hfal Hv].
+          destruct H6 as [Hfal Hv].
           split.
           { eapply interact_with_leq_Forall; eauto. }
           { eapply interact_with_leq; eauto. }
     - (* Cbstep_letapp_OOT *)
-      pose proof H7 as Hleq.
-      destruct H7 as [f_map [Hexp [Hfst [Hsnd Hsurj]]]].
+      pose proof H6 as Hleq.
+      destruct H6 as [f_map [Hexp [Hfst [Hsnd Hsurj]]]].
       eapply Cbstep_letapp_OOT with (w := (f_map w)); eauto.
       + (* cbstep_fuel (exposedb (f_map w)) ρ'' e c OOT *)
         specialize (IHcbstep _ Hleq).
@@ -666,8 +664,8 @@ Section Approx.
           destruct (exposed_reflect w) as [Hw | _]; [contradiction |].
           eapply interact_with_leq_Forall; eauto.
     - (* Cbstep_constr *)
-      pose proof H4 as Hleq.
-      destruct H4 as [f_map [Hexp [Hfst [Hsnd Hsurj]]]].
+      pose proof H3 as Hleq.
+      destruct H3 as [f_map [Hexp [Hfst [Hsnd Hsurj]]]].
       eapply Cbstep_constr; eauto.
       + destruct (exposed_reflect (f_map w)) as [Hfw | Hnfw].
         * destruct (exposed_reflect w) as [Hw | Hnw].
@@ -677,34 +675,33 @@ Section Approx.
           destruct (exposed_reflect w) as [Hw | _]; [contradiction |].
           eapply interact_with_leq_Forall; eauto.
     - (* Cbstep_proj *)
-      pose proof H5 as Hleq.
-      destruct H5 as [f_map [_ [Hfst _]]].
+      pose proof H4 as Hleq.
+      destruct H4 as [f_map [_ [Hfst _]]].
       eapply Cbstep_proj;
-        [exact H0 | exact H1 | apply Hfst; exact H2 | apply Hfst; exact H3
+        [exact H | exact H0 | apply Hfst; exact H1 | apply Hfst; exact H2
         | apply IHcbstep; exact Hleq].
     - (* Cbstep_case *)
-      pose proof H5 as Hleq.
-      destruct H5 as [f_map [_ [Hfst _]]].
+      pose proof H4 as Hleq.
+      destruct H4 as [f_map [_ [Hfst _]]].
       eapply Cbstep_case;
-        [exact H0 | exact H1 | apply Hfst; exact H2 | apply Hfst; exact H3
+        [exact H | exact H0 | apply Hfst; exact H1 | apply Hfst; exact H2
         | apply IHcbstep; exact Hleq].
     - (* CbstepF_OOT *)
       constructor.
     - (* CbstepF_Step *)
-      pose proof H2 as Hleq.
-      destruct H2 as [f_map [_ [Hfst _]]].
+      pose proof H1 as Hleq.
+      destruct H1 as [f_map [_ [Hfst _]]].
       eapply CbstepF_Step; [apply IHcbstep; exact Hleq |].
       destruct ex; [| exact I].
       eapply to_exposed_res_leq; eauto.
   Qed.
 
   Lemma cbstep_fuel_approx W1 W2 ex ρ e i r :
-    analysis_info_inv W1 ->
     leq W1 W2 ->
     cbstep_fuel W1 ex ρ e i r ->
     cbstep_fuel W2 ex ρ e i r.
   Proof.
-    intros Hinv Hleq Hfuel.
+    intros Hleq Hfuel.
     inversion Hfuel; subst.
     - constructor.
     - eapply CbstepF_Step.
