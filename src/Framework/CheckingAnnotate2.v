@@ -828,8 +828,6 @@ Section Trans.
 
 End Trans.
 
-(*
-
 Section Relation.
 
   (* Cross-language Logical Relations *)
@@ -854,6 +852,9 @@ Section Relation.
       AS.bstep_fuel ρ e i r ->
       cbstep_fuel W ex ρ e i r.
 
+  (* This should be incorrect since we also have to relabel the function body expression.
+     This relabeling process is a transformation.
+     So we need to set up a separate logical relation to describe it. *)
   Inductive relabel (f : web -> web) : AT.wval -> AT.wval -> Prop :=
   | Relabel_TAG :
     forall w v v',
@@ -996,38 +997,14 @@ Section Relation.
     eapply cbstep_fuel_approx; eauto.
   Qed.
 
-  Lemma relabel_wf_val f v1 v2 :
-    relabel f v1 v2 ->
-    wf_val v1 ->
-    wf_val v2.
+  Lemma V_mono_leq i :
+    forall {f W1 W2 v1 v2},
+      V i W1 v1 v2 ->
+      leq_with f W W1 ->
+      exists j v3,
+        Relabel.V j f v2 v3 /\  (* Suppose now relabel is some other step indexed V relation *)
+        V i W2 v1 v3.
   Proof.
-    intros HR.
-    induction HR using relabel_mut with (P0 := fun v v0 Hr => wf_val' v -> wf_val' v0)
-                                        (P1 := fun ρ ρ0 Hr => wf_env ρ -> wf_env ρ0);
-      intros.
-    - inv H.
-      econstructor; eauto.
-      intros.
   Abort.
 
-  Lemma V_mono_W i :
-    forall {f W W1 v1 v2 v3},
-      V i W v1 v2 ->
-      leq_with f W W1 ->
-      relabel f v2 v3 ->
-      V i W1 v1 v3.
-  Proof.
-    induction i using lt_wf_rec; intros.
-    destruct v1; destruct v2; destruct v3.
-    destruct i.
-    - simpl in *.
-      inv H2.
-      destruct H0 as [Hwf [Hfst [Hex HV]]].
-      destruct v; destruct v0.
-      + inv H4.
-        inv H7.
-  Admitted.
-
-
 End Relation.
-*)
