@@ -1638,6 +1638,34 @@ Section Approx.
     - admit.
   Abort.
 
+  Lemma V_approx_l  :
+    forall i W1 W2 v1 v2,
+      exposed v2 ->
+      leq W1 W2 ->
+      (V W1 i v1 v2 -> V W2 i v1 v2).
+  Proof.
+    intro i.
+    induction i using lt_wf_rec; intros.
+    destruct i; simpl in *;
+      inv H2; split; auto;
+      destruct v1; destruct v2.
+    + assert (HW2 : W2 ! l = Some w) by (eapply leq_single_exposed; fcrush).
+      fcrush.
+    + destruct H4 as [Hl [Hex HV]].
+      repeat (split; auto).
+      eapply leq_single_exposed; eauto.
+      destruct v; destruct v0; try contradiction.
+      * destruct HV as [Hlen HV].
+        split; auto; intros.
+
+        assert (HE : E' (V W1) (exposedb w) (i - (i - j)) ρ3 e ρ4 e0).
+        {
+          eapply HV; eauto.
+          admit.
+          admit.
+        }
+  Abort.
+
 End Approx.
 
 Section Top.
