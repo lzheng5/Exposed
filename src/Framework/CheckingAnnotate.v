@@ -308,6 +308,10 @@ Section Checking.
     - inv H3; auto.
   Qed.
 
+End Checking.
+
+Section Relation.
+
   (* Cross-language Logical Relations *)
   (* Note these are parameterized by the web_map, `W` *)
   Definition R' (P : nat -> AS.wval -> AT.wval -> Prop) (i : nat) (r1 : AS.res) (r2 : AT.res) :=
@@ -325,51 +329,191 @@ Section Checking.
         AT.bstep_fuel ex ρ2 e2 j2 r2 /\
         R' P (i - j1) r1 r2.
 
-  Definition well_annotated ex ρ e :=
+  Definition well_annotated W ex ρ e :=
     forall i r,
       AS.bstep_fuel ρ e i r ->
-      cbstep_fuel ex ρ e i r.
+      cbstep_fuel W ex ρ e i r.
 
-  Fixpoint V (i : nat) (wv1 : AS.wval) (wv2 : AT.wval) {struct i} : Prop :=
+  Fixpoint V (W : web_map) (i : nat) (wv1 : AS.wval) (wv2 : AT.wval) {struct i} : Prop :=
     wf_val wv2 /\
     match wv1, wv2 with
     | AS.TAG _ l1 v1, AT.TAG _ w2 v2 =>
-        W ! l1 = Some w2 /\
         (w2 \in Exposed -> exposed wv2) /\
         match v1, v2 with
         | AS.Vconstr c1 vs1, AT.Vconstr c2 vs2 =>
             c1 = c2 /\
             match i with
             | 0 => length vs1 = length vs2
-            | S i0 => Forall2 (V i0) vs1 vs2
+            | S i0 => Forall2 (V W i0) vs1 vs2
             end
 
         | AS.Vfun f1 ρ1 xs1 e1, AT.Vfun f2 ρ2 xs2 e2 =>
             length xs1 = length xs2 /\
-            match i with
-            | 0 => True
-            | S i0 =>
-                forall j vs1 vs2 ρ3 ρ4,
-                  j <= i0 ->
-                  (w2 \in Exposed -> Forall exposed vs2) ->
-                  Forall2 (V (i0 - (i0 - j))) vs1 vs2 ->
-                  set_lists xs1 vs1 (M.set f1 (AS.Tag l1 (AS.Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
-                  set_lists xs2 vs2 (M.set f2 (AT.Tag w2 (AT.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
-                  well_annotated (exposedb w2) ρ3 e1 ->
-                  E' V (exposedb w2) (i0 - (i0 - j)) ρ3 e1 ρ4 e2
+            match exposedb w2 with
+            | true =>
+                exists W' w2',
+                  W' ! l1 = Some w2' /\
+                  (w2' \in Exposed) /\
+                  match i with
+                  | 0 => True
+                  | S i0 =>
+                      forall j vs1 vs2 ρ3 ρ4,
+                        j <= i0 ->
+                        Forall exposed vs2 ->
+                        Forall2 (V W' (i0 - (i0 - j))) vs1 vs2 ->
+                        set_lists xs1 vs1 (M.set f1 (AS.Tag l1 (AS.Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
+                        set_lists xs2 vs2 (M.set f2 (AT.Tag w2' (AT.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
+                        well_annotated W' true ρ3 e1 ->
+                        E' (V W') true (i0 - (i0 - j)) ρ3 e1 ρ4 e2
+                  end
+
+            | false =>
+                W ! l1 = Some w2 /\
+                match i with
+                | 0 => True
+                | S i0 =>
+                    forall j vs1 vs2 ρ3 ρ4,
+                      j <= i0 ->
+                      Forall2 (V W (i0 - (i0 - j))) vs1 vs2 ->
+                      set_lists xs1 vs1 (M.set f1 (AS.Tag l1 (AS.Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
+                      set_lists xs2 vs2 (M.set f2 (AT.Tag w2 (AT.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
+                      well_annotated W false ρ3 e1 ->
+                      E' (V W) false (i0 - (i0 - j)) ρ3 e1 ρ4 e2
+                end
             end
 
         | _, _ => False
         end
     end.
 
-  Definition R := (R' V).
+  Definition R W := (R' (V W)).
 
-  Definition E := (E' V).
+  Definition E W := (E' (V W)).
+
+  Fixpoint V_top (i : nat) (wv1 : AS.wval) (wv2 : AT.wval) {struct i} : Prop :=
+    wf_val wv2 /\
+    exposed wv2 /\
+    match wv1, wv2 with
+    | AS.TAG _ l1 v1, AT.TAG _ w2 v2 =>
+        match v1, v2 with
+        | AS.Vconstr c1 vs1, AT.Vconstr c2 vs2 =>
+            c1 = c2 /\
+              match i with
+              | 0 => length vs1 = length vs2
+              | S i0 => Forall2 (V_top i0) vs1 vs2
+              end
+
+        | AS.Vfun f1 ρ1 xs1 e1, AT.Vfun f2 ρ2 xs2 e2 =>
+            length xs1 = length xs2 /\
+            exists W' w2',
+              W' ! l1 = Some w2' /\
+              (w2' \in Exposed) /\
+              match i with
+              | 0 => True
+              | S i0 =>
+                  forall j vs1 vs2 ρ3 ρ4,
+                    j <= i0 ->
+                    Forall exposed vs2 ->
+                    Forall2 (V_top (i0 - (i0 - j))) vs1 vs2 ->
+                    set_lists xs1 vs1 (M.set f1 (AS.Tag l1 (AS.Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
+                    set_lists xs2 vs2 (M.set f2 (AT.Tag w2' (AT.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
+                    well_annotated W' true ρ3 e1 ->
+                    E' V_top true (i0 - (i0 - j)) ρ3 e1 ρ4 e2
+              end
+
+          | _, _ => False
+          end
+      end.
+
+  Lemma V_V_top_Forall :
+    forall i W,
+      (forall m : nat,
+          m < S i ->
+          forall W v1 v2,
+            exposed v2 ->
+            V W m v1 v2 <-> V_top m v1 v2) ->
+      forall j vs1 vs2,
+        j <= i ->
+        Forall exposed vs2 ->
+        Forall2 (V W j) vs1 vs2 <-> Forall2 (V_top j) vs1 vs2.
+  Proof.
+    intros.
+    revert vs1 j H0.
+    induction H1; simpl; intros.
+    - split; intros; inv H1; auto.
+    - split; intros; inv H3; constructor; auto;
+        solve [ eapply H; try lia; eauto |
+                eapply IHForall; eauto ].
+  Qed.
+
+  (* This doesn't work either due to the well_annotated for the exposed values in V *)
+  Lemma V_V_top :
+    forall i W v1 v2,
+      exposed v2 ->
+      (V W i v1 v2 <-> V_top i v1 v2).
+  Proof.
+    intro i.
+    induction i using lt_wf_rec; intros.
+    split; intros.
+    - destruct i; simpl in *;
+        inv H1; split; auto.
+      + destruct v1; destruct v2.
+        destruct v; destruct v0; try firstorder.
+        destruct H3 as [Hex [Hlen [W' [w2' [HW' [Hexw2' _]]]]]]; subst.
+        repeat (split; intros; eauto).
+        destruct (exposed_reflect w); try contradiction; eauto.
+        fcrush.
+      + destruct v1; destruct v2.
+        destruct v; destruct v0; try firstorder.
+        * destruct (exposed_reflect w).
+          2 : { fcrush. }
+          destruct H4 as [W' [w2' [HW' [Hexw2' HV]]]].
+          eexists; eexists; repeat (split; eauto); intros.
+          assert (HEV : E' (V W') true (i - (i - j)) ρ3 e ρ4 e0).
+          {
+            eapply HV; eauto.
+            eapply V_V_top_Forall; eauto; try lia.
+          }
+          unfold E' in *; intros.
+          edestruct HEV as [j2 [r2 [Hstep HR]]]; eauto.
+          eexists; eexists; split; eauto.
+          unfold R' in *.
+          destruct r1; destruct r2; auto.
+          eapply H; eauto; try lia.
+          eapply bstep_fuel_exposed_inv in Hstep; eauto; fcrush.
+        * eapply V_V_top_Forall; eauto; fcrush.
+    - destruct i; simpl in *;
+        inv H1; split; auto.
+      + destruct v1; destruct v2.
+        destruct v; destruct v0; try firstorder.
+        destruct H3 as [Hex [Hlen [W' [w2' [HW' [Hexw2' _]]]]]]; subst.
+        repeat (split; intros; eauto).
+        destruct (exposed_reflect w); try contradiction; eauto.
+        fcrush.
+      + destruct v1; destruct v2.
+        destruct v; destruct v0; try firstorder.
+        * destruct (exposed_reflect w).
+          2 : { fcrush. }
+          rename x into W'.
+          eexists; eexists; repeat (split; eauto); intros.
+          assert (HEV : E' V_top true (i - (i - j)) ρ3 e ρ4 e0).
+          {
+            eapply H6; eauto.
+            eapply V_V_top_Forall; eauto; try lia.
+          }
+          unfold E' in *; intros.
+          edestruct HEV as [j2 [r2 [Hstep HR]]]; eauto.
+          eexists; eexists; split; eauto.
+          unfold R' in *.
+          destruct r1; destruct r2; auto.
+          eapply H; eauto; try lia.
+          eapply bstep_fuel_exposed_inv in Hstep; eauto; fcrush.
+        * eapply V_V_top_Forall; eauto; fcrush.
+  Qed.
 
   (* Lemmas about [wf_val], [wf_res], and [wf_env] *)
-  Lemma V_wf_val_r {i v1 v2}:
-    V i v1 v2 ->
+  Lemma V_wf_val_r {W i v1 v2}:
+    V W i v1 v2 ->
     wf_val v2.
   Proof.
     intros HV.
@@ -377,8 +521,10 @@ Section Checking.
       destruct HV as [Hv2 _]; auto.
   Qed.
 
-  Lemma V_wf_val_Forall_r {i vs1 vs2} :
-    Forall2 (V i) vs1 vs2 ->
+(*
+
+  Lemma V_wf_val_Forall_r {W i vs1 vs2} :
+    Forall2 (V W i) vs1 vs2 ->
     Forall wf_val vs2.
   Proof.
     intros.
@@ -1429,45 +1575,6 @@ End Approx.
 
 Section Top.
 
-  (* Top Level *)
-
-  Fixpoint V_top (i : nat) (wv1 : AS.wval) (wv2 : AT.wval) {struct i} : Prop :=
-    wf_val wv2 /\
-    exposed wv2 /\
-    match wv1, wv2 with
-    | AS.TAG _ l1 v1, AT.TAG _ w2 v2 =>
-        match v1, v2 with
-        | AS.Vconstr c1 vs1, AT.Vconstr c2 vs2 =>
-            c1 = c2 /\
-              match i with
-              | 0 => length vs1 = length vs2
-              | S i0 => Forall2 (V_top i0) vs1 vs2
-              end
-
-        | AS.Vfun f1 ρ1 xs1 e1, AT.Vfun f2 ρ2 xs2 e2 =>
-            length xs1 = length xs2 /\
-              match i with
-              | 0 => True
-              | S i0 =>
-                  forall j vs1 vs2 ρ3 ρ4,
-                    j <= i0 ->
-                    Forall exposed vs2 ->
-                    Forall2 (V_top (i0 - (i0 - j))) vs1 vs2 ->
-                    set_lists xs1 vs1 (M.set f1 (AS.Tag l1 (AS.Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
-                    set_lists xs2 vs2 (M.set f2 (AT.Tag w2 (AT.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
-                    E' V_top true (i0 - (i0 - j)) ρ3 e1 ρ4 e2
-              end
-
-          | _, _ => False
-          end
-      end.
-
-  (* This doesn't work either due to the well_annotated for the exposed values in V *)
-  Lemma V_V_top i v1 v2:
-    V_top i v1 v2 <-> exists W, V W i v1 v2.
-  Proof.
-  Abort.
-
   Definition G_top W i Γ1 ρ1 Γ2 ρ2 :=
     wf_env ρ2 /\
     Γ2 \subset Γ1 /\
@@ -1611,3 +1718,4 @@ Section Top.
   Abort.
 
 End Top.
+*)
