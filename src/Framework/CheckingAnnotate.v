@@ -338,13 +338,27 @@ Section Relation.
     wf_val wv2 /\
     match wv1, wv2 with
     | AS.TAG _ l1 v1, AT.TAG _ w2 v2 =>
-        (w2 \in Exposed -> exposed wv2) /\
         match v1, v2 with
         | AS.Vconstr c1 vs1, AT.Vconstr c2 vs2 =>
             c1 = c2 /\
-            match i with
-            | 0 => length vs1 = length vs2
-            | S i0 => Forall2 (V W i0) vs1 vs2
+            length vs1 = length vs2 /\
+            match exposedb w2 with
+            | true =>
+                exists W' w2',
+                  W' ! l1 = Some w2' /\
+                  (w2' \in Exposed) /\
+                  exposed wv2 /\
+                  match i with
+                  | 0 => True
+                  | S i0 => Forall2 (V W' i0) vs1 vs2
+                  end
+
+            | false =>
+                W ! l1 = Some w2 /\
+                match i with
+                | 0 => True
+                | S i0 => Forall2 (V W i0) vs1 vs2
+                end
             end
 
         | AS.Vfun f1 ρ1 xs1 e1, AT.Vfun f2 ρ2 xs2 e2 =>
@@ -393,21 +407,22 @@ Section Relation.
   Fixpoint V_top (i : nat) (wv1 : AS.wval) (wv2 : AT.wval) {struct i} : Prop :=
     wf_val wv2 /\
     exposed wv2 /\
-    match wv1, wv2 with
-    | AS.TAG _ l1 v1, AT.TAG _ w2 v2 =>
-        match v1, v2 with
-        | AS.Vconstr c1 vs1, AT.Vconstr c2 vs2 =>
-            c1 = c2 /\
+    exists W' w2',
+      match wv1, wv2 with
+      | AS.TAG _ l1 v1, AT.TAG _ w2 v2 =>
+          w2 = w2' /\
+          W' ! l1 = Some w2' /\
+          match v1, v2 with
+          | AS.Vconstr c1 vs1, AT.Vconstr c2 vs2 =>
+              c1 = c2 /\
+              length vs1 = length vs2 /\
               match i with
-              | 0 => length vs1 = length vs2
+              | 0 => True
               | S i0 => Forall2 (V_top i0) vs1 vs2
               end
 
-        | AS.Vfun f1 ρ1 xs1 e1, AT.Vfun f2 ρ2 xs2 e2 =>
-            length xs1 = length xs2 /\
-            exists W' w2',
-              W' ! l1 = Some w2' /\
-              (w2' \in Exposed) /\
+          | AS.Vfun f1 ρ1 xs1 e1, AT.Vfun f2 ρ2 xs2 e2 =>
+              length xs1 = length xs2 /\
               match i with
               | 0 => True
               | S i0 =>
@@ -446,7 +461,6 @@ Section Relation.
                 eapply IHForall; eauto ].
   Qed.
 
-  (* This doesn't work either due to the well_annotated for the exposed values in V *)
   Lemma V_V_top :
     forall i W v1 v2,
       exposed v2 ->
@@ -459,16 +473,28 @@ Section Relation.
         inv H1; split; auto.
       + destruct v1; destruct v2.
         destruct v; destruct v0; try firstorder.
-        destruct H3 as [Hex [Hlen [W' [w2' [HW' [Hexw2' _]]]]]]; subst.
-        repeat (split; intros; eauto).
-        destruct (exposed_reflect w); try contradiction; eauto.
-        fcrush.
+        * destruct (exposed_reflect w).
+          2 : { fcrush. }
+
+          destruct H3 as [W' [w2' [HW' [Hexw2' _]]]]; subst.
+          exists W', w2'; repeat (split; eauto).
+
+          eapply W0.Exposed_unique; eauto.
+        * destruct (exposed_reflect w).
+          2 : { fcrush. }
+
+          destruct H4 as [W' [w2' [HW' [Hexw2' _]]]]; subst.
+          exists W', w2'; repeat (split; eauto).
+          eapply W0.Exposed_unique; eauto.
+
       + destruct v1; destruct v2.
         destruct v; destruct v0; try firstorder.
         * destruct (exposed_reflect w).
           2 : { fcrush. }
-          destruct H4 as [W' [w2' [HW' [Hexw2' HV]]]].
-          eexists; eexists; repeat (split; eauto); intros.
+          destruct H3 as [W' [w2' [HW' [Hexw2' HV]]]].
+          exists W', w2'; repeat (split; eauto); intros.
+          eapply W0.Exposed_unique; eauto.
+
           assert (HEV : E' (V W') true (i - (i - j)) ρ3 e ρ4 e0).
           {
             eapply HV; eauto.
@@ -481,21 +507,39 @@ Section Relation.
           destruct r1; destruct r2; auto.
           eapply H; eauto; try lia.
           eapply bstep_fuel_exposed_inv in Hstep; eauto; fcrush.
-        * eapply V_V_top_Forall; eauto; fcrush.
+        * destruct (exposed_reflect w).
+          2 : { fcrush. }
+
+          destruct H4 as [W' [w2' [HW' [Hexw2' HV]]]].
+          exists W', w2'; repeat (split; eauto); intros.
+          eapply W0.Exposed_unique; eauto.
+
+          eapply V_V_top_Forall; eauto; fcrush.
     - destruct i; simpl in *;
         inv H1; split; auto.
       + destruct v1; destruct v2.
         destruct v; destruct v0; try firstorder.
-        destruct H3 as [Hex [Hlen [W' [w2' [HW' [Hexw2' _]]]]]]; subst.
-        repeat (split; intros; eauto).
-        destruct (exposed_reflect w); try contradiction; eauto.
-        fcrush.
+        * destruct (exposed_reflect w).
+          2 : { fcrush. }
+          subst.
+          rename x into W'.
+          rename x0 into w2'.
+          exists W', w2'; repeat (split; eauto).
+        * destruct (exposed_reflect w).
+          2 : { fcrush. }
+          subst.
+          rename x into W'.
+          rename x0 into w2'.
+          exists W', w2'; repeat (split; eauto).
       + destruct v1; destruct v2.
         destruct v; destruct v0; try firstorder.
         * destruct (exposed_reflect w).
           2 : { fcrush. }
+          destruct H3 as [W' [w2' [HW' [Hexw2' HV]]]].
           rename x into W'.
-          eexists; eexists; repeat (split; eauto); intros.
+          rename w into w2'.
+          exists W', w2'; repeat (split; eauto); intros.
+
           assert (HEV : E' V_top true (i - (i - j)) ρ3 e ρ4 e0).
           {
             eapply H6; eauto.
@@ -508,7 +552,13 @@ Section Relation.
           destruct r1; destruct r2; auto.
           eapply H; eauto; try lia.
           eapply bstep_fuel_exposed_inv in Hstep; eauto; fcrush.
-        * eapply V_V_top_Forall; eauto; fcrush.
+        * destruct (exposed_reflect w).
+          2 : { fcrush. }
+          subst.
+          rename x into W'.
+          rename x0 into w2'.
+          exists W', w2'; repeat (split; eauto); intros.
+          eapply V_V_top_Forall; eauto; fcrush.
   Qed.
 
   (* Lemmas about [wf_val], [wf_res], and [wf_env] *)
