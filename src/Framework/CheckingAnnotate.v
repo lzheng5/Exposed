@@ -344,9 +344,8 @@ Section Relation.
             length vs1 = length vs2 /\
             match exposedb w2 with
             | true =>
-                exists W' w2',
-                  W' ! l1 = Some w2' /\
-                  (w2' \in Exposed) /\
+                exists W',
+                  W' ! l1 = Some w2 /\
                   exposed wv2 /\
                   match i with
                   | 0 => True
@@ -365,9 +364,8 @@ Section Relation.
             length xs1 = length xs2 /\
             match exposedb w2 with
             | true =>
-                exists W' w2',
-                  W' ! l1 = Some w2' /\
-                  (w2' \in Exposed) /\
+                exists W',
+                  W' ! l1 = Some w2 /\
                   match i with
                   | 0 => True
                   | S i0 =>
@@ -376,7 +374,7 @@ Section Relation.
                         Forall exposed vs2 ->
                         Forall2 (V W' (i0 - (i0 - j))) vs1 vs2 ->
                         set_lists xs1 vs1 (M.set f1 (AS.Tag l1 (AS.Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
-                        set_lists xs2 vs2 (M.set f2 (AT.Tag w2' (AT.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
+                        set_lists xs2 vs2 (M.set f2 (AT.Tag w2 (AT.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
                         well_annotated W' true ρ3 e1 ->
                         E' (V W') true (i0 - (i0 - j)) ρ3 e1 ρ4 e2
                   end
@@ -407,11 +405,10 @@ Section Relation.
   Fixpoint V_top (i : nat) (wv1 : AS.wval) (wv2 : AT.wval) {struct i} : Prop :=
     wf_val wv2 /\
     exposed wv2 /\
-    exists W' w2',
+    exists W',
       match wv1, wv2 with
       | AS.TAG _ l1 v1, AT.TAG _ w2 v2 =>
-          w2 = w2' /\
-          W' ! l1 = Some w2' /\
+          W' ! l1 = Some w2 /\
           match v1, v2 with
           | AS.Vconstr c1 vs1, AT.Vconstr c2 vs2 =>
               c1 = c2 /\
@@ -431,7 +428,7 @@ Section Relation.
                     Forall exposed vs2 ->
                     Forall2 (V_top (i0 - (i0 - j))) vs1 vs2 ->
                     set_lists xs1 vs1 (M.set f1 (AS.Tag l1 (AS.Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
-                    set_lists xs2 vs2 (M.set f2 (AT.Tag w2' (AT.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
+                    set_lists xs2 vs2 (M.set f2 (AT.Tag w2 (AT.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
                     well_annotated W' true ρ3 e1 ->
                     E' V_top true (i0 - (i0 - j)) ρ3 e1 ρ4 e2
               end
@@ -476,24 +473,21 @@ Section Relation.
         * destruct (exposed_reflect w).
           2 : { fcrush. }
 
-          destruct H3 as [W' [w2' [HW' [Hexw2' _]]]]; subst.
-          exists W', w2'; repeat (split; eauto).
+          destruct H3 as [W' [HW' _]]; subst.
+          exists W'; repeat (split; eauto).
 
-          eapply W0.Exposed_unique; eauto.
         * destruct (exposed_reflect w).
           2 : { fcrush. }
 
-          destruct H4 as [W' [w2' [HW' [Hexw2' _]]]]; subst.
-          exists W', w2'; repeat (split; eauto).
-          eapply W0.Exposed_unique; eauto.
+          destruct H4 as [W' [HW' [Hexw2' _]]]; subst.
+          exists W'; repeat (split; eauto).
 
       + destruct v1; destruct v2.
         destruct v; destruct v0; try firstorder.
         * destruct (exposed_reflect w).
           2 : { fcrush. }
-          destruct H3 as [W' [w2' [HW' [Hexw2' HV]]]].
-          exists W', w2'; repeat (split; eauto); intros.
-          eapply W0.Exposed_unique; eauto.
+          destruct H3 as [W' [HW' HV]].
+          exists W'; repeat (split; eauto); intros.
 
           assert (HEV : E' (V W') true (i - (i - j)) ρ3 e ρ4 e0).
           {
@@ -510,9 +504,8 @@ Section Relation.
         * destruct (exposed_reflect w).
           2 : { fcrush. }
 
-          destruct H4 as [W' [w2' [HW' [Hexw2' HV]]]].
-          exists W', w2'; repeat (split; eauto); intros.
-          eapply W0.Exposed_unique; eauto.
+          destruct H4 as [W' [HW' [Hexw2' HV]]].
+          exists W'; repeat (split; eauto); intros.
 
           eapply V_V_top_Forall; eauto; fcrush.
     - destruct i; simpl in *;
@@ -523,26 +516,23 @@ Section Relation.
           2 : { fcrush. }
           subst.
           rename x into W'.
-          rename x0 into w2'.
-          exists W', w2'; repeat (split; eauto).
+          exists W'; repeat (split; eauto).
         * destruct (exposed_reflect w).
           2 : { fcrush. }
           subst.
           rename x into W'.
-          rename x0 into w2'.
-          exists W', w2'; repeat (split; eauto).
+          exists W'; repeat (split; eauto).
       + destruct v1; destruct v2.
         destruct v; destruct v0; try firstorder.
         * destruct (exposed_reflect w).
           2 : { fcrush. }
-          destruct H3 as [W' [w2' [HW' [Hexw2' HV]]]].
+          destruct H3 as [W' [HW' [Hexw2' HV]]].
           rename x into W'.
-          rename w into w2'.
-          exists W', w2'; repeat (split; eauto); intros.
+          exists W'; repeat (split; eauto); intros.
 
           assert (HEV : E' V_top true (i - (i - j)) ρ3 e ρ4 e0).
           {
-            eapply H6; eauto.
+            eapply H5; eauto.
             eapply V_V_top_Forall; eauto; try lia.
           }
           unfold E' in *; intros.
@@ -556,8 +546,7 @@ Section Relation.
           2 : { fcrush. }
           subst.
           rename x into W'.
-          rename x0 into w2'.
-          exists W', w2'; repeat (split; eauto); intros.
+          exists W'; repeat (split; eauto); intros.
           eapply V_V_top_Forall; eauto; fcrush.
   Qed.
 
