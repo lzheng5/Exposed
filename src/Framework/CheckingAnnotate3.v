@@ -516,10 +516,18 @@ Section Checking.
     intros H. inv H. apply refine_val'_Vconstr_inv in H3 as [vs' [-> Hr]]; eauto.
   Qed.
 
-  (* Correlation lemmas: bstep and cbstep that both terminate on the same expression
-     agree on fuel and value. (Stated for the Res/CRes case — the OOT/COOT case
-     cannot enforce fuel equality, since bstep_fuel and cbstep_fuel can independently
-     run out of fuel at any point.) *)
+  Lemma refine_val'_Vconstr {t vs vs'} :
+    Forall2 refine_val vs vs' ->
+    refine_val' (AS.Vconstr t vs) (CVconstr t vs').
+  Proof. intros Hr. induction Hr; auto. Qed.
+
+  Lemma refine_val_Vconstr {l W t vs vs'} :
+    Forall2 refine_val vs vs' ->
+    refine_val (AS.Tag l (AS.Vconstr t vs)) (CTag l W (CVconstr t vs')).
+  Proof. intros Hr. constructor. apply refine_val'_Vconstr; auto. Qed.
+
+  (* Correlation lemmas:
+     bstep and cbstep that both terminate on the same expression agree on fuel and value. *)
   Lemma cbstep_bstep_aux v1 v2 {W ex ρ1 ρ2 e c1 r1 c2 r2} :
     AS.bstep ρ1 e c1 r1 ->
     refine_env ρ1 ρ2 ->
@@ -590,42 +598,48 @@ Section Checking.
       invc.
       eapply IHHb; eauto.
       apply refine_env_set; auto.
-      (* Hrvs : Forall2 refine_val vs vs2
-         ============================
-         refine_val (AS.Tag w (AS.Vconstr t vs)) (CTag w W0 (CVconstr t vs2)) *)
-      admit. (* need refine_val_Vconstr *)
+      apply refine_val_Vconstr; auto.
     - (* BStep_proj *)
       inv Hc.
       destruct (refine_env_get Henv H) as [vc [Hvc Hrc]].
       invc.
       destruct (refine_val_Vconstr_inv Hrc) as [W'' [vs' [Heq Hrvs]]].
       inv Heq.
-      edestruct (@Forall2_nth_error) with (B := clval) as [v' [Hnv' Hrv']]; eauto.
-      exact Hrvs.
-      rewrite H7 in Hnv'. inv Hnv'.
+      edestruct (Forall2_nth_error H0 Hrvs) as [v' [Hnv' Hrv']]; eauto.
+      unfold clval in *; invc.
       eapply IHHb; eauto.
       apply refine_env_set; auto.
     - (* BStep_case *)
       inv Hc.
       destruct (refine_env_get Henv H) as [vc [Hvc Hrc]].
-      rewrite Hvc in H6. inv H6.
+      invc.
       destruct (refine_val_Vconstr_inv Hrc) as [W'' [vs' [Heq _]]].
       inv Heq.
-      destruct (find_tag_deterministic H0 H7); subst.
+      destruct (find_tag_deterministic H0 H6); subst.
       eapply IHHb; eauto.
     - (* BStepF_OOT — r1 = OOT contradicts Heq1 *)
       discriminate.
     - (* BStepF_Step *)
-      inv Hc; [discriminate|].
+      inv Hc.
       edestruct IHHb as [Hc0 Hrv0]; eauto.
   Qed.
 
-  Lemma cbstep_bstep W ex ρ1 ρ2 e c1 c2 v1 v2 :
+  Lemma cbstep_bstep_refine W ex ρ1 ρ2 e c1 c2 v1 v2 :
     AS.bstep ρ1 e c1 (AS.Res v1) ->
     refine_env ρ1 ρ2 ->
     cbstep W ex ρ2 e c2 (CRes v2) ->
     c1 = c2 /\ refine_val v1 v2.
   Proof. intros; eapply cbstep_bstep_aux; eauto. Qed.
+
+  Lemma cbstep_fuel_bstep_fuel_refine W ex ρ1 ρ2 e c1 c2 v1 v2 :
+    AS.bstep_fuel ρ1 e c1 (AS.Res v1) ->
+    refine_env ρ1 ρ2 ->
+    cbstep_fuel W ex ρ2 e c2 (CRes v2) ->
+    c1 = c2 /\ refine_val v1 v2.
+  Proof.
+    intros Hb Henv Hc. inv Hb. inv Hc.
+    edestruct cbstep_bstep_refine as [Hc0 Hrv]; eauto.
+  Qed.
 
   (* Valid web_map Specification *)
   Inductive web_map_inv (W : web_map) (Γ : vars) : AS.exp -> Prop :=
@@ -702,16 +716,17 @@ Section Checking.
         cbstep_fuel W ex ρ2 e j2 r2 /\
         R' P (i - j1) r1 r2.
 
-  Definition well_annotated W ex ρ1 ρ2 e :=
-    forall i r,
-      AS.bstep_fuel ρ1 e i r ->
-      match r with
-      | AS.OOT => cbstep_fuel W ex ρ2 e i COOT
-      | AS.Res v => exists cv, cbstep_fuel W ex ρ2 e i (CRes cv)
-      end.
+  Definition well_annotated W ex ρ1 e :=
+    forall i ρ2 r1,
+      AS.bstep_fuel ρ1 e i r1 ->
+      refine_env ρ1 ρ2 ->
+      exists r2,
+        cbstep_fuel W ex ρ2 e i r2 /\
+        refine_res r1 r2.
 
   Fixpoint V (i : nat) (wv : AS.wval) (cv : clval) {struct i} : Prop :=
     wf_cval cv /\
+    refine_val wv cv /\
     match wv, cv with
     | AS.TAG _ l1 v1, CTAG _ l2 W v2 =>
         l1 = l2 /\
@@ -738,7 +753,7 @@ Section Checking.
                       Forall2 (V (i0 - (i0 - j))) vs1 vs2 ->
                       set_lists xs1 vs1 (M.set f1 (AS.Tag l1 (AS.Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
                       set_lists xs2 vs2 (M.set f2 (CTag l2 W (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
-                      well_annotated W (exposedb w2) ρ3 ρ4 e1 ->
+                      well_annotated W (exposedb w2) ρ3 e1 ->
                       E' V W (exposedb w2) (i0 - (i0 - j)) ρ3 ρ4 e1
                 end
 
