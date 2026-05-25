@@ -476,56 +476,31 @@ Section Checking.
     | AS.TAG _ l1 v1, CTAG _ l2 W v2 =>
         l1 = l2 /\
         exists w2, W ! l2 = Some w2 /\
+        (w2 \in Exposed -> to_exposed cv) /\
         match v1, v2 with
         | AS.Vconstr c1 vs1, CVconstr c2 vs2 =>
             c1 = c2 /\
-            length vs1 = length vs2 /\
-            match exposedb w2 with
-            | true =>
-                to_exposed cv /\
-                match i with
-                | 0 => True
-                | S i0 => Forall2 (V i0) vs1 vs2
-                end
-
-            | false =>
-                match i with
-                | 0 => True
-                | S i0 => Forall2 (V i0) vs1 vs2
-                end
-            end
+              length vs1 = length vs2 /\
+              match i with
+              | 0 => True
+              | S i0 => Forall2 (V i0) vs1 vs2
+              end
 
         | AS.Vfun f1 ρ1 xs1 e1, CVfun f2 ρ2 xs2 e2 =>
             length xs1 = length xs2 /\
-            e1 = e2 /\
-            match exposedb w2 with
-            | true =>
-                match i with
+              e1 = e2 /\
+              match i with
                 | 0 => True
                 | S i0 =>
                     forall j vs1 vs2 ρ3 ρ4,
                       j <= i0 ->
-                      Forall to_exposed vs2 ->
+                      (w2 \in Exposed -> Forall to_exposed vs2) ->
                       Forall2 (V (i0 - (i0 - j))) vs1 vs2 ->
                       set_lists xs1 vs1 (M.set f1 (AS.Tag l1 (AS.Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
                       set_lists xs2 vs2 (M.set f2 (CTag l2 W (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
-                      well_annotated W true ρ3 ρ4 e1 ->
-                      E' V W true (i0 - (i0 - j)) ρ3 ρ4 e1
+                      well_annotated W (exposedb w2) ρ3 ρ4 e1 ->
+                      E' V W (exposedb w2) (i0 - (i0 - j)) ρ3 ρ4 e1
                 end
-
-            | false =>
-                match i with
-                | 0 => True
-                | S i0 =>
-                    forall j vs1 vs2 ρ3 ρ4,
-                      j <= i0 ->
-                      Forall2 (V (i0 - (i0 - j))) vs1 vs2 ->
-                      set_lists xs1 vs1 (M.set f1 (AS.Tag l1 (AS.Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
-                      set_lists xs2 vs2 (M.set f2 (CTag l2 W (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
-                      well_annotated W false ρ3 ρ4 e1 ->
-                      E' V W false (i0 - (i0 - j)) ρ3 ρ4 e1
-                end
-            end
 
         | _, _ => False
         end
@@ -718,7 +693,7 @@ Section Checking.
     destruct i; simpl in H0;
       destruct j; simpl; intros;
       rename w into W;
-      destruct H0 as [Hwf [Heql [w [Hw HV]]]]; subst.
+      destruct H0 as [Hwf [Heql [w [Hw [Hex HV]]]]]; subst.
     - destruct v; destruct c; fcrush.
     - fcrush.
     - repeat (split; auto).
@@ -741,11 +716,7 @@ Section Checking.
           eapply HV; eauto; lia.
       + destruct HV as [Heqc [Hlen HV]]; subst.
         eexists; repeat (split; eauto).
-        destruct (exposed_reflect w).
-        * destruct HV as [Hex HV].
-          repeat (split; eauto).
-          eapply V_mono_Forall_aux; eauto; lia.
-        * eapply V_mono_Forall_aux; eauto; lia.
+        eapply V_mono_Forall_aux; eauto; lia.
   Qed.
 
   Lemma V_mono_Forall {vs1 vs2} i j :
@@ -871,29 +842,27 @@ Section Checking.
       + destruct v1; destruct v2.
         destruct v; destruct c; try firstorder;
           rename w into W.
-        * destruct H1 as [Hwf [Heql [w [HW [Hlen [Heqe HV]]]]]]; subst.
-          destruct (exposed_reflect w).
-          2 : { fcrush. }
+        * destruct H1 as [Hwf [Heql [w [HW [Hex [Hlen [Heqe HV]]]]]]]; subst.
           repeat (split; eauto); intros.
 
-          assert (HEV : E' V W true (i - (i - j)) ρ3 ρ4 e0).
+          assert (HEV : E' V W (exposedb w) (i - (i - j)) ρ3 ρ4 e0).
           {
             eapply HV; eauto.
             eapply V_V_top_Forall; eauto; try lia.
+            inv H0; invc.
+            destruct (exposed_reflect w0); fcrush.
           }
           unfold E' in *; intros.
           edestruct HEV as [j2 [r2 [Hstep HR]]]; eauto.
+          inv H0; invc.
+          destruct (exposed_reflect w0); try contradiction.
+
           eexists; eexists; split; eauto.
           unfold R' in *.
           destruct r1; destruct r2; auto.
           eapply H; eauto; try lia.
           eapply cbstep_fuel_exposed_inv in Hstep; eauto; fcrush.
-        * rename x into w.
-          destruct (exposed_reflect w).
-          2 : { fcrush. }
-          invc.
-          destruct H5 as [Hexw2' HV].
-          eapply V_V_top_Forall; fcrush.
+        * eapply V_V_top_Forall; fcrush.
     - destruct i; simpl in *;
         destruct H1 as [Hwf [Hex HV]].
       + destruct v1; destruct v2.
@@ -905,19 +874,19 @@ Section Checking.
       + destruct v1; destruct v2.
         destruct v; destruct c; try firstorder; subst; invc.
         * inv Hex.
-          eexists; repeat (split; eauto).
+          eexists; repeat (split; eauto); intros.
           rename w into W.
-          rename w0 into w.
-          destruct (exposed_reflect w).
-          2 : { fcrush. }
-          intros.
+
+          inv H0; invc.
           assert (HEV : E' V_top W true (i - (i - j)) ρ3 ρ4 e0).
           {
-            eapply H4; eauto.
+            eapply (H4 _ vs1 vs2); eauto.
             eapply V_V_top_Forall; eauto; try lia.
+            destruct (exposed_reflect w); fcrush.
           }
           unfold E' in *; intros.
           edestruct HEV as [j2 [r2 [Hstep HR]]]; eauto.
+          destruct (exposed_reflect w); try contradiction.
           eexists; eexists; split; eauto.
           unfold R' in *.
           destruct r1; destruct r2; auto.
@@ -925,12 +894,6 @@ Section Checking.
           eapply cbstep_fuel_exposed_inv in Hstep; eauto; fcrush.
         * inv Hex.
           eexists; (repeat split; eauto).
-          rename w into W.
-          rename w0 into w.
-          destruct (exposed_reflect w).
-          2 : { fcrush. }
-          split.
-          fcrush.
           eapply V_V_top_Forall; eauto.
   Qed.
 
