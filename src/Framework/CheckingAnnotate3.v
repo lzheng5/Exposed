@@ -218,6 +218,15 @@ Section Checking.
     (v = v' /\ c = c').
   Proof. srun eauto using cbstep_fuel_deterministic_aux. Qed.
 
+  Lemma cbstep_fuel_exposed_inv W ρ e k r :
+    cbstep_fuel W true ρ e k r ->
+    to_exposed_res r.
+  Proof.
+    unfold to_exposed_res.
+    intro H.
+    induction H; eauto.
+  Qed.
+
   (* Valid web_map Specification *)
   Inductive web_map_inv (W : web_map) (Γ : vars) : AS.exp -> Prop :=
   | Web_Map_Inv_ret :
@@ -581,6 +590,16 @@ Section Checking.
     apply V_mono with i; eauto.
   Qed.
 
+  (* Inversion Lemmas *)
+  Lemma R_res_inv_l i v1 r2 :
+    R i (AS.Res v1) r2 ->
+    exists v2, r2 = CRes v2 /\ V i v1 v2.
+  Proof.
+    intros.
+    destruct r2; simpl in *; try contradiction.
+    eexists; split; eauto.
+  Qed.
+
   (* Compatibility Lemmas *)
   (* TODO: rename well_annotated *)
   Definition trans_correct W Γ e :=
@@ -695,16 +714,6 @@ Section Checking.
           destruct ex; simpl in *; auto.
           destruct r2; fcrush.
         * eapply R_mono; eauto; lia.
-  Qed.
-
-  (* Inversion Lemmas *)
-  Lemma R_res_inv_l i v1 r2 :
-    R i (AS.Res v1) r2 ->
-    exists v2, r2 = CRes v2 /\ V i v1 v2.
-  Proof.
-    intros.
-    destruct r2; simpl in *; try contradiction.
-    eexists; split; eauto.
   Qed.
 
   Lemma app_compat W Γ xs f l w :
@@ -854,3 +863,159 @@ Section Checking.
         econstructor; eauto.
         destruct (exposed_reflect w2); fcrush.
   Qed.
+
+  Lemma case_nil_compat W Γ x l w :
+    W ! l = Some w ->
+    (x \in Γ) ->
+    trans_correct W Γ (AS.Ecase x l []).
+  Proof.
+    unfold trans_correct, E, E'.
+    intros HWl Hx.
+    intros; simpl.
+    inv H2; fcrush.
+  Qed.
+
+  (* Fundamental Property *)
+  Lemma fundamental_property {W Γ e}:
+    web_map_inv W Γ e -> trans_correct W Γ e.
+  Proof.
+    intros.
+    induction H; intros.
+    - eapply ret_compat; eauto.
+    - eapply fun_compat; eauto.
+    - eapply app_compat; eauto.
+    - admit. (* eapply letapp_compat; eauto. *)
+    - admit. (* eapply constr_compat; eauto. *)
+    - admit. (* eapply proj_compat; eauto. *)
+    - eapply case_nil_compat; eauto.
+    - admit. (* eapply case_cons_compat; eauto.*)
+  Admitted.
+
+  (* Top-level Relations *)
+
+  Fixpoint V_top (i : nat) (wv : AS.wval) (cv : clval) {struct i} : Prop :=
+    to_exposed cv /\
+    match wv, cv with
+    | AS.TAG _ l1 v1, CTAG _ l2 W v2 =>
+        l1 = l2 /\
+        match v1, v2 with
+        | AS.Vconstr c1 vs1, CVconstr c2 vs2 =>
+            c1 = c2 /\
+              length vs1 = length vs2 /\
+              match i with
+              | 0 => True
+              | S i0 => Forall2 (V_top i0) vs1 vs2
+              end
+
+        | AS.Vfun f1 ρ1 xs1 e1, CVfun f2 ρ2 xs2 e2 =>
+            length xs1 = length xs2 /\
+            e1 = e2 /\
+              match i with
+              | 0 => True
+              | S i0 =>
+                  forall j vs1 vs2 ρ3 ρ4,
+                    j <= i0 ->
+                    Forall to_exposed vs2 ->
+                    Forall2 (V_top (i0 - (i0 - j))) vs1 vs2 ->
+                    set_lists xs1 vs1 (M.set f1 (AS.Tag l1 (AS.Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
+                    set_lists xs2 vs2 (M.set f2 (CTag l2 W (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
+                    well_annotated W true ρ3 ρ4 e1 ->
+                    E' V_top W true (i0 - (i0 - j)) ρ3 ρ4 e1
+              end
+
+          | _, _ => False
+          end
+      end.
+
+  Lemma V_V_top_Forall :
+    forall i,
+      (forall m : nat,
+          m < S i ->
+          forall v1 v2,
+            to_exposed v2 ->
+            V m v1 v2 <-> V_top m v1 v2) ->
+      forall j vs1 vs2,
+        j <= i ->
+        Forall to_exposed vs2 ->
+        Forall2 (V j) vs1 vs2 <-> Forall2 (V_top j) vs1 vs2.
+  Proof.
+    intros.
+    revert vs1 j H0.
+    induction H1; simpl; intros.
+    - split; intros; inv H1; auto.
+    - split; intros; inv H3; constructor; auto;
+        solve [ eapply H; try lia; eauto |
+                eapply IHForall; eauto ].
+  Qed.
+
+  Lemma V_V_top :
+    forall i v1 v2,
+      to_exposed v2 ->
+      (V i v1 v2 <-> V_top i v1 v2).
+  Proof.
+    intro i.
+    induction i using lt_wf_rec; intros.
+    split; intros.
+    - destruct i; simpl in *.
+      + destruct v1; destruct v2.
+        destruct v; destruct c; try firstorder.
+      + destruct v1; destruct v2.
+        destruct v; destruct c; try firstorder;
+          rename w into W.
+        * destruct H1 as [Heql [w [HW [Hlen [Heqe HV]]]]]; subst.
+          destruct (exposed_reflect w).
+          2 : { fcrush. }
+          repeat (split; eauto); intros.
+
+          assert (HEV : E' V W true (i - (i - j)) ρ3 ρ4 e0).
+          {
+            eapply HV; eauto.
+            eapply V_V_top_Forall; eauto; try lia.
+          }
+          unfold E' in *; intros.
+          edestruct HEV as [j2 [r2 [Hstep HR]]]; eauto.
+          eexists; eexists; split; eauto.
+          unfold R' in *.
+          destruct r1; destruct r2; auto.
+          eapply H; eauto; try lia.
+          eapply cbstep_fuel_exposed_inv in Hstep; eauto; fcrush.
+        * rename x into w.
+          destruct (exposed_reflect w).
+          2 : { fcrush. }
+          invc.
+          destruct H5 as [Hexw2' HV].
+          eapply V_V_top_Forall; eauto.
+          admit. (* TODO: wf_cval *)
+    - destruct i; simpl in *; inv H1.
+      + destruct v1; destruct v2.
+        destruct v; destruct c; try firstorder; invc; fcrush.
+      + destruct v1; destruct v2.
+        destruct v; destruct c; try firstorder; invc.
+        * eexists; repeat (split; eauto).
+          rename w into W.
+          rename x0 into w.
+          destruct (exposed_reflect w).
+          2 : { fcrush. }
+          intros.
+          assert (HEV : E' V_top W true (i - (i - j)) ρ3 ρ4 e0).
+          {
+            eapply H5; eauto.
+            eapply V_V_top_Forall; eauto; try lia.
+          }
+          unfold E' in *; intros.
+          edestruct HEV as [j2 [r2 [Hstep HR]]]; eauto.
+          eexists; eexists; split; eauto.
+          unfold R' in *.
+          destruct r1; destruct r2; auto.
+          eapply H; eauto; try lia.
+          eapply cbstep_fuel_exposed_inv in Hstep; eauto; fcrush.
+        * eexists; (repeat split; eauto).
+          rename w into W.
+          rename x0 into w.
+          destruct (exposed_reflect w).
+          2 : { fcrush. }
+          split.
+          admit.
+          eapply V_V_top_Forall; eauto.
+          admit.
+  Admitted.
