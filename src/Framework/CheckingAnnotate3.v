@@ -146,7 +146,7 @@ Section Checking.
   Scheme cbstep_ind' := Minimality for cbstep Sort Prop
   with cbstep_fuel_ind' := Minimality for cbstep_fuel Sort Prop.
 
-  Theorem cbstep_deterministic v v' {W ex ρ e c c' r r'}:
+  Lemma cbstep_deterministic_aux v v' {W ex ρ e c c' r r'}:
     cbstep W ex ρ e c r ->
     cbstep W ex ρ e c' r' ->
     r = CRes v ->
@@ -194,7 +194,7 @@ Section Checking.
       + edestruct IHcbstep; eauto.
   Qed.
 
-  Theorem cbstep_fuel_deterministic v v' {W ex ρ e c c' r r'}:
+  Lemma cbstep_fuel_deterministic_aux v v' {W ex ρ e c c' r r'}:
     cbstep_fuel W ex ρ e c r ->
     cbstep_fuel W ex ρ e c' r' ->
     r = CRes v ->
@@ -203,8 +203,20 @@ Section Checking.
   Proof.
     intros.
     inv H; inv H0; try discriminate.
-    edestruct (cbstep_deterministic v v' H3 H); eauto.
+    edestruct (cbstep_deterministic_aux v v' H3 H); eauto.
   Qed.
+
+  Theorem cbstep_deterministic v v' {W ex ρ e c c'}:
+    cbstep W ex ρ e c (CRes v) ->
+    cbstep W ex ρ e c' (CRes v') ->
+    (v = v' /\ c = c').
+  Proof. srun eauto using cbstep_deterministic_aux. Qed.
+
+  Theorem cbstep_fuel_deterministic v v' {W ex ρ e c c'}:
+    cbstep_fuel W ex ρ e c (CRes v) ->
+    cbstep_fuel W ex ρ e c' (CRes v') ->
+    (v = v' /\ c = c').
+  Proof. srun eauto using cbstep_fuel_deterministic_aux. Qed.
 
   (* Valid web_map Specification *)
   Inductive web_map_inv (W : web_map) (Γ : vars) : AS.exp -> Prop :=
@@ -766,28 +778,79 @@ Section Checking.
             fcrush.
         }
 
-      apply (E_mono _ i) in HE; try lia.
-      unfold E, E' in HE.
-      destruct (HE c (AS.Res v)) as [j2 [r2 [He0 Rr]]]; try lia; auto.
-      exists (S j2), r2; split; eauto.
-      constructor; auto.
-      * econstructor; eauto.
-        intros.
-        unfold clval in *; invc.
-        destruct H18; auto.
-        split; auto.
+        apply (E_mono _ i) in HE; try lia.
+        unfold E, E' in HE.
+        destruct (HE c (AS.Res v)) as [j2 [r2 [He0 Rr]]]; try lia; auto.
+        exists (S j2), r2; split; eauto.
+        constructor; auto.
+        * econstructor; eauto.
+          -- intros.
+             unfold clval in *; invc.
+             destruct H18; auto.
+             split; auto.
+             edestruct (R_res_inv_l _ _ _ Rr) as [cv' [Heqcv' HV']]; eauto; subst.
+             assert (cv = cv' /\ c = j2).
+             {
+               eapply cbstep_fuel_deterministic; eauto.
+             }
+             inv H5; fcrush.
+          -- destruct (exposed_reflect w2); fcrush.
+        * destruct ex; simpl in *; auto.
+          destruct r2; try contradiction.
+          fcrush.
+      + edestruct (G_get_list H0 xs vs) as [vs2 [Heqvs2 Vvs]]; eauto; invc.
+        eapply AS.free_app_xs_subset; eauto.
+
+        destruct (set_lists_length3 (M.set f'0 (CTag l0 W' (CVfun f'0 ρ'0 xs'0 e0)) ρ'0) xs'0 vs2) as [ρ4 Heqρ4].
+        unfold clval in *.
+        rewrite <- (set_lists_length_eq _ _ _ _ H11); auto.
+
+        assert (HE : E W' false (i - (i - i)) ρ'' ρ4 e0).
+        {
+          eapply (HV i vs vs2); eauto.
+          intros.
+          apply V_mono_Forall with (S i); auto; lia.
+
+          unfold well_annotated; intros.
+          assert (Hcbstep_e : match r with
+                               | AS.OOT => cbstep_fuel W ex ρ2 (AS.Eapp f l xs) (S i0) COOT
+                               | AS.Res _ =>
+                                   exists cv : clval,
+                                     cbstep_fuel W ex ρ2 (AS.Eapp f l xs) (S i0) (CRes cv)
+                               end).
+          {
+            eapply H; eauto; try lia.
+          }
+          destruct r.
+          - inv Hcbstep_e.
+            inv H4.
+            unfold clval in *.
+            invc.
+            destruct (exposed_reflect w); auto.
+            fcrush.
+          - inv Hcbstep_e.
+            inv H3.
+            inv H5.
+            unfold clval in *.
+            invc.
+            destruct (exposed_reflect w0); eauto.
+            fcrush.
+        }
+
+        apply (E_mono _ i) in HE; try lia.
+        unfold E, E' in HE.
+        destruct (HE c (AS.Res v)) as [j2 [r2 [He0 Rr]]]; try lia; auto.
+        exists (S j2), r2; split; eauto.
+
         edestruct (R_res_inv_l _ _ _ Rr) as [cv' [Heqcv' HV']]; eauto; subst.
+        assert (Heq : cv = cv' /\ c = j2).
+        {
+          unfold clval in *; invc.
+          eapply cbstep_fuel_deterministic; eauto.
+        }
+        inv Heq.
 
-
-          eapply V_exposed_Forall; eauto.
-        * pose proof He0 as Hr2.
-          destruct (exposed_reflect w); try contradiction.
-          apply bstep_fuel_exposed_inv in Hr2; auto.
-      + destruct ex; simpl in *; auto.
-        unfold R' in Rr.
-        destruct r1.
-        * destruct r2; auto; contradiction.
-        * destruct r2; try contradiction.
-          destruct w1.
-          eapply V_exposed_res; eauto.
+        constructor; auto.
+        econstructor; eauto.
+        destruct (exposed_reflect w2); fcrush.
   Qed.
