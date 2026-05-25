@@ -25,7 +25,7 @@ Section Checking.
 
   (* Value *)
   Inductive cval : Type :=
-  | CVfun : var -> M.t (ctag cval) -> list var -> AS.exp -> cval (* Need to capture a web_map for the function body exp *)
+  | CVfun : var -> M.t (ctag cval) -> list var -> AS.exp -> cval
   | CVconstr : ctor_tag -> list (ctag cval) -> cval.
 
   Hint Constructors cval : core.
@@ -44,16 +44,84 @@ Section Checking.
 
   Hint Constructors cres : core.
 
-  Definition to_exposed (tv : clval) : Prop :=
-    match tv with
-    | CTAG _ l W v => exists w, W ! l = Some w /\ (w \in Exposed)
-    end.
+  Inductive to_exposed : clval -> Prop :=
+  | ToExp_cfun :
+    forall W l w f ρ xs e,
+      W ! l = Some w ->
+      (w \in Exposed) ->
+      to_exposed (CTag l W (CVfun f ρ xs e))
 
-  Definition to_exposed_res (r : cres) : Prop :=
-    match r with
-    | COOT => True
-    | CRes v => to_exposed v
-    end.
+  | ToExp_cconstr :
+    forall W l w c vs,
+      W ! l = Some w ->
+      (w \in Exposed) ->
+      Forall to_exposed vs ->
+      to_exposed (CTag l W (CVconstr c vs)).
+
+  Hint Constructors to_exposed : core.
+
+  (* Exposed Result *)
+  Inductive to_exposed_cres : cres -> Prop :=
+  | ToExp_OOT :
+    to_exposed_cres COOT
+
+  | Exp_Res :
+    forall wv,
+      to_exposed wv ->
+      to_exposed_cres (CRes wv).
+
+  Hint Constructors to_exposed_cres : core.
+
+  (* Well-formed Value and Environment *)
+  Inductive wf_cval : clval -> Prop :=
+  | WF_TAG :
+    forall W l w v,
+      W ! l = Some w ->
+      (w \in Exposed -> to_exposed (CTag l W v)) ->
+      wf_cval' v ->
+      wf_cval (CTag l W v)
+
+  with wf_cval' : cval -> Prop :=
+  | WF_CVfun:
+    forall f ρ xs e,
+      wf_cenv ρ ->
+      wf_cval' (CVfun f ρ xs e)
+
+  | WF_CVconstr_nil :
+    forall c,
+      wf_cval' (CVconstr c [])
+
+  | WF_CVconstr :
+    forall c v vs,
+      wf_cval v ->
+      wf_cval' (CVconstr c vs) ->
+      wf_cval' (CVconstr c (v :: vs))
+
+  with wf_cenv : cenv -> Prop :=
+  | WF_cenv :
+    forall ρ,
+      (forall x v, ρ ! x = Some v -> wf_cval v) ->
+      wf_cenv ρ.
+
+  Hint Constructors wf_cval : core.
+  Hint Constructors wf_cval' : core.
+  Hint Constructors wf_cenv : core.
+
+  Scheme wf_cval_mut := Induction for wf_cval Sort Prop
+  with wf_cval'_mut := Induction for wf_cval' Sort Prop
+  with wf_cenv_mut := Induction for wf_cenv Sort Prop.
+
+  (* Well-formed Result *)
+  Inductive wf_cres : cres -> Prop :=
+  | WF_COOT :
+    wf_cres COOT
+
+  | WF_CRes :
+    forall v,
+      wf_cval v ->
+      wf_cres (CRes v).
+
+  Hint Constructors wf_cres : core.
 
   (* Checking Semantics *)
   (* `W` is a valid analysis result with respect to the checking big-step semantics *)
@@ -76,7 +144,7 @@ Section Checking.
       set_lists xs' vs (M.set f' (CTag l' W' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
       W ! l = Some w -> (* W controls caller *)
       W' ! l' = Some w -> (* W' controls callee *)
-      (w \in Exposed -> Forall to_exposed vs /\ to_exposed_res r) -> (* Doesn't matter which W as long as `vs` and `r` are mapped to exposed web ids. *)
+      (w \in Exposed -> Forall to_exposed vs /\ to_exposed_cres r) -> (* Doesn't matter which W as long as `vs` and `r` are mapped to exposed web ids. *)
       cbstep_fuel W' (exposedb w) ρ'' e c r ->
       cbstep W ex ρ (AS.Eapp f l xs) c r
 
@@ -137,7 +205,7 @@ Section Checking.
   | CbstepF_Step :
     forall {e c r},
       cbstep W ex ρ e c r ->
-      (if ex then to_exposed_res r else True) ->
+      (if ex then to_exposed_cres r else True) ->
       cbstep_fuel W ex ρ e (S c) r.
 
   Hint Constructors cbstep : core.
@@ -187,11 +255,8 @@ Section Checking.
       destruct (find_tag_deterministic H0 H9); subst.
       edestruct IHcbstep; eauto.
     - inv H0.
-    - destruct ex; inv H1.
-      + unfold to_exposed_res, to_exposed in *.
-        destruct v; destruct v'.
+    - destruct ex; inv H1;
         edestruct IHcbstep; eauto.
-      + edestruct IHcbstep; eauto.
   Qed.
 
   Lemma cbstep_fuel_deterministic_aux v v' {W ex ρ e c c' r r'}:
@@ -220,11 +285,106 @@ Section Checking.
 
   Lemma cbstep_fuel_exposed_inv W ρ e k r :
     cbstep_fuel W true ρ e k r ->
-    to_exposed_res r.
+    to_exposed_cres r.
   Proof.
-    unfold to_exposed_res.
     intro H.
     induction H; eauto.
+  Qed.
+
+  (* Lemmas about [wf_val] and [wf_env] *)
+  Lemma wf_cenv_get ρ :
+    wf_cenv ρ ->
+    forall x v,
+      ρ ! x = Some v ->
+      wf_cval v.
+  Proof. fcrush. Qed.
+
+  Lemma wf_cenv_get_list ρ :
+    wf_cenv ρ ->
+    forall xs vs,
+      get_list xs ρ = Some vs ->
+      Forall wf_cval vs.
+  Proof.
+    intros Henv xs.
+    induction xs; simpl; intros; fcrush.
+  Qed.
+
+  Lemma wf_cenv_set ρ x v :
+    wf_cenv ρ ->
+    wf_cval v ->
+    wf_cenv (M.set x v ρ).
+  Proof.
+    intros.
+    inv H.
+    constructor; intros.
+    destruct (M.elt_eq x x0); subst.
+    - rewrite M.gss in *; fcrush.
+    - rewrite M.gso in *; fcrush.
+  Qed.
+
+  Lemma wf_cenv_set_lists :
+    forall ρ,
+      wf_cenv ρ ->
+      forall vs xs ρ',
+        Forall wf_cval vs ->
+        set_lists xs vs ρ = Some ρ' ->
+        wf_cenv ρ'.
+  Proof.
+    intros ρ Henv vs.
+    induction vs; simpl; intros.
+    - specialize (set_lists_length_eq _ _ _ _ H0); intros.
+      rewrite length_zero_iff_nil in H1; inv H1.
+      inv H0; auto.
+    - destruct xs; inv H0.
+      destruct (set_lists xs vs ρ) eqn:Heq1; try discriminate.
+      inv H2.
+      inv H.
+      rename e into x0.
+      constructor; intros.
+      destruct (M.elt_eq x0 x); subst.
+      + rewrite M.gss in *; fcrush.
+      + rewrite M.gso in *; fcrush.
+  Qed.
+
+  Lemma wf_cval_CVconstr W c l w vs :
+    Forall wf_cval vs ->
+    W ! l = Some w ->
+    (w \in Exposed -> Forall to_exposed vs) ->
+    wf_cval (CTag l W (CVconstr c vs)).
+  Proof.
+    intros H.
+    induction H; simpl; auto; intros.
+    fcrush.
+
+    assert (Hwf : wf_cval (CTag l W (CVconstr c l0))).
+    {
+      eapply IHForall; eauto.
+      fcrush.
+    }
+
+    inv Hwf; invc; eauto.
+  Qed.
+
+  Lemma wf_cval_CVconstr_inv {W w l c vs} :
+    wf_cval (CTag l W (CVconstr c vs)) ->
+    W ! l = Some w ->
+    (Forall wf_cval vs /\ (w \in Exposed -> Forall to_exposed vs)).
+  Proof.
+    intros.
+    remember (CTag l W (CVconstr c vs)) as v.
+    revert c vs Heqv.
+    induction H using wf_cval_mut with (P0 := fun v wf =>
+                                               forall c vs,
+                                                 v = (CVconstr c vs) ->
+                                                 Forall wf_cval vs)
+                                      (P1 := fun ρ wf => True);
+      intros; eauto.
+    - inv Heqv; invc.
+      split; eauto; intros.
+      fcrush.
+    - fcrush.
+    - fcrush.
+    - fcrush.
   Qed.
 
   (* Valid web_map Specification *)
@@ -311,6 +471,7 @@ Section Checking.
       end.
 
   Fixpoint V (i : nat) (wv : AS.wval) (cv : clval) {struct i} : Prop :=
+    wf_cval cv /\
     match wv, cv with
     | AS.TAG _ l1 v1, CTAG _ l2 W v2 =>
         l1 = l2 /\
@@ -374,8 +535,41 @@ Section Checking.
 
   Definition E := (E' V).
 
+  (* Lemmas about [wf_cval], [wf_cres], and [wf_cenv] *)
+  Lemma V_wf_cval_r {i v1 v2}:
+    V i v1 v2 ->
+    wf_cval v2.
+  Proof. intros; destruct i; simpl in *; fcrush. Qed.
+
+  Lemma V_wf_cval_Forall_r {i vs1 vs2} :
+    Forall2 (V i) vs1 vs2 ->
+    Forall wf_cval vs2.
+  Proof. intros H. induction H; eauto using V_wf_cval_r. Qed.
+
+  Lemma V_wf_cres_r {i v1 v2}:
+    V i v1 v2 ->
+    wf_cres (CRes v2).
+  Proof. intros; eauto using V_wf_cval_r; eauto. Qed.
+
+  Lemma R_wf_cres_r {i r1 r2} :
+    R i r1 r2 ->
+    wf_cres r2.
+  Proof.
+    unfold R.
+    intros.
+    destruct r1; destruct r2; try contradiction;
+      eauto using V_wf_cval_r.
+  Qed.
+
+  (* Inversion Lemmas *)
+  Lemma R_res_inv_l i v1 r2 :
+    R i (AS.Res v1) r2 ->
+    exists v2, r2 = CRes v2 /\ V i v1 v2.
+  Proof. intros. fcrush. Qed.
+
   (* Environment Relation *)
   Definition G i Γ1 ρ1 Γ2 ρ2 :=
+    wf_cenv ρ2 /\
     forall x,
       (x \in Γ1) ->
       forall v1,
@@ -391,6 +585,11 @@ Section Checking.
     Γ3 \subset Γ1 ->
     Γ4 \subset Γ2 ->
     G i Γ3 ρ1 Γ4 ρ2.
+  Proof. unfold G. fcrush. Qed.
+
+  Lemma G_wf_cenv_r {i Γ1 ρ1 Γ2 ρ2}:
+    G i Γ1 ρ1 Γ2 ρ2 ->
+    wf_cenv ρ2.
   Proof. unfold G. fcrush. Qed.
 
   Lemma G_get {Γ1 Γ2 i ρ1 ρ2}:
@@ -447,6 +646,13 @@ Section Checking.
     unfold G.
     intro HG.
     pose proof HG as HG'.
+    intros.
+
+    inv HG.
+    split.
+    eapply wf_cenv_set; eauto.
+    eapply V_wf_cval_r; eauto.
+
     intros.
     destruct (M.elt_eq x0 x); subst.
     - repeat rewrite M.gss in *.
@@ -512,7 +718,7 @@ Section Checking.
     destruct i; simpl in H0;
       destruct j; simpl; intros;
       rename w into W;
-      destruct H0 as [Heql [w [Hw HV]]]; subst.
+      destruct H0 as [Hwf [Heql [w [Hw HV]]]]; subst.
     - destruct v; destruct c; fcrush.
     - fcrush.
     - repeat (split; auto).
@@ -536,7 +742,7 @@ Section Checking.
       + destruct HV as [Heqc [Hlen HV]]; subst.
         eexists; repeat (split; eauto).
         destruct (exposed_reflect w).
-        * destruct HV as [[w' [Hw' Hex]] HV].
+        * destruct HV as [Hex HV].
           repeat (split; eauto).
           eapply V_mono_Forall_aux; eauto; lia.
         * eapply V_mono_Forall_aux; eauto; lia.
@@ -585,19 +791,147 @@ Section Checking.
   Proof.
     unfold G.
     intros.
-    edestruct H as [v2 [Heqv2 HV]]; eauto.
-    eexists; eexists; repeat split; eauto.
-    apply V_mono with i; eauto.
+    inv H.
+    split; auto; intros.
+    edestruct H2 as [v2 [Heqv2 HV]]; eauto.
+    eexists; repeat (split; eauto).
+    eauto using V_mono.
   Qed.
 
-  (* Inversion Lemmas *)
-  Lemma R_res_inv_l i v1 r2 :
-    R i (AS.Res v1) r2 ->
-    exists v2, r2 = CRes v2 /\ V i v1 v2.
+  (* TODO: move after FP *)
+  (* Top-level Relations *)
+
+  Fixpoint V_top (i : nat) (wv : AS.wval) (cv : clval) {struct i} : Prop :=
+    wf_cval cv /\
+    to_exposed cv /\
+    match wv, cv with
+    | AS.TAG _ l1 v1, CTAG _ l2 W v2 =>
+        l1 = l2 /\
+        match v1, v2 with
+        | AS.Vconstr c1 vs1, CVconstr c2 vs2 =>
+            c1 = c2 /\
+              length vs1 = length vs2 /\
+              match i with
+              | 0 => True
+              | S i0 => Forall2 (V_top i0) vs1 vs2
+              end
+
+        | AS.Vfun f1 ρ1 xs1 e1, CVfun f2 ρ2 xs2 e2 =>
+            length xs1 = length xs2 /\
+            e1 = e2 /\
+              match i with
+              | 0 => True
+              | S i0 =>
+                  forall j vs1 vs2 ρ3 ρ4,
+                    j <= i0 ->
+                    Forall to_exposed vs2 ->
+                    Forall2 (V_top (i0 - (i0 - j))) vs1 vs2 ->
+                    set_lists xs1 vs1 (M.set f1 (AS.Tag l1 (AS.Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
+                    set_lists xs2 vs2 (M.set f2 (CTag l2 W (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
+                    well_annotated W true ρ3 ρ4 e1 ->
+                    E' V_top W true (i0 - (i0 - j)) ρ3 ρ4 e1
+              end
+
+          | _, _ => False
+          end
+      end.
+
+  Lemma V_V_top_Forall :
+    forall i,
+      (forall m : nat,
+          m < S i ->
+          forall v1 v2,
+            to_exposed v2 ->
+            V m v1 v2 <-> V_top m v1 v2) ->
+      forall j vs1 vs2,
+        j <= i ->
+        Forall to_exposed vs2 ->
+        Forall2 (V j) vs1 vs2 <-> Forall2 (V_top j) vs1 vs2.
   Proof.
     intros.
-    destruct r2; simpl in *; try contradiction.
-    eexists; split; eauto.
+    revert vs1 j H0.
+    induction H1; simpl; intros.
+    - split; intros; inv H1; auto.
+    - split; intros; inv H3; constructor; auto;
+        solve [ eapply H; try lia; eauto |
+                eapply IHForall; eauto ].
+  Qed.
+
+  Lemma V_V_top :
+    forall i v1 v2,
+      to_exposed v2 ->
+      (V i v1 v2 <-> V_top i v1 v2).
+  Proof.
+    intro i.
+    induction i using lt_wf_rec; intros.
+    split; intros.
+    - destruct i; simpl in *.
+      + destruct v1; destruct v2.
+        destruct v; destruct c; try firstorder.
+      + destruct v1; destruct v2.
+        destruct v; destruct c; try firstorder;
+          rename w into W.
+        * destruct H1 as [Hwf [Heql [w [HW [Hlen [Heqe HV]]]]]]; subst.
+          destruct (exposed_reflect w).
+          2 : { fcrush. }
+          repeat (split; eauto); intros.
+
+          assert (HEV : E' V W true (i - (i - j)) ρ3 ρ4 e0).
+          {
+            eapply HV; eauto.
+            eapply V_V_top_Forall; eauto; try lia.
+          }
+          unfold E' in *; intros.
+          edestruct HEV as [j2 [r2 [Hstep HR]]]; eauto.
+          eexists; eexists; split; eauto.
+          unfold R' in *.
+          destruct r1; destruct r2; auto.
+          eapply H; eauto; try lia.
+          eapply cbstep_fuel_exposed_inv in Hstep; eauto; fcrush.
+        * rename x into w.
+          destruct (exposed_reflect w).
+          2 : { fcrush. }
+          invc.
+          destruct H5 as [Hexw2' HV].
+          eapply V_V_top_Forall; fcrush.
+    - destruct i; simpl in *;
+        destruct H1 as [Hwf [Hex HV]].
+      + destruct v1; destruct v2.
+        destruct v; destruct c; try firstorder; subst; invc.
+        * inv Hex.
+          eexists; repeat (split; eauto); fcrush.
+        * inv Hex.
+          eexists; repeat (split; eauto); fcrush.
+      + destruct v1; destruct v2.
+        destruct v; destruct c; try firstorder; subst; invc.
+        * inv Hex.
+          eexists; repeat (split; eauto).
+          rename w into W.
+          rename w0 into w.
+          destruct (exposed_reflect w).
+          2 : { fcrush. }
+          intros.
+          assert (HEV : E' V_top W true (i - (i - j)) ρ3 ρ4 e0).
+          {
+            eapply H4; eauto.
+            eapply V_V_top_Forall; eauto; try lia.
+          }
+          unfold E' in *; intros.
+          edestruct HEV as [j2 [r2 [Hstep HR]]]; eauto.
+          eexists; eexists; split; eauto.
+          unfold R' in *.
+          destruct r1; destruct r2; auto.
+          eapply H; eauto; try lia.
+          eapply cbstep_fuel_exposed_inv in Hstep; eauto; fcrush.
+        * inv Hex.
+          eexists; (repeat split; eauto).
+          rename w into W.
+          rename w0 into w.
+          destruct (exposed_reflect w).
+          2 : { fcrush. }
+          split.
+          fcrush.
+          eapply V_V_top_Forall; eauto.
   Qed.
 
   (* Compatibility Lemmas *)
@@ -889,133 +1223,4 @@ Section Checking.
     - admit. (* eapply proj_compat; eauto. *)
     - eapply case_nil_compat; eauto.
     - admit. (* eapply case_cons_compat; eauto.*)
-  Admitted.
-
-  (* Top-level Relations *)
-
-  Fixpoint V_top (i : nat) (wv : AS.wval) (cv : clval) {struct i} : Prop :=
-    to_exposed cv /\
-    match wv, cv with
-    | AS.TAG _ l1 v1, CTAG _ l2 W v2 =>
-        l1 = l2 /\
-        match v1, v2 with
-        | AS.Vconstr c1 vs1, CVconstr c2 vs2 =>
-            c1 = c2 /\
-              length vs1 = length vs2 /\
-              match i with
-              | 0 => True
-              | S i0 => Forall2 (V_top i0) vs1 vs2
-              end
-
-        | AS.Vfun f1 ρ1 xs1 e1, CVfun f2 ρ2 xs2 e2 =>
-            length xs1 = length xs2 /\
-            e1 = e2 /\
-              match i with
-              | 0 => True
-              | S i0 =>
-                  forall j vs1 vs2 ρ3 ρ4,
-                    j <= i0 ->
-                    Forall to_exposed vs2 ->
-                    Forall2 (V_top (i0 - (i0 - j))) vs1 vs2 ->
-                    set_lists xs1 vs1 (M.set f1 (AS.Tag l1 (AS.Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
-                    set_lists xs2 vs2 (M.set f2 (CTag l2 W (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
-                    well_annotated W true ρ3 ρ4 e1 ->
-                    E' V_top W true (i0 - (i0 - j)) ρ3 ρ4 e1
-              end
-
-          | _, _ => False
-          end
-      end.
-
-  Lemma V_V_top_Forall :
-    forall i,
-      (forall m : nat,
-          m < S i ->
-          forall v1 v2,
-            to_exposed v2 ->
-            V m v1 v2 <-> V_top m v1 v2) ->
-      forall j vs1 vs2,
-        j <= i ->
-        Forall to_exposed vs2 ->
-        Forall2 (V j) vs1 vs2 <-> Forall2 (V_top j) vs1 vs2.
-  Proof.
-    intros.
-    revert vs1 j H0.
-    induction H1; simpl; intros.
-    - split; intros; inv H1; auto.
-    - split; intros; inv H3; constructor; auto;
-        solve [ eapply H; try lia; eauto |
-                eapply IHForall; eauto ].
-  Qed.
-
-  Lemma V_V_top :
-    forall i v1 v2,
-      to_exposed v2 ->
-      (V i v1 v2 <-> V_top i v1 v2).
-  Proof.
-    intro i.
-    induction i using lt_wf_rec; intros.
-    split; intros.
-    - destruct i; simpl in *.
-      + destruct v1; destruct v2.
-        destruct v; destruct c; try firstorder.
-      + destruct v1; destruct v2.
-        destruct v; destruct c; try firstorder;
-          rename w into W.
-        * destruct H1 as [Heql [w [HW [Hlen [Heqe HV]]]]]; subst.
-          destruct (exposed_reflect w).
-          2 : { fcrush. }
-          repeat (split; eauto); intros.
-
-          assert (HEV : E' V W true (i - (i - j)) ρ3 ρ4 e0).
-          {
-            eapply HV; eauto.
-            eapply V_V_top_Forall; eauto; try lia.
-          }
-          unfold E' in *; intros.
-          edestruct HEV as [j2 [r2 [Hstep HR]]]; eauto.
-          eexists; eexists; split; eauto.
-          unfold R' in *.
-          destruct r1; destruct r2; auto.
-          eapply H; eauto; try lia.
-          eapply cbstep_fuel_exposed_inv in Hstep; eauto; fcrush.
-        * rename x into w.
-          destruct (exposed_reflect w).
-          2 : { fcrush. }
-          invc.
-          destruct H5 as [Hexw2' HV].
-          eapply V_V_top_Forall; eauto.
-          admit. (* TODO: wf_cval *)
-    - destruct i; simpl in *; inv H1.
-      + destruct v1; destruct v2.
-        destruct v; destruct c; try firstorder; invc; fcrush.
-      + destruct v1; destruct v2.
-        destruct v; destruct c; try firstorder; invc.
-        * eexists; repeat (split; eauto).
-          rename w into W.
-          rename x0 into w.
-          destruct (exposed_reflect w).
-          2 : { fcrush. }
-          intros.
-          assert (HEV : E' V_top W true (i - (i - j)) ρ3 ρ4 e0).
-          {
-            eapply H5; eauto.
-            eapply V_V_top_Forall; eauto; try lia.
-          }
-          unfold E' in *; intros.
-          edestruct HEV as [j2 [r2 [Hstep HR]]]; eauto.
-          eexists; eexists; split; eauto.
-          unfold R' in *.
-          destruct r1; destruct r2; auto.
-          eapply H; eauto; try lia.
-          eapply cbstep_fuel_exposed_inv in Hstep; eauto; fcrush.
-        * eexists; (repeat split; eauto).
-          rename w into W.
-          rename x0 into w.
-          destruct (exposed_reflect w).
-          2 : { fcrush. }
-          split.
-          admit.
-          eapply V_V_top_Forall; eauto.
-          admit.
   Admitted.
