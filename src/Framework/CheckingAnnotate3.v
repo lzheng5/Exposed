@@ -809,6 +809,7 @@ Section Checking.
         cbstep_fuel W ex ρ2 e j2 r2 /\
         R' P (i - j1) r1 r2.
 
+  (* W is valid for a particular program trace of e *)
   Definition web_map_inv W ex ρ1 ρ2 e :=
     forall i r1,
       AS.bstep_fuel ρ1 e i r1 ->
@@ -1485,74 +1486,6 @@ Section Checking.
 
   (* Top Level *)
 
-  (* This might not be necessary *)
-  Inductive refine_val_top : AS.wval -> clval -> Prop :=
-  | Refine_top_wval :
-    forall l v v' W,
-      to_exposed (CTag l W v') ->
-      refine_val_top' v v' ->
-      refine_val_top (AS.Tag l v) (CTag l W v')
-
-  with refine_val_top' : AS.val -> cval -> Prop :=
-  | Refine_top_fun :
-    forall f ρ ρ' xs e,
-      refine_env ρ ρ' ->
-      refine_val_top' (AS.Vfun f ρ xs e) (CVfun f ρ' xs e)
-
-  | Refine_top_constr_nil :
-    forall c,
-      refine_val_top' (AS.Vconstr c []) (CVconstr c [])
-
-  | Refine_top_constr :
-    forall c v vs v' vs',
-      refine_val_top v v' ->
-      refine_val_top' (AS.Vconstr c vs) (CVconstr c vs') ->
-      refine_val_top' (AS.Vconstr c (v :: vs)) (CVconstr c (v' :: vs')).
-
-  Inductive refine_env_top : AS.env -> cenv -> Prop :=
-  | Refine_top_env :
-    forall ρ ρ',
-      (forall x v,
-          ρ ! x = Some v ->
-          exists v',
-            ρ' ! x = Some v' /\
-            refine_val_top v v') ->
-      refine_env_top ρ ρ'.
-
-  Hint Constructors refine_val_top : core.
-  Hint Constructors refine_val_top' : core.
-  Hint Constructors refine_env_top : core.
-
-  Scheme refine_val_top_mut := Induction for refine_val_top Sort Prop
-  with refine_val_top'_mut := Induction for refine_val_top' Sort Prop.
-
-  Lemma refine_val_top_refine_val v1 v2 :
-    refine_val_top v1 v2 ->
-    refine_val v1 v2.
-  Proof.
-    intros H.
-    induction H using refine_val_top_mut with
-      (P  := fun v1 v2 Href => refine_val  v1 v2)
-      (P0 := fun v1 v2 Href => refine_val' v1 v2);
-      eauto.
-  Qed.
-
-  Lemma refine_val_refine_val_top v1 v2 :
-    to_exposed v2 ->
-    refine_val v1 v2 ->
-    refine_val_top v1 v2.
-  Proof.
-    intros Hexp Hval. revert Hexp.
-    induction Hval using refine_val_mut with
-      (P  := fun v1 v2 Href => to_exposed v2 -> refine_val_top  v1 v2)
-      (P0 := fun v1 v2 Href => forall l W, to_exposed (CTag l W v2) -> refine_val_top' v1 v2)
-      (P1 := fun _ _ _   => True); try eauto.
-    - (* Refine_constr: to_exposed (CTag l W (CVconstr c (v'::vs'))) must propagate *)
-      intros l W Hexp.
-      inv Hexp. inv H5.
-      eapply Refine_top_constr; eauto.
-  Qed.
-
   Fixpoint V_top (i : nat) (wv : AS.wval) (cv : clval) {struct i} : Prop :=
     wf_cval cv /\
     refine_val wv cv /\
@@ -1744,6 +1677,7 @@ Section Checking.
     rewrite Heqv1 in H0; inv H0; eauto.
   Qed.
 
+  (* W is valid for every program traces of e *)
   Definition web_map_inv_top W e :=
     forall i ρ1 ρ2 r1,
       AS.bstep_fuel ρ1 e i r1 ->
