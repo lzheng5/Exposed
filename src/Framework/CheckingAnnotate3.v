@@ -1486,6 +1486,74 @@ Section Checking.
 
   (* Top Level *)
 
+  (* This might not be necessary *)
+  Inductive refine_val_top : AS.wval -> clval -> Prop :=
+  | Refine_top_wval :
+    forall l v v' W,
+      to_exposed (CTag l W v') ->
+      refine_val_top' v v' ->
+      refine_val_top (AS.Tag l v) (CTag l W v')
+
+  with refine_val_top' : AS.val -> cval -> Prop :=
+  | Refine_top_fun :
+    forall f ρ ρ' xs e,
+      refine_env ρ ρ' ->
+      refine_val_top' (AS.Vfun f ρ xs e) (CVfun f ρ' xs e)
+
+  | Refine_top_constr_nil :
+    forall c,
+      refine_val_top' (AS.Vconstr c []) (CVconstr c [])
+
+  | Refine_top_constr :
+    forall c v vs v' vs',
+      refine_val_top v v' ->
+      refine_val_top' (AS.Vconstr c vs) (CVconstr c vs') ->
+      refine_val_top' (AS.Vconstr c (v :: vs)) (CVconstr c (v' :: vs')).
+
+  Inductive refine_env_top : AS.env -> cenv -> Prop :=
+  | Refine_top_env :
+    forall ρ ρ',
+      (forall x v,
+          ρ ! x = Some v ->
+          exists v',
+            ρ' ! x = Some v' /\
+            refine_val_top v v') ->
+      refine_env_top ρ ρ'.
+
+  Hint Constructors refine_val_top : core.
+  Hint Constructors refine_val_top' : core.
+  Hint Constructors refine_env_top : core.
+
+  Scheme refine_val_top_mut := Induction for refine_val_top Sort Prop
+  with refine_val_top'_mut := Induction for refine_val_top' Sort Prop.
+
+  Lemma refine_val_top_refine_val v1 v2 :
+    refine_val_top v1 v2 ->
+    refine_val v1 v2.
+  Proof.
+    intros H.
+    induction H using refine_val_top_mut with
+      (P  := fun v1 v2 Href => refine_val  v1 v2)
+      (P0 := fun v1 v2 Href => refine_val' v1 v2);
+      eauto.
+  Qed.
+
+  Lemma refine_val_refine_val_top v1 v2 :
+    to_exposed v2 ->
+    refine_val v1 v2 ->
+    refine_val_top v1 v2.
+  Proof.
+    intros Hexp Hval. revert Hexp.
+    induction Hval using refine_val_mut with
+      (P  := fun v1 v2 Href => to_exposed v2 -> refine_val_top  v1 v2)
+      (P0 := fun v1 v2 Href => forall l W, to_exposed (CTag l W v2) -> refine_val_top' v1 v2)
+      (P1 := fun _ _ _   => True); try eauto.
+    - (* Refine_constr: to_exposed (CTag l W (CVconstr c (v'::vs'))) must propagate *)
+      intros l W Hexp.
+      inv Hexp. inv H5.
+      eapply Refine_top_constr; eauto.
+  Qed.
+
   Fixpoint V_top (i : nat) (wv : AS.wval) (cv : clval) {struct i} : Prop :=
     wf_cval cv /\
     refine_val wv cv /\
@@ -1677,9 +1745,16 @@ Section Checking.
     rewrite Heqv1 in H0; inv H0; eauto.
   Qed.
 
+  Definition well_annotated_top W e :=
+    forall i ρ1 ρ2 r1,
+      AS.bstep_fuel ρ1 e i r1 ->
+      refine_env ρ1 ρ2 ->
+      exists r2,
+        cbstep_fuel W true ρ2 e i r2 /\
+        refine_res r1 r2.
+
   Definition trans_correct_top W etop :=
     forall i ρ1 ρ2,
-      well_annotated W true ρ1 ρ2 etop ->
       G_top i (AS.occurs_free etop) ρ1 (AS.occurs_free etop) ρ2 ->
       E_top W true i ρ1 ρ2 etop.
 
@@ -1695,17 +1770,28 @@ Section Checking.
     eapply cbstep_fuel_exposed_inv; eauto.
   Qed.
 
+  Lemma well_annotated_top_well_annotated W e :
+    well_annotated_top W e ->
+    forall ρ1 ρ2,
+      well_annotated W true ρ1 ρ2 e.
+  Proof.
+    unfold well_annotated_top, well_annotated.
+    intros; eauto.
+  Qed.
+
   Lemma trans_correct_trans_correct_top W e :
+    well_annotated_top W e ->
     trans_correct W (AS.occurs_free e) e ->
     trans_correct_top W e.
   Proof.
     unfold trans_correct, trans_correct_top.
     intros.
-    eauto using G_top_G, E_E_top.
+    eauto using G_top_G, E_E_top, well_annotated_top_well_annotated.
   Qed.
 
   Theorem top W etop:
     web_map_spec W (AS.occurs_free etop) etop ->
+    well_annotated_top W etop ->
     trans_correct_top W etop.
   Proof.
     intros H; intros.
