@@ -735,63 +735,63 @@ Section Checking.
   Abort.
 
   (* Valid web_map Specification *)
-  Inductive web_map_inv (W : web_map) (Γ : vars) : AS.exp -> Prop :=
-  | Web_Map_Inv_ret :
+  Inductive web_map_spec (W : web_map) (Γ : vars) : AS.exp -> Prop :=
+  | Web_Map_Spec_ret :
     forall x,
       (x \in Γ) ->
-      web_map_inv W Γ (AS.Eret x)
+      web_map_spec W Γ (AS.Eret x)
 
-  | Web_Map_Inv_fun :
+  | Web_Map_Spec_fun :
     forall {f l w xs e k},
       W ! l = Some w ->
-      web_map_inv W (FromList xs :|: (f |: Γ)) e ->
-      web_map_inv W (f |: Γ) k ->
-      web_map_inv W Γ (AS.Efun f l xs e k)
+      web_map_spec W (FromList xs :|: (f |: Γ)) e ->
+      web_map_spec W (f |: Γ) k ->
+      web_map_spec W Γ (AS.Efun f l xs e k)
 
-  | Web_Map_Inv_app :
+  | Web_Map_Spec_app :
     forall {f l w xs},
       W ! l = Some w ->
       (f \in Γ) ->
       (FromList xs \subset Γ) ->
-      web_map_inv W Γ (AS.Eapp f l xs)
+      web_map_spec W Γ (AS.Eapp f l xs)
 
-  | Web_Map_Inv_letapp :
+  | Web_Map_Spec_letapp :
     forall {x f l w xs k},
       W ! l = Some w ->
       (f \in Γ) ->
       (FromList xs \subset Γ) ->
-      web_map_inv W (x |: Γ) k ->
-      web_map_inv W Γ (AS.Eletapp x f l xs k)
+      web_map_spec W (x |: Γ) k ->
+      web_map_spec W Γ (AS.Eletapp x f l xs k)
 
-  | Web_Map_Inv_constr :
+  | Web_Map_Spec_constr :
     forall {x l w t xs k},
       W ! l = Some w ->
       (FromList xs \subset Γ) ->
-      web_map_inv W (x |: Γ) k ->
-      web_map_inv W Γ (AS.Econstr x l t xs k)
+      web_map_spec W (x |: Γ) k ->
+      web_map_spec W Γ (AS.Econstr x l t xs k)
 
-  | Web_Map_Inv_proj :
+  | Web_Map_Spec_proj :
     forall {l w x y k n},
       W ! l = Some w ->
       (y \in Γ) ->
-      web_map_inv W (x |: Γ) k ->
-      web_map_inv W Γ (AS.Eproj x l n y k)
+      web_map_spec W (x |: Γ) k ->
+      web_map_spec W Γ (AS.Eproj x l n y k)
 
-  | Web_Map_Inv_case_nil :
+  | Web_Map_Spec_case_nil :
     forall {l w x},
       W ! l = Some w ->
       (x \in Γ) ->
-      web_map_inv W Γ (AS.Ecase x l [])
+      web_map_spec W Γ (AS.Ecase x l [])
 
-  | Web_Map_Inv_case_cons :
+  | Web_Map_Spec_case_cons :
     forall {x l w e t cl},
       W ! l = Some w ->
       (x \in Γ) ->
-      web_map_inv W Γ e ->
-      web_map_inv W Γ (AS.Ecase x l cl) ->
-      web_map_inv W Γ (AS.Ecase x l ((t, e) :: cl)).
+      web_map_spec W Γ e ->
+      web_map_spec W Γ (AS.Ecase x l cl) ->
+      web_map_spec W Γ (AS.Ecase x l ((t, e) :: cl)).
 
-  Hint Constructors web_map_inv : core.
+  Hint Constructors web_map_spec : core.
 
   (* Cross-semantics Logical Relations *)
   Definition R' (P : nat -> AS.wval -> clval -> Prop) (i : nat) (r1 : AS.res) (r2 : cres) :=
@@ -1470,7 +1470,7 @@ Section Checking.
 
   (* Fundamental Property *)
   Lemma fundamental_property {W Γ e}:
-    web_map_inv W Γ e -> trans_correct W Γ e.
+    web_map_spec W Γ e -> trans_correct W Γ e.
   Proof.
     intros.
     induction H; intros.
@@ -1705,7 +1705,7 @@ Section Checking.
   Qed.
 
   Theorem top W etop:
-    web_map_inv W (AS.occurs_free etop) etop ->
+    web_map_spec W (AS.occurs_free etop) etop ->
     trans_correct_top W etop.
   Proof.
     intros H; intros.
