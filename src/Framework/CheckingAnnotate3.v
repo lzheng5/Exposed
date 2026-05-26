@@ -283,6 +283,87 @@ Section Checking.
     (v = v' /\ c = c').
   Proof. srun eauto using cbstep_fuel_deterministic_aux. Qed.
 
+  Lemma cbstep_lt_Res_not_OOT_aux W ex ρ e c r v :
+    cbstep W ex ρ e c r ->
+    r = CRes v ->
+    forall c0,
+      c <= c0 ->
+      ~ (cbstep W ex ρ e c0 COOT).
+  Proof.
+    intros.
+    generalize dependent c0.
+    generalize dependent v.
+    induction H using cbstep_ind' with
+      (P := fun W ex ρ e c r =>
+              forall v,
+                r = CRes v ->
+                forall c0,
+                  c <= c0 ->
+                  ~ cbstep W ex ρ e c0 COOT)
+      (P0 := fun W ex ρ e c r =>
+               forall v,
+                 r = CRes v ->
+                 forall c0,
+                   c <= c0 ->
+                   ~ cbstep_fuel W ex ρ e c0 COOT);
+      intros; intro Hc.
+    - (* Cbstep_ret: 1 premise (M.get), equality = H0 *)
+      inv H0. inv Hc.
+    - (* Cbstep_fun: 2 premises (W!l, cbstep_fuel+IH), equality = H1 *)
+      inv H1. inv Hc.
+      eapply IHcbstep; eauto.
+    - (* Cbstep_app: 7 premises (M.get,get_list,set_lists,W!l,W'!l',Exposed,cbstep_fuel+IH), equality = H6 *)
+      inv H6. inv Hc; invc.
+      eapply IHcbstep; eauto.
+    - (* Cbstep_letapp_Res: 8 premises (...,cbstep_fuel+IH,cbstep_fuel+IH0,Exposed), equality = H7 *)
+      inv H7.
+      inv Hc; invc.
+      2 : { eapply IHcbstep with (c0 := c0); eauto; lia. }
+      assert (Hcv : v = v1 /\ c = c1).
+      { eapply cbstep_fuel_deterministic; eauto. }
+      inv Hcv.
+      eapply IHcbstep0 with (c0 := c'0); eauto; lia.
+    - (* Cbstep_letapp_OOT: r = COOT, equality = H6 → contradiction *)
+      inv H6.
+    - (* Cbstep_constr: 4 premises (get_list,W!l,Exposed,cbstep_fuel+IH), equality = H3 *)
+      inv H3. inv Hc; invc.
+      eapply IHcbstep; eauto.
+    - (* Cbstep_proj: 5 premises (M.get,nth_error,W!l,W'!l',cbstep_fuel+IH), equality = H4 *)
+      inv H4. inv Hc; invc.
+      eapply IHcbstep; eauto.
+    - (* Cbstep_case: 5 premises (M.get,find_tag,W!l,W'!l',cbstep_fuel+IH), equality = H4 *)
+      inv H4. inv Hc; invc.
+      assert (He : e = e0). { eapply find_tag_deterministic; eauto. }
+      inv He.
+      eapply IHcbstep; eauto.
+    - (* CbstepF_OOT: 0 premises, r = COOT, equality = H → contradiction *)
+      inv H.
+    - (* CbstepF_Step: 2 premises (cbstep+IH, exposed), equality = H1, ineq = H2 *)
+      inv H1. inv Hc. inv H2.
+      eapply IHcbstep with (c0 := c1); eauto; lia.
+  Qed.
+
+  Lemma cbstep_lt_Res_not_OOT W ex ρ e c v :
+    cbstep W ex ρ e c (CRes v) ->
+    forall c0,
+      c <= c0 ->
+      ~ (cbstep W ex ρ e c0 COOT).
+  Proof. eauto using cbstep_lt_Res_not_OOT_aux. Qed.
+
+  Lemma cbstep_fuel_lt_Res_not_OOT W ex ρ e c v :
+    cbstep_fuel W ex ρ e c (CRes v) ->
+    forall c0,
+      c <= c0 ->
+      ~ (cbstep_fuel W ex ρ e c0 COOT).
+  Proof.
+    intros.
+    inv H.
+    intro Hc.
+    inv Hc.
+    inv H0.
+    eapply cbstep_lt_Res_not_OOT with (c0 := c); eauto; lia.
+  Qed.
+
   Lemma cbstep_fuel_exposed_inv W ρ e k r :
     cbstep_fuel W true ρ e k r ->
     to_exposed_cres r.
@@ -483,7 +564,18 @@ Section Checking.
     set_lists xs vs' ρ2 = Some ρ2' ->
     refine_env ρ1' ρ2'.
   Proof.
-  Admitted.
+    intros Hf2. revert xs ρ1 ρ2 ρ1' ρ2'.
+    induction Hf2 as [|v v' vs_rest vs_rest' Hrv _ IH];
+      intros xs ρ1 ρ2 ρ1' ρ2' Henv Hset1 Hset2.
+    - destruct xs as [|x xs_rest]; simpl in *.
+      + inv Hset1; inv Hset2; auto.
+      + discriminate.
+    - destruct xs as [|x xs_rest]; simpl in *; [discriminate|].
+      destruct (set_lists xs_rest vs_rest ρ1) as [ρ3|] eqn:H3; [|discriminate].
+      destruct (set_lists xs_rest vs_rest' ρ2) as [ρ4|] eqn:H4; [|discriminate].
+      inv Hset1; inv Hset2.
+      exact (refine_env_set (IH xs_rest ρ1 ρ2 ρ3 ρ4 Henv H3 H4) Hrv).
+  Qed.
 
   Lemma refine_val_Vfun_inv {l f ρ xs e v''} :
     refine_val (AS.Tag l (AS.Vfun f ρ xs e)) v'' ->
@@ -521,7 +613,7 @@ Section Checking.
 
   (* Correlation lemmas:
      bstep and cbstep that both terminate on the same expression agree on fuel and value. *)
-  Lemma cbstep_bstep_aux v1 v2 {W ex ρ1 ρ2 e c1 r1 c2 r2} :
+  Lemma bstep_cbstep_aux v1 v2 {W ex ρ1 ρ2 e c1 r1 c2 r2} :
     AS.bstep ρ1 e c1 r1 ->
     refine_env ρ1 ρ2 ->
     cbstep W ex ρ2 e c2 r2 ->
@@ -615,22 +707,32 @@ Section Checking.
       edestruct IHHb as [Hc0 Hrv0]; eauto.
   Qed.
 
-  Lemma cbstep_bstep_refine W ex ρ1 ρ2 e c1 c2 v1 v2 :
+  Lemma bstep_cbstep_refine W ex ρ1 ρ2 e c1 c2 v1 v2 :
     AS.bstep ρ1 e c1 (AS.Res v1) ->
     refine_env ρ1 ρ2 ->
     cbstep W ex ρ2 e c2 (CRes v2) ->
     c1 = c2 /\ refine_val v1 v2.
-  Proof. intros; eapply cbstep_bstep_aux; eauto. Qed.
+  Proof. intros; eapply bstep_cbstep_aux; eauto. Qed.
 
-  Lemma cbstep_fuel_bstep_fuel_refine W ex ρ1 ρ2 e c1 c2 v1 v2 :
+  Lemma bstep_fuel_cbstep_fuel_refine W ex ρ1 ρ2 e c1 c2 v1 v2 :
     AS.bstep_fuel ρ1 e c1 (AS.Res v1) ->
     refine_env ρ1 ρ2 ->
     cbstep_fuel W ex ρ2 e c2 (CRes v2) ->
     c1 = c2 /\ refine_val v1 v2.
   Proof.
     intros Hb Henv Hc. inv Hb. inv Hc.
-    edestruct cbstep_bstep_refine as [Hc0 Hrv]; eauto.
+    edestruct bstep_cbstep_refine as [Hc0 Hrv]; eauto.
   Qed.
+
+  (* The following lemma requires refine_env to be bidirectional *)
+  Lemma cbstep_bstep_aux {W ex ρ1 ρ2 e c r2} :
+    cbstep W ex ρ2 e c r2 ->
+    refine_env ρ1 ρ2 ->
+    exists r1,
+      AS.bstep ρ1 e c r1 ->
+      refine_res r1 r2.
+  Proof.
+  Abort.
 
   (* Valid web_map Specification *)
   Inductive web_map_inv (W : web_map) (Γ : vars) : AS.exp -> Prop :=
@@ -1393,8 +1495,15 @@ Section Checking.
 
       assert (Hc : c0 = c /\ refine_val v v0).
       {
-        eapply cbstep_fuel_bstep_fuel_refine; eauto.
-        eapply (refine_env_set_lists _ _ H13 H18); eauto.
+        eapply bstep_fuel_cbstep_fuel_refine; eauto.
+        assert (HVs : Forall2 refine_val vs vs2) by eauto using V_refine_val_Forall.
+        assert (Hrefenv : refine_env (M.set f'0 (AS.Tag l0 (AS.Vfun f'0 ρ' xs'0 e0)) ρ') (M.set f'0 (CTag l0 W' (CVfun f'0 ρ'0 xs'0 e0)) ρ'0)).
+        {
+          eapply refine_env_set; eauto.
+          inv Href.
+          inv H3; auto.
+        }
+        eapply (refine_env_set_lists HVs Hrefenv H13 H18); eauto.
       }
       assert (Hc' : c'0 = c') by lia.
       inv Hc.
@@ -1417,7 +1526,7 @@ Section Checking.
 
           assert (Hc : c = c0 /\ refine_val v v1).
           {
-            eapply cbstep_fuel_bstep_fuel_refine; eauto.
+            eapply bstep_fuel_cbstep_fuel_refine; eauto.
           }
           inv Hc.
           eapply AS.bstep_fuel_lt_Res_not_OOT with (c0 := (c0 + c'0)) in H14; eauto; try lia.
@@ -1440,47 +1549,43 @@ Section Checking.
       simpl in Rra.
       destruct ra; try contradiction.
 
+      assert (Heq : c0 = v0 /\ j1 = c).
+      {
+        eapply cbstep_fuel_deterministic; eauto.
+      }
+      inv Heq.
+
       edestruct (Hk ex (i - c) (M.set x v ρ1) (M.set x v0 ρ2))
-        with (j1 := c') (r1 := (AS.Res v)) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+        with (j1 := c') (r1 := (AS.Res w0)) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
       + intros.
 
-        edestruct
-        assert (Hcbstep : cbstep_fuel W ex ρ1 (AS.Eletapp x f l xs k) (S (c + i0)) r).
-        {
-          eapply H; eauto; try lia.
-        }
-        inv Hcbstep.
-        inv H4; invc; eauto.
-        * assert (Hcv : v0 = v /\ c = c0).
+        edestruct (H (S (c + i0)) r1) as [r2 [Hcbstep2 Href2]]; eauto.
+        inv Hcbstep2.
+        inv H8; unfold clval in *; invc.
+
+        * assert (Hcv : v0 = v1 /\ c = c0).
           {
             eapply cbstep_fuel_deterministic; eauto.
           }
           inv Hcv.
           rewrite_math (c'0 = i0); eauto.
-        * eapply cbstep_fuel_to_bstep_fuel in H26; eauto.
-          eapply AS.bstep_fuel_lt_Res_not_OOT with (c0 := (c + i0)) in H26; eauto; try lia.
-      + eapply G_subset with (Γ2 := (x |: (AT.occurs_free (AT.Eletapp x f w xs k')))).
+        * inv Href2.
+          eapply cbstep_fuel_lt_Res_not_OOT with (c0 := (c + i0)) in Hap; eauto; try lia.
+          contradiction.
+      + eapply G_subset with (Γ2 := (x |: (AS.occurs_free (AS.Eletapp x f l xs k)))).
         ++ eapply G_set; eauto.
            eapply G_mono with (S i); eauto; lia.
         ++ apply Included_refl.
-        ++ apply AT.free_letapp_k_subset.
-      + exists (S (j1 + j2)), r2; split.
+        ++ apply AS.free_letapp_k_subset.
+      + exists (S (c + j2)), r2; split.
         ++ constructor; auto.
-           ** eapply AT.BStep_letapp_Res; eauto.
-              intros.
-              destruct H23; auto.
-              split.
-              --- eapply V_exposed_Forall; eauto.
-              --- eapply V_exposed; eauto.
+           ** econstructor; eauto.
            ** destruct ex; simpl in *; auto.
               unfold R' in Rr.
-              destruct r1; destruct r2; try contradiction; auto.
-              destruct w1.
-              eapply V_exposed_res; eauto.
+              destruct r2; try contradiction; auto.
+              eauto using cbstep_fuel_exposed_inv.
         ++ eapply R_mono; eauto; lia.
   Qed.
-       *)
-  Abort.
 
   Lemma case_nil_compat W Γ x l w :
     W ! l = Some w ->
@@ -1502,7 +1607,7 @@ Section Checking.
     - eapply ret_compat; eauto.
     - eapply fun_compat; eauto.
     - eapply app_compat; eauto.
-    - admit. (* eapply letapp_compat; eauto. *)
+    - eapply letapp_compat; eauto.
     - admit. (* eapply constr_compat; eauto. *)
     - admit. (* eapply proj_compat; eauto. *)
     - eapply case_nil_compat; eauto.
@@ -1510,13 +1615,14 @@ Section Checking.
   Admitted.
 
   (* Top Level *)
-  Definition G_top W i Γ1 ρ1 Γ2 ρ2 :=
-    wf_env ρ2 /\
+  Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
+    wf_cenv ρ2 /\
+    refine_env ρ1 ρ2 /\
     Γ2 \subset Γ1 /\
     forall x,
       (x \in Γ1) ->
       exists v1 v2,
         M.get x ρ1 = Some v1 /\
         M.get x ρ2 = Some v2 /\
-        exposed v2 /\
-        V W i v1 v2.
+        to_exposed v2 /\
+        V i v1 v2.

@@ -307,7 +307,6 @@ Proof.
   eapply bstep_lt_Res_not_OOT with (c0 := c); eauto; lia.
 Qed.
 
-
 (* Free Variables *)
 Inductive occurs_free : exp -> vars :=
 | Free_ret :
