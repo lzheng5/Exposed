@@ -809,7 +809,7 @@ Section Checking.
         cbstep_fuel W ex ρ2 e j2 r2 /\
         R' P (i - j1) r1 r2.
 
-  Definition well_annotated W ex ρ1 ρ2 e :=
+  Definition web_map_inv W ex ρ1 ρ2 e :=
     forall i r1,
       AS.bstep_fuel ρ1 e i r1 ->
       refine_env ρ1 ρ2 ->
@@ -847,7 +847,7 @@ Section Checking.
                       Forall2 (V (i0 - (i0 - j))) vs1 vs2 ->
                       set_lists xs1 vs1 (M.set f1 (AS.Tag l1 (AS.Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
                       set_lists xs2 vs2 (M.set f2 (CTag l2 W (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
-                      well_annotated W (exposedb w2) ρ3 ρ4 e1 ->
+                      web_map_inv W (exposedb w2) ρ3 ρ4 e1 ->
                       E' V W (exposedb w2) (i0 - (i0 - j)) ρ3 ρ4 e1
                 end
 
@@ -1152,18 +1152,17 @@ Section Checking.
   Qed.
 
   (* Compatibility Lemmas *)
-  (* TODO: rename well_annotated *)
-  Definition trans_correct W Γ e :=
+  Definition well_annotated W Γ e :=
     forall ex i ρ1 ρ2,
-      well_annotated W ex ρ1 ρ2 e ->
+      web_map_inv W ex ρ1 ρ2 e ->
       G i Γ ρ1 (AS.occurs_free e) ρ2 ->
       E W ex i ρ1 ρ2 e.
 
   Lemma ret_compat W Γ x :
     (x \in Γ) ->
-    trans_correct W Γ (AS.Eret x).
+    well_annotated W Γ (AS.Eret x).
   Proof.
-    unfold trans_correct, well_annotated, E, E', R, R', Ensembles.Included, Ensembles.In.
+    unfold well_annotated, web_map_inv, E, E', R, R', Ensembles.Included, Ensembles.In.
     intros; simpl.
     specialize (H0 _ _ H3).
     inv H3.
@@ -1183,7 +1182,7 @@ Section Checking.
 
   Lemma Vfun_V W Γ1 f l w xs e  :
     W ! l = Some w ->
-    trans_correct W (FromList xs :|: (f |: Γ1)) e ->
+    well_annotated W (FromList xs :|: (f |: Γ1)) e ->
     forall {i Γ2 ρ1 ρ2},
       wf_cval (CTag l W (CVfun f ρ2 xs e)) ->
       refine_val (AS.Tag l (AS.Vfun f ρ1 xs e)) (CTag l W (CVfun f ρ2 xs e)) ->
@@ -1191,7 +1190,7 @@ Section Checking.
       AS.occurs_free e \subset (FromList xs :|: (f |: Γ2)) ->
       V i (AS.Tag l (AS.Vfun f ρ1 xs e)) (CTag l W (CVfun f ρ2 xs e)).
   Proof.
-    unfold trans_correct.
+    unfold well_annotated.
     intros HW He i.
     induction i; simpl; intros; auto;
       repeat (split; auto);
@@ -1208,12 +1207,12 @@ Section Checking.
     + apply Included_refl.
   Qed.
 
-  Lemma well_annotated_fun_inv_k W ex ρ1 ρ2 f l xs e k:
-    well_annotated W ex ρ1 ρ2 (AS.Efun f l xs e k) ->
+  Lemma web_map_inv_fun_inv_k W ex ρ1 ρ2 f l xs e k:
+    web_map_inv W ex ρ1 ρ2 (AS.Efun f l xs e k) ->
     refine_env ρ1 ρ2 ->
-    well_annotated W ex (M.set f (AS.Tag l (AS.Vfun f ρ1 xs e)) ρ1) (M.set f (CTag l W (CVfun f ρ2 xs e)) ρ2) k.
+    web_map_inv W ex (M.set f (AS.Tag l (AS.Vfun f ρ1 xs e)) ρ1) (M.set f (CTag l W (CVfun f ρ2 xs e)) ρ2) k.
   Proof.
-    unfold well_annotated.
+    unfold web_map_inv.
     intros.
     edestruct (H (S i) r1) as [r2 [Hcbstep Href]]; eauto.
     eexists; split; eauto.
@@ -1222,11 +1221,11 @@ Section Checking.
 
   Lemma fun_compat W Γ e k f l w xs :
     W ! l = Some w ->
-    trans_correct W (FromList xs :|: (f |: Γ)) e ->
-    trans_correct W (f |: Γ) k ->
-    trans_correct W Γ (AS.Efun f l xs e k).
+    well_annotated W (FromList xs :|: (f |: Γ)) e ->
+    well_annotated W (f |: Γ) k ->
+    well_annotated W Γ (AS.Efun f l xs e k).
   Proof.
-    unfold trans_correct, E, E'.
+    unfold well_annotated, E, E'.
     intros HWl He Hk.
     intros.
     pose proof H2 as Hbstep.
@@ -1240,7 +1239,7 @@ Section Checking.
       inv Hcbstep; inv H3.
       inv H4; invc.
       edestruct (Hk ex (i - 1) (M.set f (AS.Tag l (AS.Vfun f ρ1 xs e)) ρ1) (M.set f (CTag l W (CVfun f ρ2 xs e)) ρ2)) with (j1 := c) (r1 := (AS.Res w0)) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
-      + eauto using well_annotated_fun_inv_k.
+      + eauto using web_map_inv_fun_inv_k.
       + eapply G_subset with (Γ2 := (f |: AS.occurs_free (AS.Efun f l xs e k))).
         eapply G_set; eauto.
         eapply G_mono with i; eauto; lia.
@@ -1261,9 +1260,9 @@ Section Checking.
     (W ! l = Some w) ->
     (f \in Γ) ->
     (FromList xs \subset Γ) ->
-    trans_correct W Γ (AS.Eapp f l xs).
+    well_annotated W Γ (AS.Eapp f l xs).
   Proof.
-    unfold trans_correct, E, E'.
+    unfold well_annotated, E, E'.
     intros HW Hf Hxs.
     intros; simpl.
     pose proof H2 as Hbstep.
@@ -1298,7 +1297,7 @@ Section Checking.
         destruct H19; auto.
         apply V_mono_Forall with (S i); auto; lia.
 
-        unfold well_annotated; intros.
+        unfold web_map_inv; intros.
         edestruct (H (S i0) r1) as [r2 [Hcbstep2 Hrefr2]]; eauto.
         inv Hrefr2.
         - inv Hcbstep2.
@@ -1329,10 +1328,10 @@ Section Checking.
     W ! l = Some w ->
     (f \in Γ) ->
     (FromList xs \subset Γ) ->
-    trans_correct W (x |: Γ) k ->
-    trans_correct W Γ (AS.Eletapp x f l xs k).
+    well_annotated W (x |: Γ) k ->
+    well_annotated W Γ (AS.Eletapp x f l xs k).
   Proof.
-    unfold trans_correct, well_annotated, E, E'.
+    unfold well_annotated, web_map_inv, E, E'.
     intros HWl Hf Hxs Hk.
     intros; simpl.
     assert (Hrefρ : refine_env ρ1 ρ2) by eauto using G_refine_env.
@@ -1386,7 +1385,7 @@ Section Checking.
         destruct H24; auto.
         apply V_mono_Forall with (S i); auto; lia.
 
-        unfold well_annotated; intros.
+        unfold web_map_inv; intros.
         destruct r1.
         - edestruct (H (S i0) AS.OOT) as [r2 [Hcbstep_e Hrefr]]; eauto.
           inv Hcbstep_e.
@@ -1460,9 +1459,9 @@ Section Checking.
   Lemma case_nil_compat W Γ x l w :
     W ! l = Some w ->
     (x \in Γ) ->
-    trans_correct W Γ (AS.Ecase x l []).
+    well_annotated W Γ (AS.Ecase x l []).
   Proof.
-    unfold trans_correct, E, E'.
+    unfold well_annotated, E, E'.
     intros HWl Hx.
     intros; simpl.
     inv H2; fcrush.
@@ -1470,7 +1469,7 @@ Section Checking.
 
   (* Fundamental Property *)
   Lemma fundamental_property {W Γ e}:
-    web_map_spec W Γ e -> trans_correct W Γ e.
+    web_map_spec W Γ e -> well_annotated W Γ e.
   Proof.
     intros.
     induction H; intros.
@@ -1583,7 +1582,7 @@ Section Checking.
                     Forall2 (V_top (i0 - (i0 - j))) vs1 vs2 ->
                     set_lists xs1 vs1 (M.set f1 (AS.Tag l1 (AS.Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
                     set_lists xs2 vs2 (M.set f2 (CTag l2 W (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
-                    well_annotated W true ρ3 ρ4 e1 ->
+                    web_map_inv W true ρ3 ρ4 e1 ->
                     E' V_top W true (i0 - (i0 - j)) ρ3 ρ4 e1
               end
 
@@ -1745,7 +1744,7 @@ Section Checking.
     rewrite Heqv1 in H0; inv H0; eauto.
   Qed.
 
-  Definition well_annotated_top W e :=
+  Definition web_map_inv_top W e :=
     forall i ρ1 ρ2 r1,
       AS.bstep_fuel ρ1 e i r1 ->
       refine_env ρ1 ρ2 ->
@@ -1753,7 +1752,7 @@ Section Checking.
         cbstep_fuel W true ρ2 e i r2 /\
         refine_res r1 r2.
 
-  Definition trans_correct_top W etop :=
+  Definition well_annotated_top W etop :=
     forall i ρ1 ρ2,
       G_top i (AS.occurs_free etop) ρ1 (AS.occurs_free etop) ρ2 ->
       E_top W true i ρ1 ρ2 etop.
@@ -1770,32 +1769,32 @@ Section Checking.
     eapply cbstep_fuel_exposed_inv; eauto.
   Qed.
 
-  Lemma well_annotated_top_well_annotated W e :
-    well_annotated_top W e ->
+  Lemma web_map_inv_top_web_map_inv W e :
+    web_map_inv_top W e ->
     forall ρ1 ρ2,
-      well_annotated W true ρ1 ρ2 e.
+      web_map_inv W true ρ1 ρ2 e.
   Proof.
-    unfold well_annotated_top, well_annotated.
+    unfold web_map_inv_top, web_map_inv.
     intros; eauto.
   Qed.
 
-  Lemma trans_correct_trans_correct_top W e :
-    well_annotated_top W e ->
-    trans_correct W (AS.occurs_free e) e ->
-    trans_correct_top W e.
+  Lemma well_annotated_well_annotated_top W e :
+    web_map_inv_top W e ->
+    well_annotated W (AS.occurs_free e) e ->
+    well_annotated_top W e.
   Proof.
-    unfold trans_correct, trans_correct_top.
+    unfold well_annotated, well_annotated_top.
     intros.
-    eauto using G_top_G, E_E_top, well_annotated_top_well_annotated.
+    eauto using G_top_G, E_E_top, web_map_inv_top_web_map_inv.
   Qed.
 
   Theorem top W etop:
     web_map_spec W (AS.occurs_free etop) etop ->
-    well_annotated_top W etop ->
-    trans_correct_top W etop.
+    web_map_inv_top W etop ->
+    well_annotated_top W etop.
   Proof.
     intros H; intros.
-    eauto using fundamental_property, trans_correct_trans_correct_top.
+    eauto using fundamental_property, well_annotated_well_annotated_top.
   Qed.
 
 End Checking.
