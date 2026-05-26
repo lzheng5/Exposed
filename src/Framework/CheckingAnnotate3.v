@@ -476,21 +476,14 @@ Section Checking.
       exists w'. rewrite M.gso by auto. auto.
   Qed.
 
-  Lemma refine_env_set_lists {xs vs vs' ρ1 ρ2 ρ1'} :
+  Lemma refine_env_set_lists {xs vs vs' ρ1 ρ2 ρ1' ρ2'} :
     Forall2 refine_val vs vs' ->
     refine_env ρ1 ρ2 ->
     set_lists xs vs ρ1 = Some ρ1' ->
-    exists ρ2', set_lists xs vs' ρ2 = Some ρ2' /\ refine_env ρ1' ρ2'.
+    set_lists xs vs' ρ2 = Some ρ2' ->
+    refine_env ρ1' ρ2'.
   Proof.
-    intros Hr. revert xs ρ1 ρ2 ρ1'.
-    induction Hr as [|v v'' vs0 vs0' Hv Hvs IH]; intros xs ρ1 ρ2 ρ1' Henv Hsl.
-    - destruct xs; [|discriminate]. inv Hsl. exists ρ2; simpl; auto.
-    - destruct xs as [|x xs]; [discriminate|]. simpl in Hsl.
-      destruct (set_lists xs vs0 ρ1) eqn:Hsl1; [|discriminate]. inv Hsl.
-      destruct (IH _ _ _ _ Henv Hsl1) as [ρ2' [Hsl2 Hr']].
-      exists (M.set x v'' ρ2'). simpl. rewrite Hsl2. split; auto.
-      apply refine_env_set; auto.
-  Qed.
+  Admitted.
 
   Lemma refine_val_Vfun_inv {l f ρ xs e v''} :
     refine_val (AS.Tag l (AS.Vfun f ρ xs e)) v'' ->
@@ -571,8 +564,7 @@ Section Checking.
       assert (Hrenv : refine_env (M.set f' (AS.Tag w' (AS.Vfun f' ρ' xs' e)) ρ')
                                  (M.set f' (CTag w' W'' (CVfun f' ρ_2' xs' e)) ρ_2'))
         by (apply refine_env_set; auto).
-      destruct (refine_env_set_lists Hrvs Hrenv H1) as [ρ2'' [Hsl Hre'']].
-      invc.
+      pose proof (refine_env_set_lists Hrvs Hrenv H1 H8) as Hre''.
       eapply IHHb; eauto.
     - (* BStep_letapp_Res *)
       inv Hc.
@@ -586,8 +578,7 @@ Section Checking.
         assert (Hrenv : refine_env (M.set f' (AS.Tag w' (AS.Vfun f' ρ' xs' e)) ρ')
                                    (M.set f' (CTag w' W'' (CVfun f' ρ_2' xs' e)) ρ_2'))
           by (apply refine_env_set; auto).
-        destruct (refine_env_set_lists Hrvs Hrenv H1) as [ρ2'' [Hsl Hre'']].
-        invc.
+        pose proof (refine_env_set_lists Hrvs Hrenv H1 H11) as Hre''.
         edestruct (IHHb v v0) as [Hc0 Hrv0]; eauto.
         edestruct (IHHb0 v1 v2) as [Hc0' Hrv2]; eauto.
         { apply refine_env_set; eauto. }
@@ -742,7 +733,8 @@ Section Checking.
               end
 
         | AS.Vfun f1 ρ1 xs1 e1, CVfun f2 ρ2 xs2 e2 =>
-            length xs1 = length xs2 /\
+            f1 = f2 /\
+              xs1 = xs2 /\
               e1 = e2 /\
               match i with
                 | 0 => True
@@ -993,7 +985,7 @@ Section Checking.
         destruct (exposed_reflect w); fcrush.
     - repeat (split; auto).
       destruct v; destruct c; try contradiction.
-      + destruct HV as [Hlen [Heqe HV]]; subst.
+      + destruct HV as [Heqv [Heql [Heqe HV]]]; subst.
         eexists; repeat (split; eauto); intros.
         destruct (exposed_reflect w); intros.
         * specialize (HV j0 vs1 vs2 ρ3 ρ4).
@@ -1077,8 +1069,9 @@ Section Checking.
               end
 
         | AS.Vfun f1 ρ1 xs1 e1, CVfun f2 ρ2 xs2 e2 =>
-            length xs1 = length xs2 /\
-            e1 = e2 /\
+            f1 = f2 /\
+              xs1 = xs2 /\
+              e1 = e2 /\
               match i with
               | 0 => True
               | S i0 =>
@@ -1131,7 +1124,7 @@ Section Checking.
       + destruct v1; destruct v2.
         destruct v; destruct c; try firstorder;
           rename w into W.
-        * destruct H1 as [Hwf [Href [Heql [w [HW [Hex [Hlen [Heqe HV]]]]]]]]; subst.
+        * destruct H1 as [Hwf [Href [Heql [w [HW [Hex [Heqv [Heqxs [Heqw HV]]]]]]]]]; subst.
           repeat (split; eauto); intros.
 
           assert (HEV : E' V W (exposedb w) (i - (i - j)) ρ3 ρ4 e0).
@@ -1169,7 +1162,7 @@ Section Checking.
           inv H0; invc.
           assert (HEV : E' V_top W true (i - (i - j)) ρ3 ρ4 e0).
           {
-            eapply (H4 _ vs1 vs2); eauto.
+            eapply (H5 _ vs1 vs2); eauto.
             eapply V_V_top_Forall; eauto; try lia.
             destruct (exposed_reflect w); fcrush.
           }
@@ -1317,9 +1310,8 @@ Section Checking.
       rename w0 into v.
       destruct fv2; simpl in HV; invc;
         rename w into W';
-        destruct HV as [Hwf [Hrefv [Heql [w2 [HW' [Hex HV]]]]]].
+        destruct HV as [Hwf [Hrefv [Heql [w2 [HW' [Hex [Heqf [Heqxs [Heqe HV]]]]]]]]]; subst; invc.
 
-      destruct HV as [Hlen [Heqe HV]]; subst; invc.
       edestruct (G_get_list H0 xs vs) as [vs2 [Heqvs2 Vvs]]; eauto; invc.
       eapply AS.free_app_xs_subset; eauto.
 
@@ -1371,14 +1363,15 @@ Section Checking.
     unfold trans_correct, well_annotated, E, E'.
     intros HWl Hf Hxs Hk.
     intros; simpl.
+    assert (Hrefρ : refine_env ρ1 ρ2) by eauto using G_refine_env.
     pose proof H2 as Hbstep.
 
     inv H2.
     - exists 0, COOT; split; simpl; auto.
     - destruct r1.
       fcrush.
-      edestruct (H (S c) (AS.Res w0)) as [cv Hcbstep]; eauto.
-
+      edestruct (H (S c) (AS.Res w0)) as [cv [Hcbstep Href]]; eauto.
+      inv Href.
       inv H3; inv Hcbstep.
       inv H3; invc.
 
@@ -1386,7 +1379,7 @@ Section Checking.
       destruct i. inv H1.
       destruct fv2; simpl in HV; invc;
         rename w into W';
-        destruct HV as [Hv1 [Hl' [w2 [HW' [Hex [Hlen [Heqe HV]]]]]]]; invc.
+        destruct HV as [Hv1 [Href [Hl' [w2 [HW' [Hex [Heqf [Heqxs [Heqe HV]]]]]]]]]; invc.
 
       edestruct (G_get_list H0 xs vs) as [vs2 [Heqvs2 Vvs]]; eauto; invc.
       eapply AS.free_letapp_xs_subset; eauto.
@@ -1395,62 +1388,64 @@ Section Checking.
       {
         unfold clval in *.
         rewrite <- (Forall2_length _ _ _ Vvs).
-        rewrite <- (set_lists_length_eq _ _ _ _ H12); auto.
+        rewrite <- (set_lists_length_eq _ _ _ _ H13); auto.
       }
 
-      (*
-      assert (Hc : c0 = c /\ v = v0) by (eapply cbstep_fuel_bstep_fuel; eauto).
+      assert (Hc : c0 = c /\ refine_val v v0).
+      {
+        eapply cbstep_fuel_bstep_fuel_refine; eauto.
+        eapply (refine_env_set_lists _ _ H13 H18); eauto.
+      }
       assert (Hc' : c'0 = c') by lia.
       inv Hc.
+      unfold clval in *; invc.
 
-      assert (HE : E (exposedb w) (i - (i - i)) ρ''0 e0 ρ4 e).
+      assert (HE : E W' (exposedb w2) (i - (i - i)) ρ'' ρ4 e0).
       {
-        eapply (HV i vs0 vs2); eauto.
+        eapply (HV i vs vs2); eauto.
         intros.
-        destruct H23; auto.
-        eapply V_exposed_Forall; eauto.
+        destruct H24; auto.
         apply V_mono_Forall with (S i); auto; lia.
 
         unfold well_annotated; intros.
-        destruct r.
-        - assert (Hcbstep_e : cbstep_fuel ex ρ1 (AS.Eletapp x f l xs k) (S i0) AS.OOT).
-          {
-            eapply H; eauto; try lia.
-          }
+        destruct r1.
+        - edestruct (H (S i0) AS.OOT) as [r2 [Hcbstep_e Hrefr]]; eauto.
           inv Hcbstep_e.
-          inv H4; invc; eauto.
-          assert (Hc : c = c0 /\ v0 = v).
+          inv Hrefr.
+          inv H8.
+          unfold clval in *; invc.
+
+          assert (Hc : c = c0 /\ refine_val v v1).
           {
-            eapply cbstep_fuel_bstep_fuel; eauto.
+            eapply cbstep_fuel_bstep_fuel_refine; eauto.
           }
           inv Hc.
-          eapply AS.bstep_fuel_lt_Res_not_OOT with (c0 := (c0 + c'0)) in H13; eauto; try lia.
+          eapply AS.bstep_fuel_lt_Res_not_OOT with (c0 := (c0 + c'0)) in H14; eauto; try lia.
           contradiction.
-        - assert (Hcv : v0 = w0 /\ c = i0).
+
+          unfold clval in *; invc; eauto.
+        - assert (Hcv : v = w /\ c = i0).
           {
             eapply AS.bstep_fuel_deterministic; eauto.
           }
           inv Hcv.
 
-          assert (Hcbstep_e : cbstep_fuel ex ρ1 (AS.Eletapp x f l xs k) (S (i0 + c')) r1).
-          {
-            eapply H; eauto; try lia.
-          }
-          inv Hcbstep_e.
-          inv H4; invc; eauto.
+          edestruct (H (S (i0 + c')) (AS.Res w0)) as [r2 [Hcbstep_e Hrefr]]; eauto.
       }
 
       apply (E_mono _ i) in HE; try lia.
       unfold E in HE.
-      destruct (HE c (AS.Res v0)) as [j1 [ra [Hap Rra]]]; try lia; auto.
+      destruct (HE c (AS.Res v)) as [j1 [ra [Hap Rra]]]; try lia; auto.
 
       simpl in Rra.
       destruct ra; try contradiction.
 
-      edestruct (Hk ex (i - c) (M.set x v0 ρ1) (M.set x w0 ρ2))
-        with (j1 := c') (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+      edestruct (Hk ex (i - c) (M.set x v ρ1) (M.set x v0 ρ2))
+        with (j1 := c') (r1 := (AS.Res v)) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
       + intros.
-        assert (Hcbstep : cbstep_fuel ex ρ1 (AS.Eletapp x f l xs k) (S (c + i0)) r).
+
+        edestruct
+        assert (Hcbstep : cbstep_fuel W ex ρ1 (AS.Eletapp x f l xs k) (S (c + i0)) r).
         {
           eapply H; eauto; try lia.
         }
@@ -1513,3 +1508,15 @@ Section Checking.
     - eapply case_nil_compat; eauto.
     - admit. (* eapply case_cons_compat; eauto.*)
   Admitted.
+
+  (* Top Level *)
+  Definition G_top W i Γ1 ρ1 Γ2 ρ2 :=
+    wf_env ρ2 /\
+    Γ2 \subset Γ1 /\
+    forall x,
+      (x \in Γ1) ->
+      exists v1 v2,
+        M.get x ρ1 = Some v1 /\
+        M.get x ρ2 = Some v2 /\
+        exposed v2 /\
+        V W i v1 v2.
