@@ -13,7 +13,6 @@ Module AT := ANF.
 
 (* Checking Semantics -> Web Semantics *)
 
-
 (* Specification *)
 Inductive trans (W : web_map) (Γ : vars) : AS.exp -> AT.exp -> Prop :=
 | Trans_ret :
@@ -247,6 +246,7 @@ Qed.
 
 (* Environment Relation *)
 Definition G i Γ1 ρ1 Γ2 ρ2 :=
+  wf_cenv ρ1 /\
   wf_env ρ2 /\
     forall x,
       (x \in Γ1) ->
@@ -263,6 +263,11 @@ Lemma G_subset Γ1 Γ2 {i ρ1 Γ3 ρ2 Γ4}:
   Γ3 \subset Γ1 ->
   Γ4 \subset Γ2 ->
   G i Γ3 ρ1 Γ4 ρ2.
+Proof. unfold G. fcrush. Qed.
+
+Lemma G_wf_cenv_l {i Γ1 ρ1 Γ2 ρ2}:
+  G i Γ1 ρ1 Γ2 ρ2 ->
+  wf_cenv ρ1.
 Proof. unfold G. fcrush. Qed.
 
 Lemma G_wf_env_r {i Γ1 ρ1 Γ2 ρ2}:
@@ -326,7 +331,11 @@ Proof.
   pose proof HG as HG'.
   intros.
 
-  destruct HG as [Hwf HG].
+  destruct HG as [Hwf [Hwfv HG]].
+  split.
+  eapply wf_cenv_set; eauto.
+  eapply V_wf_cval_l; eauto.
+
   split.
   eapply wf_env_set; eauto.
   eapply V_wf_val_r; eauto.
@@ -460,7 +469,7 @@ Lemma G_mono {Γ1 Γ2 ρ1 ρ2} i j:
 Proof.
   unfold G.
   intros.
-  destruct H as [Hwf HG].
+  destruct H as [Hwf [Hwf2 HG]].
   repeat (split; auto); intros.
   edestruct HG as [v2 [Heqv2 HV]]; eauto.
   eexists; repeat (split; eauto).
@@ -470,5 +479,162 @@ Qed.
 (* Compatibility Lemmas *)
 Definition trans_correct W Γ e1 e2 :=
   forall ex i ρ1 ρ2,
-    G i Γ ρ1 (AS.occurs_free e1) ρ2 ->
+    G i Γ ρ1 (AT.occurs_free e2) ρ2 ->
     E W ex i ρ1 e1 ρ2 e2.
+
+Lemma ret_compat W Γ x :
+  (x \in Γ) ->
+  trans_correct W Γ (AS.Eret x) (AT.Eret x).
+Proof.
+  unfold trans_correct, E, E', R, R', Ensembles.Included, Ensembles.In.
+  intros; simpl.
+
+  inv H2.
+  - exists 0, AT.OOT; split; auto.
+  - inv H3.
+    edestruct (G_get H0) as [v2 [Heqv2 HV]]; eauto.
+    exists (S 0), (AT.Res v2); split; eauto.
+    econstructor; eauto.
+    destruct ex; auto.
+    eapply V_exposed_res; eauto.
+    eapply V_mono; eauto; lia.
+Qed.
+
+Lemma Vfun_V W Γ1 f l w xs e1 e2  :
+  W ! l = Some w ->
+  trans_correct W (FromList xs :|: (f |: Γ1)) e1 e2 ->
+  forall {i Γ2 ρ1 ρ2},
+    wf_cval (CTag l W (CVfun f ρ1 xs e1)) ->
+    wf_val (AT.Tag w (AT.Vfun f ρ2 xs e2)) ->
+    G i Γ1 ρ1 Γ2 ρ2 ->
+    AT.occurs_free e2 \subset (FromList xs :|: (f |: Γ2)) ->
+    V i (CTag l W (CVfun f ρ1 xs e1)) (AT.Tag w (AT.Vfun f ρ2 xs e2)).
+Proof.
+  unfold well_annotated.
+  intros HW He i.
+  induction i; simpl; intros; auto;
+    repeat (split; auto);
+    intros; (repeat split; auto).
+  apply (He _ (i - (i - j)) ρ3 ρ4); auto.
+  eapply G_subset with (Γ2 := (FromList xs :|: (f |: Γ2))); eauto.
+  eapply G_set_lists; eauto.
+  eapply G_set; eauto.
+  + eapply G_mono with (S i); eauto; lia.
+  + apply V_mono with i; try lia.
+    eapply IHi with (Γ2 := Γ2); eauto.
+    apply G_mono with (S i); eauto; lia.
+  + apply Included_refl.
+Qed.
+
+Lemma fun_compat W Γ e1 e2 k1 k2 f l w xs :
+  W ! l = Some w ->
+  trans_correct W (FromList xs :|: (f |: Γ)) e1 e2 ->
+  trans_correct W (f |: Γ) k1 k2 ->
+  trans_correct W Γ (AS.Efun f l xs e1 k1) (AT.Efun f w xs e2 k2).
+Proof.
+  unfold trans_correct, E, E'.
+  intros HWl He Hk.
+  intros.
+  assert (Hcwf : wf_cenv ρ1) by eauto using G_wf_cenv_l.
+  assert (Hwf : wf_env ρ2) by eauto using G_wf_env_r.
+
+  inv H1.
+  - exists 0, AT.OOT; split; simpl; eauto.
+  - inv H2; invc.
+    edestruct (Hk ex (i - 1) (M.set f (CTag l W (CVfun f ρ1 xs e1)) ρ1) (M.set f (AT.Tag w0 (AT.Vfun f ρ2 xs e2)) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+    + eapply G_subset with (Γ2 := (f |: AT.occurs_free (AT.Efun f w0 xs e2 k2))).
+      eapply G_set; eauto.
+      eapply G_mono with i; eauto; lia.
+      * eapply Vfun_V; eauto.
+        -- apply G_mono with i; eauto; lia.
+        -- apply AT.free_fun_e_subset.
+      * apply Included_refl.
+      * apply AT.free_fun_k_subset.
+    + exists (S j2), r2; split; auto.
+      * econstructor; simpl; eauto.
+        destruct ex; simpl in *; auto.
+        destruct r2; fcrush.
+      * eapply R_mono; eauto; lia.
+Qed.
+
+Lemma app_compat W Γ xs f l w :
+  (W ! l = Some w) ->
+  (f \in Γ) ->
+  (FromList xs \subset Γ) ->
+  trans_correct W Γ (AS.Eapp f l xs) (AT.Eapp f w xs).
+Proof.
+  unfold trans_correct, E, E'.
+  intros HW Hf Hxs.
+  intros; simpl.
+  assert (Hcwfρ : wf_cenv ρ1) by eauto using G_wf_cenv_l.
+  assert (Hwfρ : wf_env ρ2) by eauto using G_wf_env_r.
+
+  inv H1.
+  - exists 0, AT.OOT; split; simpl; auto.
+  - inv H2; invc.
+    edestruct (G_get H f) as [fv2 [Heqfv2 HV]]; eauto.
+    destruct i.
+    inv H0.
+    destruct fv2; simpl in HV; invc;
+      destruct HV as [Hcwf [Hwf [Hw [Hex HV]]]]; subst; invc;
+      destruct v; try contradiction.
+    destruct HV as [Hlen HV].
+
+    edestruct (G_get_list H xs vs) as [vs2 [Heqvs2 Vvs]]; eauto; invc.
+    eapply AT.free_app_xs_subset; eauto.
+
+    destruct (set_lists_length3 (M.set v (AT.Tag w (AT.Vfun v t l0 e0)) t) l0 vs2) as [ρ4 Heqρ4].
+    unfold clval in *.
+    unfold wval in *.
+    rewrite <- (Forall2_length _ _ _ Vvs).
+    rewrite <- (set_lists_length_eq _ _ _ _ H8); auto.
+
+    assert (HE : E W' (exposedb w) (i - (i - i)) ρ'' e ρ4 e0).
+    {
+      eapply (HV i vs vs2); eauto.
+      intros.
+      destruct H13; auto.
+      eapply V_exposed_Forall; eauto.
+      apply V_mono_Forall with (S i); auto; lia.
+    }
+    apply (E_mono _ i) in HE; try lia.
+    unfold E, E' in HE.
+    destruct (HE c r1) as [j2 [r2 [He0 Rr]]]; try lia; auto.
+    exists (S j2), r2; split; eauto.
+    econstructor; eauto.
+    econstructor; eauto.
+    intros.
+    destruct H13; auto.
+    split.
+    eapply V_exposed_Forall; eauto.
+    eapply R_exposed; eauto.
+    destruct ex; auto.
+    eapply R_exposed; eauto.
+Qed.
+
+Lemma case_nil_compat W Γ x l w :
+  W ! l = Some w ->
+  (x \in Γ) ->
+  trans_correct W Γ (AS.Ecase x l []) (AT.Ecase x w []).
+Proof.
+  unfold trans_correct, E, E'.
+  intros HWl Hx.
+  intros; simpl.
+  inv H1; fcrush.
+Qed.
+
+(* Fundamental Property *)
+Lemma fundamental_property {W Γ e1 e2}:
+  trans W Γ e1 e2 -> trans_correct W Γ e1 e2.
+Proof.
+  intros.
+  induction H; intros.
+  - eapply ret_compat; eauto.
+  - eapply fun_compat; eauto.
+  - eapply app_compat; eauto.
+  - admit.  (* eapply letapp_compat; eauto.*)
+  - admit. (* eapply constr_compat; eauto. *)
+  - admit. (* eapply proj_compat; eauto. *)
+  - eapply case_nil_compat; eauto.
+  - admit. (* eapply case_cons_compat; eauto.*)
+Admitted.

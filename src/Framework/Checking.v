@@ -983,6 +983,7 @@ Lemma R_res_inv_l i v1 r2 :
 Proof. intros. fcrush. Qed.
 
 (* Environment Relation *)
+(* REVISIT: we don't need Γ2 *)
 Definition G i Γ1 ρ1 Γ2 ρ2 :=
   wf_cenv ρ2 /\
     refine_env ρ1 ρ2 /\
