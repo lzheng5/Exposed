@@ -735,6 +735,7 @@ Section Checking.
   Abort.
 
   (* Valid web_map Specification *)
+  (* This essentially says `has_label e` ⊆ Dom_map W *)
   Inductive web_map_spec (W : web_map) (Γ : vars) : AS.exp -> Prop :=
   | Web_Map_Spec_ret :
     forall x,
@@ -793,6 +794,75 @@ Section Checking.
 
   Hint Constructors web_map_spec : core.
 
+  Lemma web_map_total W e :
+    (has_label e \subset Dom_map W) ->
+    web_map_spec W (AS.occurs_free e) e.
+  Proof.
+    enough (Hstrong : forall Γ,
+               has_label e \subset Dom_map W ->
+               AS.occurs_free e \subset Γ ->
+               web_map_spec W Γ e).
+    { intros; apply Hstrong; auto; apply Included_refl. }
+    induction e using AS.exp_ind'; intros Γ Hlabel Hfree.
+    - (* Eret x *)
+      constructor. apply Hfree. constructor.
+    - (* Eapp x w xs *)
+      assert (Hl : w \in Dom_map W) by (apply Hlabel; auto).
+      destruct Hl as [web Hw].
+      econstructor; eauto.
+      eapply AS.free_app_xs_inv; eauto.
+    - (* Efun f w xs e k *)
+      assert (Hl : w \in Dom_map W) by (apply Hlabel; auto).
+      destruct Hl as [web Hw].
+      econstructor; eauto.
+      + apply IHe1.
+        * eauto using Included_trans, has_label_fun_body.
+        * eapply AS.free_fun_e_inv; eauto.
+      + apply IHe2.
+        * eauto using Included_trans, has_label_fun_cont.
+        * eapply AS.free_fun_k_inv; eauto.
+    - (* Eletapp x f w xs k *)
+      assert (Hl : w \in Dom_map W) by (apply Hlabel; auto).
+      destruct Hl as [web Hw].
+      econstructor; eauto.
+      + eapply AS.free_letapp_xs_inv; eauto.
+      + apply IHe.
+        * eauto using Included_trans, has_label_letapp_cont.
+        * eapply AS.free_letapp_k_inv; eauto.
+    - (* Econstr x w c xs k *)
+      assert (Hl : w \in Dom_map W) by (apply Hlabel; auto).
+      destruct Hl as [web Hw].
+      econstructor; eauto.
+      + eapply Included_trans; eauto.
+        eapply AS.free_constr_xs_subset; eauto.
+      + apply IHe.
+        * eauto using Included_trans, has_label_constr_cont.
+        * eapply AS.free_constr_k_inv; eauto.
+    - (* Ecase x w [] *)
+      assert (Hl : w \in Dom_map W) by (apply Hlabel; auto).
+      destruct Hl as [web Hw].
+      econstructor; eauto.
+    - (* Ecase x w ((c,e)::cl) *)
+      assert (Hl : w \in Dom_map W) by (apply Hlabel; auto).
+      destruct Hl as [web Hw].
+      econstructor; eauto.
+      + apply IHe.
+        * eauto using Included_trans, has_label_case_hd.
+        * eapply Included_trans; eauto.
+          eapply AS.free_case_hd_subset.
+      + apply IHe0.
+        * eauto using Included_trans, has_label_case_tl.
+        * eapply Included_trans; eauto.
+          apply AS.free_case_tl_subset.
+    - (* Eproj x w n v0 e *)
+      assert (Hl : w \in Dom_map W) by (apply Hlabel; auto).
+      destruct Hl as [web Hw].
+      econstructor; eauto.
+      + apply IHe.
+        * eauto using Included_trans, has_label_proj_body.
+        * eapply AS.free_proj_k_inv; eauto.
+  Qed.
+
   (* Cross-semantics Logical Relations *)
   Definition R' (P : nat -> AS.wval -> clval -> Prop) (i : nat) (r1 : AS.res) (r2 : cres) :=
     match r1, r2 with
@@ -809,8 +879,8 @@ Section Checking.
         cbstep_fuel W ex ρ2 e j2 r2 /\
         R' P (i - j1) r1 r2.
 
-  (* W is valid for a particular program trace of e *)
-  Definition web_map_inv W ex ρ1 ρ2 e :=
+  (* W is sound for a particular program trace of e *)
+  Definition web_map_sound W ex ρ1 ρ2 e :=
     forall i r1,
       AS.bstep_fuel ρ1 e i r1 ->
       refine_env ρ1 ρ2 ->
@@ -848,7 +918,7 @@ Section Checking.
                       Forall2 (V (i0 - (i0 - j))) vs1 vs2 ->
                       set_lists xs1 vs1 (M.set f1 (AS.Tag l1 (AS.Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
                       set_lists xs2 vs2 (M.set f2 (CTag l2 W (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
-                      web_map_inv W (exposedb w2) ρ3 ρ4 e1 ->
+                      web_map_sound W (exposedb w2) ρ3 ρ4 e1 ->
                       E' V W (exposedb w2) (i0 - (i0 - j)) ρ3 ρ4 e1
                 end
 
@@ -1155,7 +1225,7 @@ Section Checking.
   (* Compatibility Lemmas *)
   Definition well_annotated W Γ e :=
     forall ex i ρ1 ρ2,
-      web_map_inv W ex ρ1 ρ2 e ->
+      web_map_sound W ex ρ1 ρ2 e ->
       G i Γ ρ1 (AS.occurs_free e) ρ2 ->
       E W ex i ρ1 ρ2 e.
 
@@ -1163,7 +1233,7 @@ Section Checking.
     (x \in Γ) ->
     well_annotated W Γ (AS.Eret x).
   Proof.
-    unfold well_annotated, web_map_inv, E, E', R, R', Ensembles.Included, Ensembles.In.
+    unfold well_annotated, web_map_sound, E, E', R, R', Ensembles.Included, Ensembles.In.
     intros; simpl.
     specialize (H0 _ _ H3).
     inv H3.
@@ -1208,12 +1278,12 @@ Section Checking.
     + apply Included_refl.
   Qed.
 
-  Lemma web_map_inv_fun_inv_k W ex ρ1 ρ2 f l xs e k:
-    web_map_inv W ex ρ1 ρ2 (AS.Efun f l xs e k) ->
+  Lemma web_map_sound_fun_inv_k W ex ρ1 ρ2 f l xs e k:
+    web_map_sound W ex ρ1 ρ2 (AS.Efun f l xs e k) ->
     refine_env ρ1 ρ2 ->
-    web_map_inv W ex (M.set f (AS.Tag l (AS.Vfun f ρ1 xs e)) ρ1) (M.set f (CTag l W (CVfun f ρ2 xs e)) ρ2) k.
+    web_map_sound W ex (M.set f (AS.Tag l (AS.Vfun f ρ1 xs e)) ρ1) (M.set f (CTag l W (CVfun f ρ2 xs e)) ρ2) k.
   Proof.
-    unfold web_map_inv.
+    unfold web_map_sound.
     intros.
     edestruct (H (S i) r1) as [r2 [Hcbstep Href]]; eauto.
     eexists; split; eauto.
@@ -1240,7 +1310,7 @@ Section Checking.
       inv Hcbstep; inv H3.
       inv H4; invc.
       edestruct (Hk ex (i - 1) (M.set f (AS.Tag l (AS.Vfun f ρ1 xs e)) ρ1) (M.set f (CTag l W (CVfun f ρ2 xs e)) ρ2)) with (j1 := c) (r1 := (AS.Res w0)) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
-      + eauto using web_map_inv_fun_inv_k.
+      + eauto using web_map_sound_fun_inv_k.
       + eapply G_subset with (Γ2 := (f |: AS.occurs_free (AS.Efun f l xs e k))).
         eapply G_set; eauto.
         eapply G_mono with i; eauto; lia.
@@ -1298,7 +1368,7 @@ Section Checking.
         destruct H19; auto.
         apply V_mono_Forall with (S i); auto; lia.
 
-        unfold web_map_inv; intros.
+        unfold web_map_sound; intros.
         edestruct (H (S i0) r1) as [r2 [Hcbstep2 Hrefr2]]; eauto.
         inv Hrefr2.
         - inv Hcbstep2.
@@ -1332,7 +1402,7 @@ Section Checking.
     well_annotated W (x |: Γ) k ->
     well_annotated W Γ (AS.Eletapp x f l xs k).
   Proof.
-    unfold well_annotated, web_map_inv, E, E'.
+    unfold well_annotated, web_map_sound, E, E'.
     intros HWl Hf Hxs Hk.
     intros; simpl.
     assert (Hrefρ : refine_env ρ1 ρ2) by eauto using G_refine_env.
@@ -1386,7 +1456,7 @@ Section Checking.
         destruct H24; auto.
         apply V_mono_Forall with (S i); auto; lia.
 
-        unfold web_map_inv; intros.
+        unfold web_map_sound; intros.
         destruct r1.
         - edestruct (H (S i0) AS.OOT) as [r2 [Hcbstep_e Hrefr]]; eauto.
           inv Hcbstep_e.
@@ -1515,7 +1585,7 @@ Section Checking.
                     Forall2 (V_top (i0 - (i0 - j))) vs1 vs2 ->
                     set_lists xs1 vs1 (M.set f1 (AS.Tag l1 (AS.Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
                     set_lists xs2 vs2 (M.set f2 (CTag l2 W (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
-                    web_map_inv W true ρ3 ρ4 e1 ->
+                    web_map_sound W true ρ3 ρ4 e1 ->
                     E' V_top W true (i0 - (i0 - j)) ρ3 ρ4 e1
               end
 
@@ -1677,8 +1747,8 @@ Section Checking.
     rewrite Heqv1 in H0; inv H0; eauto.
   Qed.
 
-  (* W is valid for every program traces of e *)
-  Definition web_map_inv_top W e :=
+  (* W is sound for every program trace of e *)
+  Definition web_map_sound_top W e :=
     forall i ρ1 ρ2 r1,
       AS.bstep_fuel ρ1 e i r1 ->
       refine_env ρ1 ρ2 ->
@@ -1686,10 +1756,12 @@ Section Checking.
         cbstep_fuel W true ρ2 e i r2 /\
         refine_res r1 r2.
 
-  Definition well_annotated_top W etop :=
-    forall i ρ1 ρ2,
-      G_top i (AS.occurs_free etop) ρ1 (AS.occurs_free etop) ρ2 ->
-      E_top W true i ρ1 ρ2 etop.
+  Definition well_annotated_top etop :=
+    exists W,
+      web_map_sound_top W etop /\
+      (forall i ρ1 ρ2,
+          G_top i (AS.occurs_free etop) ρ1 (AS.occurs_free etop) ρ2 ->
+          E_top W true i ρ1 ρ2 etop).
 
   Lemma E_E_top W i ρ1 ρ2 e :
     E W true i ρ1 ρ2 e ->
@@ -1703,32 +1775,32 @@ Section Checking.
     eapply cbstep_fuel_exposed_inv; eauto.
   Qed.
 
-  Lemma web_map_inv_top_web_map_inv W e :
-    web_map_inv_top W e ->
+  Lemma web_map_sound_top_web_map_sound W e :
+    web_map_sound_top W e ->
     forall ρ1 ρ2,
-      web_map_inv W true ρ1 ρ2 e.
+      web_map_sound W true ρ1 ρ2 e.
   Proof.
-    unfold web_map_inv_top, web_map_inv.
+    unfold web_map_sound_top, web_map_sound.
     intros; eauto.
   Qed.
 
   Lemma well_annotated_well_annotated_top W e :
-    web_map_inv_top W e ->
+    web_map_sound_top W e ->
     well_annotated W (AS.occurs_free e) e ->
-    well_annotated_top W e.
+    well_annotated_top e.
   Proof.
     unfold well_annotated, well_annotated_top.
     intros.
-    eauto using G_top_G, E_E_top, web_map_inv_top_web_map_inv.
+    eexists; split; eauto using G_top_G, E_E_top, web_map_sound_top_web_map_sound.
   Qed.
 
   Theorem top W etop:
-    web_map_spec W (AS.occurs_free etop) etop ->
-    web_map_inv_top W etop ->
-    well_annotated_top W etop.
+    (has_label etop \subset (Dom_map W)) ->
+    web_map_sound_top W etop ->
+    well_annotated_top etop.
   Proof.
     intros H; intros.
-    eauto using fundamental_property, well_annotated_well_annotated_top.
+    eauto using fundamental_property, well_annotated_well_annotated_top, web_map_total.
   Qed.
 
 End Checking.

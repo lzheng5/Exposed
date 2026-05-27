@@ -4,6 +4,7 @@ From CertiCoq.LambdaANF Require Import Ensembles_util map_util set_util List_uti
 From CertiCoq.Libraries Require Import maps_util.
 Import ListNotations.
 Require Import Lia.
+From Hammer Require Import Hammer Tactics Reflect.
 
 From Framework Require Import Base Util.
 Export Base.
@@ -418,6 +419,15 @@ Proof.
   intros; auto.
 Qed.
 
+Lemma free_constr_xs_inv Γ x w t xs e :
+  occurs_free (Econstr x w t xs e) \subset Γ ->
+  FromList xs \subset Γ.
+Proof.
+  intros.
+  eapply Included_trans; eauto.
+  eapply free_constr_xs_subset; eauto.
+Qed.
+
 Lemma free_proj_k_subset k x i y w :
   (occurs_free k) \subset (x |: occurs_free (Eproj x w i y k)).
 Proof.
@@ -505,10 +515,12 @@ Qed.
 
 Lemma free_app_xs_subset xs f w :
   FromList xs \subset occurs_free (Eapp f w xs).
-Proof.
-  unfold Ensembles.Included, Ensembles.In, FromList.
-  intros; auto.
-Qed.
+Proof. fcrush. Qed.
+
+Lemma free_app_xs_inv Γ f w xs :
+  occurs_free (Eapp f w xs) \subset Γ ->
+  FromList xs \subset Γ.
+Proof. sfirstorder. Qed.
 
 Lemma free_app_letapp f w xs x k:
   occurs_free (Eapp f w xs) \subset occurs_free (Eletapp x f w xs k).
@@ -557,6 +569,15 @@ Proof.
   intros; auto.
 Qed.
 
+Lemma free_letapp_xs_inv Γ x f w xs k :
+  occurs_free (Eletapp x f w xs k) \subset Γ ->
+  FromList xs \subset Γ.
+Proof.
+  intros.
+  eapply Included_trans; eauto.
+  eapply free_letapp_xs_subset; eauto.
+Qed.
+
 Lemma free_case_hd_subset e x w c cl :
   occurs_free e \subset occurs_free (Ecase x w ((c, e) :: cl)).
 Proof.
@@ -564,11 +585,29 @@ Proof.
   intros; auto.
 Qed.
 
+Lemma free_case_hd_inv Γ e x w c cl :
+  occurs_free (Ecase x w ((c, e) :: cl)) \subset Γ ->
+  occurs_free e \subset Γ.
+Proof.
+  intros.
+  eapply Included_trans; eauto.
+  eapply free_case_hd_subset; eauto.
+Qed.
+
 Lemma free_case_tl_subset w x c e cl :
   occurs_free (Ecase x w cl) \subset occurs_free (Ecase x w ((c, e) :: cl)).
 Proof.
   unfold Ensembles.Included, Ensembles.In.
   intros; auto.
+Qed.
+
+Lemma free_case_tl_inv Γ e x w c cl :
+  occurs_free (Ecase x w ((c, e) :: cl)) \subset Γ ->
+  occurs_free (Ecase x w cl) \subset Γ.
+Proof.
+  intros.
+  eapply Included_trans; eauto.
+  eapply free_case_tl_subset; eauto.
 Qed.
 
 Lemma free_case_e_inv x w Γ e t cl :
@@ -734,6 +773,34 @@ Proof.
       * left; auto.
       * right; intro Hc; inv Hc; contradiction.
 Qed.
+
+Lemma has_label_fun_body {f w xs e k} :
+  has_label e \subset has_label (Efun f w xs e k).
+Proof. fcrush. Qed.
+
+Lemma has_label_fun_cont {f w xs e k} :
+  has_label k \subset has_label (Efun f w xs e k).
+Proof. fcrush. Qed.
+
+Lemma has_label_letapp_cont {x f w xs k} :
+  has_label k \subset has_label (Eletapp x f w xs k).
+Proof. fcrush. Qed.
+
+Lemma has_label_constr_cont {x w c xs k} :
+  has_label k \subset has_label (Econstr x w c xs k).
+Proof. fcrush. Qed.
+
+Lemma has_label_proj_body {x w n y e} :
+  has_label e \subset has_label (Eproj x w n y e).
+Proof. fcrush. Qed.
+
+Lemma has_label_case_hd {x w c e cl} :
+  has_label e \subset has_label (Ecase x w ((c, e) :: cl)).
+Proof. fcrush. Qed.
+
+Lemma has_label_case_tl {x w c e cl} :
+  has_label (Ecase x w cl) \subset has_label (Ecase x w ((c, e) :: cl)).
+Proof. fcrush. Qed.
 
 Inductive unique_label : exp -> Prop :=
 | Unique_ret :
