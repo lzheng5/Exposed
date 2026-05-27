@@ -6,10 +6,9 @@ Import ListNotations.
 Require Import Lia.
 From Hammer Require Import Hammer Tactics Reflect.
 
-From Framework Require Import Util W0 ANF1 ANF Annotate Erase.
+From Framework Require Import Util W0 ANF1 ANF.
 
 Module AS := ANF1.
-Module AT := ANF.
 
 Definition web_map := M.t web.
 
