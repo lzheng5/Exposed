@@ -1697,6 +1697,18 @@ Qed.
 
 Definition E_top := (E' V_top).
 
+Lemma E_E_top W i ρ1 ρ2 e :
+  E W true i ρ1 ρ2 e ->
+  E_top W true i ρ1 ρ2 e.
+Proof.
+  unfold E, E_top, E'.
+  intros.
+  edestruct H as [j2 [r2 [Hcbstep HR]]]; eauto.
+  eexists; eexists; split; eauto.
+  eapply R_R_top; eauto.
+  eapply cbstep_fuel_exposed_inv; eauto.
+Qed.
+
 Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
   wf_cenv ρ2 /\
     refine_env ρ1 ρ2 /\
@@ -1760,18 +1772,6 @@ Definition well_annotated_top etop :=
       (forall i ρ1 ρ2,
           G_top i (AS.occurs_free etop) ρ1 (AS.occurs_free etop) ρ2 ->
           E_top W true i ρ1 ρ2 etop).
-
-Lemma E_E_top W i ρ1 ρ2 e :
-  E W true i ρ1 ρ2 e ->
-  E_top W true i ρ1 ρ2 e.
-Proof.
-  unfold E, E_top, E'.
-  intros.
-  edestruct H as [j2 [r2 [Hcbstep HR]]]; eauto.
-  eexists; eexists; split; eauto.
-  eapply R_R_top; eauto.
-  eapply cbstep_fuel_exposed_inv; eauto.
-Qed.
 
 Lemma web_map_sound_top_web_map_sound W e :
   web_map_sound_top W e ->

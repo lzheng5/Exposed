@@ -638,3 +638,222 @@ Proof.
   - eapply case_nil_compat; eauto.
   - admit. (* eapply case_cons_compat; eauto.*)
 Admitted.
+
+(* Top Level *)
+
+Fixpoint V_top (i : nat) (cv : clval) (wv : AT.wval) {struct i} : Prop :=
+  wf_cval cv /\
+    wf_val wv /\
+    exposed wv /\
+    match cv, wv with
+    | CTAG _ l1 W v1, AT.TAG _ w v2 =>
+          W ! l1 = Some w /\
+          match v1, v2 with
+          | CVconstr c1 vs1, AT.Vconstr c2 vs2 =>
+              c1 = c2 /\
+                length vs1 = length vs2 /\
+                match i with
+                | 0 => True
+                | S i0 => Forall2 (V_top i0) vs1 vs2
+                end
+
+          | CVfun f1 ρ1 xs1 e1, AT.Vfun f2 ρ2 xs2 e2 =>
+              length xs1 = length xs2 /\
+                match i with
+                | 0 => True
+                | S i0 =>
+                    forall j vs1 vs2 ρ3 ρ4,
+                      j <= i0 ->
+                      Forall exposed vs2 ->
+                      Forall2 (V_top (i0 - (i0 - j))) vs1 vs2 ->
+                      set_lists xs1 vs1 (M.set f1 (CTag l1 W (CVfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
+                      set_lists xs2 vs2 (M.set f2 (AT.Tag w (AT.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
+                      E' V_top W true (i0 - (i0 - j)) ρ3 e1 ρ4 e2
+                end
+
+          | _, _ => False
+          end
+    end.
+
+Lemma V_V_top_Forall :
+  forall i,
+    (forall m : nat,
+        m < S i ->
+        forall v1 v2,
+          exposed v2 ->
+          V m v1 v2 <-> V_top m v1 v2) ->
+    forall j vs1 vs2,
+      j <= i ->
+      Forall exposed vs2 ->
+      Forall2 (V j) vs1 vs2 <-> Forall2 (V_top j) vs1 vs2.
+Proof.
+  intros.
+  revert vs1 j H0.
+  induction H1; simpl; intros.
+  - split; intros; inv H1; auto.
+  - split; intros; inv H3; constructor; auto;
+      solve [ eapply H; try lia; eauto |
+              eapply IHForall; eauto ].
+Qed.
+
+Lemma V_V_top :
+  forall i v1 v2,
+    exposed v2 ->
+    (V i v1 v2 <-> V_top i v1 v2).
+Proof.
+  intro i.
+  induction i using lt_wf_rec; intros.
+  split; intros.
+  - destruct i; simpl in *.
+    + destruct v1; destruct v2.
+      destruct v; destruct c; try firstorder.
+    + destruct v1; destruct v2.
+      destruct v; destruct c; try firstorder;
+        rename w into W.
+      * destruct H1 as [Hwf [Hwf2 [HW [Hex [Hlen HV]]]]]; subst.
+        repeat (split; eauto); intros.
+
+        assert (HEV : E' V W (exposedb w0) (i - (i - j)) ρ3 e0 ρ4 e).
+        {
+          eapply HV; eauto.
+          eapply V_V_top_Forall; eauto; try lia.
+        }
+        unfold E' in *; intros.
+        inv H0; invc.
+        destruct (exposed_reflect w0); try contradiction.
+        edestruct HEV as [j2 [r2 [Hstep HR]]]; eauto.
+
+        eexists; eexists; split; eauto.
+        unfold R' in *.
+        destruct r1; destruct r2; auto.
+        eapply H; eauto; try lia.
+        eapply AT.bstep_fuel_exposed_inv in Hstep; eauto; fcrush.
+      * eapply V_V_top_Forall; fcrush.
+  - destruct i; simpl in *;
+      destruct H1 as [Hwf [Hwf2 [Hex HV]]].
+    + destruct v1; destruct v2.
+      destruct v; destruct c; try firstorder; subst; invc.
+    + destruct v1; destruct v2.
+      destruct v; destruct c; try firstorder; subst; invc.
+      * inv Hex.
+        rename w into W.
+        destruct HV as [HW [Hlen HV]].
+        repeat (split; eauto); intros.
+
+        inv H0; invc.
+        assert (HEV : E' V_top W true (i - (i - j)) ρ3 e0 ρ4 e).
+        {
+          eapply (HV _ vs1 vs2); eauto.
+          eapply V_V_top_Forall; eauto; try lia.
+        }
+        unfold E' in *; intros.
+        destruct (exposed_reflect w0); try contradiction.
+        edestruct HEV as [j2 [r2 [Hstep HR]]]; eauto.
+
+        eexists; eexists; split; eauto.
+        unfold R' in *.
+        destruct r1; destruct r2; auto.
+        eapply H; eauto; try lia.
+        eapply AT.bstep_fuel_exposed_inv in Hstep; eauto; fcrush.
+      * inv Hex.
+        eapply V_V_top_Forall; eauto.
+Qed.
+
+Definition R_top := (R' V_top).
+
+Lemma R_R_top :
+  forall i r1 r2,
+    exposed_res r2 ->
+    (R i r1 r2 <-> R_top i r1 r2).
+Proof.
+  unfold R, R_top, R'.
+  intros.
+  split; destruct r1; destruct r2; try contradiction;
+    inv H; intros; eauto;
+    eapply V_V_top; eauto.
+Qed.
+
+Definition E_top := (E' V_top).
+
+Lemma E_E_top W i ρ1 ρ2 e1 e2 :
+  E W true i ρ1 e1 ρ2 e2 ->
+  E_top W true i ρ1 e1 ρ2 e2.
+Proof.
+  unfold E, E_top, E'.
+  intros.
+  edestruct H as [j2 [r2 [Hcbstep HR]]]; eauto.
+  eexists; eexists; split; eauto.
+  eapply R_R_top; eauto.
+  eapply AT.bstep_fuel_exposed_inv; eauto.
+Qed.
+
+Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
+  wf_cenv ρ1 /\
+    wf_env ρ2 /\
+    Γ2 \subset Γ1 /\
+    forall x,
+      (x \in Γ1) ->
+      exists v1 v2,
+        M.get x ρ1 = Some v1 /\
+          M.get x ρ2 = Some v2 /\
+          exposed v2 /\
+          V i v1 v2.
+
+Lemma G_top_wf_cenv_l i Γ1 ρ1 Γ2 ρ2 :
+  G_top i Γ1 ρ1 Γ2 ρ2 ->
+  wf_env ρ2.
+Proof. unfold G_top. intros; tauto. Qed.
+
+Lemma G_top_wf_env_r i Γ1 ρ1 Γ2 ρ2 :
+  G_top i Γ1 ρ1 Γ2 ρ2 ->
+  wf_env ρ2.
+Proof. unfold G_top. intros; tauto. Qed.
+
+Lemma G_top_subset i Γ1 ρ1 Γ2 ρ2 Γ3 Γ4 :
+  G_top i Γ1 ρ1 Γ2 ρ2 ->
+  Γ3 \subset Γ1 ->
+  Γ4 \subset Γ3 ->
+  G_top i Γ3 ρ1 Γ4 ρ2.
+Proof.
+  unfold G_top.
+  intros.
+  destruct H as [Hwf [Href [Hs HG]]].
+  repeat (split; auto).
+Qed.
+
+Lemma G_top_G :
+  forall {i Γ1 ρ1 Γ2 ρ2},
+    G_top i Γ1 ρ1 Γ2 ρ2 ->
+    G i Γ1 ρ1 Γ2 ρ2.
+Proof.
+  unfold G_top, G.
+  intros.
+  destruct H as [Hwf [Href [Hs HG]]].
+  unfold Ensembles.Included, Ensembles.In, Dom_map in *.
+  repeat (split; auto); intros.
+  edestruct HG as [v1' [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; eauto.
+  rewrite Heqv1 in H0; inv H0; eauto.
+Qed.
+
+Definition trans_correct_top etop etop' :=
+  exists W,
+    forall i ρ1 ρ2,
+      G_top i (AS.occurs_free etop) ρ1 (AT.occurs_free etop') ρ2 ->
+      E_top W true i ρ1 etop ρ2 etop'.
+
+Lemma trans_correct_trans_correct_top W e1 e2 :
+  trans_correct W (AS.occurs_free e1) e1 e2 ->
+  trans_correct_top e1 e2.
+Proof.
+  unfold trans_correct, trans_correct_top.
+  intros.
+  eexists; intros; eauto using G_top_G, E_E_top.
+Qed.
+
+Theorem top W etop etop':
+  trans W (AS.occurs_free etop) etop etop' ->
+  trans_correct_top etop etop'.
+Proof.
+  intros H; intros.
+  eauto using fundamental_property, trans_correct_trans_correct_top.
+Qed.
