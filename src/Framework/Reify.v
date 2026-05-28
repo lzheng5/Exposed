@@ -72,6 +72,23 @@ Inductive trans (W : web_map) (Γ : vars) : AS.exp -> AT.exp -> Prop :=
 
 Hint Constructors trans : core.
 
+Lemma trans_exp_inv {W Γ e e'} :
+  trans W Γ e e' ->
+  (AT.occurs_free e') \subset (AS.occurs_free e).
+Proof.
+  unfold Ensembles.Included, Ensembles.In.
+  intros H.
+  induction H; simpl; intros; auto.
+  - inv H0; auto.
+  - inv H2; auto.
+  - inv H2; auto.
+  - inv H3; auto.
+  - inv H2; auto.
+  - inv H2; auto.
+  - inv H1; auto.
+  - inv H3; auto.
+Qed.
+
 (* Cross-language Logical Relations *)
 Definition R' (P : nat -> clval -> AT.wval -> Prop) (i : nat) (r1 : cres) (r2 : AT.res) :=
   match r1, r2 with
@@ -835,25 +852,27 @@ Proof.
   rewrite Heqv1 in H0; inv H0; eauto.
 Qed.
 
-Definition trans_correct_top etop etop' :=
-  exists W,
-    forall i ρ1 ρ2,
-      G_top i (AS.occurs_free etop) ρ1 (AT.occurs_free etop') ρ2 ->
-      E_top W true i ρ1 etop ρ2 etop'.
+Definition trans_correct_top W etop etop' :=
+  AT.occurs_free etop' \subset AS.occurs_free etop /\
+  forall i ρ1 ρ2,
+    G_top i (AS.occurs_free etop) ρ1 (AT.occurs_free etop') ρ2 ->
+    E_top W true i ρ1 etop ρ2 etop'.
 
 Lemma trans_correct_trans_correct_top W e1 e2 :
+  AT.occurs_free e2 \subset AS.occurs_free e1 ->
   trans_correct W (AS.occurs_free e1) e1 e2 ->
-  trans_correct_top e1 e2.
+  trans_correct_top W e1 e2.
 Proof.
   unfold trans_correct, trans_correct_top.
   intros.
-  eexists; intros; eauto using G_top_G, E_E_top.
+  split; auto.
+  intros; eauto using G_top_G, E_E_top.
 Qed.
 
 Theorem top W etop etop':
   trans W (AS.occurs_free etop) etop etop' ->
-  trans_correct_top etop etop'.
+  trans_correct_top W etop etop'.
 Proof.
   intros H; intros.
-  eauto using fundamental_property, trans_correct_trans_correct_top.
+  eauto using fundamental_property, trans_correct_trans_correct_top, trans_exp_inv.
 Qed.

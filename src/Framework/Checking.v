@@ -1766,12 +1766,11 @@ Definition web_map_sound_top W e :=
       cbstep_fuel W true ρ2 e i r2 /\
         refine_res r1 r2.
 
-Definition well_annotated_top etop :=
-  exists W,
-    web_map_sound_top W etop /\
-      (forall i ρ1 ρ2,
-          G_top i (AS.occurs_free etop) ρ1 (AS.occurs_free etop) ρ2 ->
-          E_top W true i ρ1 ρ2 etop).
+Definition well_annotated_top W etop :=
+  web_map_sound_top W etop /\
+    (forall i ρ1 ρ2,
+        G_top i (AS.occurs_free etop) ρ1 (AS.occurs_free etop) ρ2 ->
+        E_top W true i ρ1 ρ2 etop).
 
 Lemma web_map_sound_top_web_map_sound W e :
   web_map_sound_top W e ->
@@ -1785,17 +1784,17 @@ Qed.
 Lemma well_annotated_well_annotated_top W e :
   web_map_sound_top W e ->
   well_annotated W (AS.occurs_free e) e ->
-  well_annotated_top e.
+  well_annotated_top W e.
 Proof.
   unfold well_annotated, well_annotated_top.
   intros.
-  eexists; split; eauto using G_top_G, E_E_top, web_map_sound_top_web_map_sound.
+  split; eauto using G_top_G, E_E_top, web_map_sound_top_web_map_sound.
 Qed.
 
 Theorem top W etop:
   (has_label etop \subset (Dom_map W)) ->
   web_map_sound_top W etop ->
-  well_annotated_top etop.
+  well_annotated_top W etop.
 Proof.
   intros H; intros.
   eauto using fundamental_property, well_annotated_well_annotated_top, web_map_total.

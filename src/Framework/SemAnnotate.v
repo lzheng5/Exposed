@@ -16,10 +16,6 @@ Module L := Label.
 Module C := Checking.
 Module R := Reify.
 
-Definition V i := Cross (fun v1 v2 => L.V i v1 v2)
-                    (Cross (fun v1 v2 => C.V_top i v1 v2)
-                       (fun v1 v2 => R.V_top i v1 v2)).
-
 (* Top-level Logical Relations *)
 Definition R' (P : nat -> AS.val -> AT.wval -> Prop) (i : nat) (r1 : AS.res) (r2 : AT.res) :=
   match r1, r2 with
@@ -68,18 +64,21 @@ Fixpoint V_top (i : nat) (v1 : AS.val) (wv2 : AT.wval) {struct i} : Prop :=
         end
     end.
 
-(*
+Definition V i := Cross (fun v1 v2 => L.V i v1 v2)
+                    (Cross (fun v1 v2 => C.V_top i v1 v2)
+                       (fun v1 v2 => R.V_top i v1 v2)).
+
 Lemma V_V_top_Forall :
-  forall i K,
+  forall i,
     (forall m : nat,
         m < S i ->
-        forall K v1 v2,
+        forall v1 v2,
           exposed v2 ->
-          V K m v1 v2 <-> V_top m v1 v2) ->
+          V m v1 v2 <-> V_top m v1 v2) ->
     forall j vs1 vs2,
       j <= i ->
       Forall exposed vs2 ->
-      Forall2 (V K j) vs1 vs2 <-> Forall2 (V_top j) vs1 vs2.
+      Forall2 (V j) vs1 vs2 <-> Forall2 (V_top j) vs1 vs2.
 Proof.
   intros.
   revert vs1 j H0.
@@ -89,10 +88,10 @@ Proof.
       solve [ eapply H; try lia; eauto |
               eapply IHForall; eauto ].
 Qed.
- *)
 
+(* This is not provable.
+   The top-level environment will get into the way. *)
 Parameter l0 : label.
-
 Lemma V_V_top :
   forall i v1 v2,
     exposed v2 ->
@@ -107,5 +106,52 @@ Proof.
       destruct H1 as [Hwf [Hex HV]].
     + destruct v2; destruct v1;
         destruct v; try firstorder.
-      * exists (AI.Tag l0 (AI.Vfun v t l1 e)). (* ? env? *)
+      * (* exists (AI.Tag l0 (AI.Vfun v t l1 e)). (* ? env? *) *)
+Abort.
+
+Definition R_top := (R' V_top).
+
+Definition E_top := (E' V_top).
+
+Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
+  wf_env ρ2 /\
+    Γ2 \subset Γ1 /\
+    forall x,
+      (x \in Γ1) ->
+      exists v1 v2,
+        M.get x ρ1 = Some v1 /\
+          M.get x ρ2 = Some v2 /\
+          V_top i v1 v2.
+
+Definition trans_correct_top etop etop' :=
+  AT.occurs_free etop' \subset AS.occurs_free etop /\
+    forall i ρ1 ρ2,
+      G_top i (AS.occurs_free etop) ρ1 (AT.occurs_free etop') ρ2 ->
+      E_top true i ρ1 etop ρ2 etop'.
+
+Definition T_top e1 e2 :=
+  exists e3,
+    L.trans_correct_top e1 e3 /\
+      exists W,
+        well_annotated_top W e3 /\
+        R.trans_correct_top W e3 e2.
+
+Lemma T_top_trans_correct_top e1 e2 :
+  T_top e1 e2 ->
+  trans_correct_top e1 e2.
+Proof.
+  unfold T_top, trans_correct_top, L.trans_correct_top, C.well_annotated_top, R.trans_correct_top.
+  intros.
+  destruct H as [e3 [HL [W [HC HR]]]].
+  destruct HL as [HS1 HL].
+  destruct HC as [HW HC].
+  destruct HR as [HS2 HR].
+
+  split; intros.
+  eapply Included_trans; eauto.
+
+  unfold E_top, E'; intros.
+  unfold web_map_sound_top in HW.
+
+  (* Still the top-level environments will get into the way *)
 Abort.
