@@ -1554,6 +1554,109 @@ Admitted.
 
 (* Top Level *)
 
+(* TODO: try to remove label on CEfun; every W can contain a dummy label for the top-level languages *)
+
+(* Top-level Expressions *)
+Inductive cexp : Type :=
+| CEexp : web_map -> AS.exp -> cexp
+| CEfun : var -> label -> list var -> web_map -> AS.exp -> cexp -> cexp
+| CEletapp : var -> var -> list var -> cexp -> cexp.
+
+Hint Constructors cexp : core.
+
+(* Top-level Checking Semantics *)
+Inductive cbstep_top (ρ : cenv) : cexp -> fuel -> cres -> Prop :=
+| Cbstep_exp_top :
+  forall {W e c r},
+    cbstep W true ρ e c r ->
+    cbstep_top ρ (CEexp W e) c r
+
+| Cbstep_fun_top :
+  forall {W w l f xs e k c r},
+    W ! l = Some w ->
+    (w \in Exposed) ->
+    cbstep_top_fuel (M.set f (CTag l W (CVfun f ρ xs e)) ρ) k c r ->
+    cbstep_top ρ (CEfun f l xs W e k) c r
+
+| Cbstep_letapp_top_Res :
+  forall {W' x f f' l' w xs k ρ' xs' e vs ρ'' c c' v r},
+    M.get f ρ = Some (CTag l' W' (CVfun f' ρ' xs' e)) ->
+    get_list xs ρ = Some vs ->
+    set_lists xs' vs (M.set f' (CTag l' W' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
+    W' ! l' = Some w ->
+    (w \in Exposed) ->
+    cbstep_fuel W' true ρ'' e c (CRes v) ->
+    cbstep_top_fuel (M.set x v ρ) k c' r ->
+    Forall to_exposed vs ->
+    to_exposed v ->
+    cbstep_top ρ (CEletapp x f xs k) (c + c') r
+
+| Cbstep_letapp_top_OOT :
+  forall {W' x f f' l' w xs k ρ' xs' e vs ρ'' c},
+    M.get f ρ = Some (CTag l' W' (CVfun f' ρ' xs' e)) ->
+    get_list xs ρ = Some vs ->
+    set_lists xs' vs (M.set f' (CTag l' W' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
+    W' ! l' = Some w ->
+    cbstep_fuel W' true ρ'' e c COOT ->
+    Forall to_exposed vs ->
+    cbstep_top ρ (CEletapp x f xs k) c COOT
+
+with cbstep_top_fuel (ρ : cenv) : cexp -> fuel -> cres -> Prop :=
+| CbstepTF_OOT :
+  forall {e},
+    cbstep_top_fuel ρ e 0 COOT
+
+| CbstepTF_Step :
+  forall {e c r},
+    cbstep_top ρ e c r ->
+    to_exposed_cres r ->
+    cbstep_top_fuel ρ e (S c) r.
+
+Hint Constructors cbstep_top : core.
+Hint Constructors cbstep_top_fuel : core.
+
+(* The step-index is aligned between the two semantics. *)
+Lemma cbstep_fuel_cbstep_top_fuel W ρ e j r:
+  cbstep_fuel W true ρ e j r ->
+  cbstep_top_fuel ρ (CEexp W e) j r.
+Proof.
+  intros H; inv H; eauto.
+Qed.
+
+Lemma cbstep_top_fuel_cbstep_fuel W ρ e j r:
+  cbstep_top_fuel ρ (CEexp W e) j r ->
+  cbstep_fuel W true ρ e j r.
+Proof.
+  intros H; inv H; eauto.
+  match goal with
+  | [ H : cbstep_top _ _ _ _ |- _ ] => inv H
+  end; eauto.
+Qed.
+
+(* Linking *)
+Definition link f x l1 W1 e1 W2 e2 : cexp :=
+  CEfun f l1 [] W1 e1
+    (CEletapp x f []
+       (CEexp W2 e2)).
+
+(* Cross-language Transformtion Specification *)
+Inductive trans_top (W : web_map) (Γ : vars) : AS.exp -> cexp -> Prop :=
+| Trans_top :
+  forall {e},
+    web_map_spec W Γ e ->
+    trans_top W Γ e (CEexp W e).
+
+Hint Constructors trans_top : core.
+
+(* Cross-language Logical Relations *)
+Definition E_top' (P : nat -> AS.wval -> clval -> Prop) (i : nat) (ρ1 : AS.env) (e1 : AS.exp) (ρ2 : cenv) (e2 : cexp) : Prop :=
+  forall j1 r1,
+    j1 <= i ->
+    AS.bstep_fuel ρ1 e1 j1 r1 ->
+    exists j2 r2,
+      cbstep_top_fuel ρ2 e2 j2 r2 /\
+      R' P (i - j1) r1 r2.
+
 Fixpoint V_top (i : nat) (wv : AS.wval) (cv : clval) {struct i} : Prop :=
   wf_cval cv /\
     refine_val wv cv /\
@@ -1695,18 +1798,19 @@ Proof.
     eapply V_V_top; eauto.
 Qed.
 
-Definition E_top := (E' V_top).
+Definition E_top := (E_top' V_top).
 
 Lemma E_E_top W i ρ1 ρ2 e :
   E W true i ρ1 ρ2 e ->
-  E_top W true i ρ1 ρ2 e.
+  E_top i ρ1 e ρ2 (CEexp W e).
 Proof.
-  unfold E, E_top, E'.
+  unfold E, E_top, E', E_top'.
   intros.
   edestruct H as [j2 [r2 [Hcbstep HR]]]; eauto.
-  eexists; eexists; split; eauto.
-  eapply R_R_top; eauto.
-  eapply cbstep_fuel_exposed_inv; eauto.
+  exists j2, r2; split; eauto.
+  - eapply cbstep_fuel_cbstep_top_fuel; eauto.
+  - eapply R_R_top; eauto.
+    eapply cbstep_fuel_exposed_inv; eauto.
 Qed.
 
 Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
@@ -1757,7 +1861,7 @@ Proof.
   rewrite Heqv1 in H0; inv H0; eauto.
 Qed.
 
-(* W is sound for every program trace of e *)
+(* W is sound for *every* program trace of an open program e *)
 Definition web_map_sound_top W e :=
   forall i ρ1 ρ2 r1,
     AS.bstep_fuel ρ1 e i r1 ->
@@ -1765,12 +1869,6 @@ Definition web_map_sound_top W e :=
     exists r2,
       cbstep_fuel W true ρ2 e i r2 /\
         refine_res r1 r2.
-
-Definition well_annotated_top W etop :=
-  web_map_sound_top W etop /\
-    (forall i ρ1 ρ2,
-        G_top i (AS.occurs_free etop) ρ1 (AS.occurs_free etop) ρ2 ->
-        E_top W true i ρ1 ρ2 etop).
 
 Lemma web_map_sound_top_web_map_sound W e :
   web_map_sound_top W e ->
@@ -1781,21 +1879,30 @@ Proof.
   intros; eauto.
 Qed.
 
-Lemma well_annotated_well_annotated_top W e :
+Definition trans_correct_top e e' :=
+  forall i ρ1 ρ2,
+    G_top i (AS.occurs_free e) ρ1 (AS.occurs_free e) ρ2 ->
+    E_top i ρ1 e ρ2 e'.
+
+Lemma fundamental_property_top W e e' :
+  trans_top W (AS.occurs_free e) e e' ->
   web_map_sound_top W e ->
-  well_annotated W (AS.occurs_free e) e ->
-  well_annotated_top W e.
+  trans_correct_top e e'.
 Proof.
-  unfold well_annotated, well_annotated_top.
+  unfold trans_correct_top.
   intros.
-  split; eauto using G_top_G, E_E_top, web_map_sound_top_web_map_sound.
+  inv H.
+  eapply E_E_top; eauto.
+  eapply fundamental_property; eauto.
+  eapply web_map_sound_top_web_map_sound; eauto.
+  eapply G_top_G; eauto.
 Qed.
 
 Theorem top W etop:
   (has_label etop \subset (Dom_map W)) ->
   web_map_sound_top W etop ->
-  well_annotated_top W etop.
+  trans_correct_top etop (CEexp W etop).
 Proof.
   intros H; intros.
-  eauto using fundamental_property, well_annotated_well_annotated_top, web_map_total.
+  eauto using fundamental_property_top, web_map_total.
 Qed.
