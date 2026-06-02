@@ -155,3 +155,401 @@ Proof.
 
   (* Still the top-level environments will get into the way *)
 Abort.
+
+  (* Top-level Lemmas about [wf_val], [wf_res], and [wf_env] *)
+  Lemma V_top_wf_val_r {i v1 v2}:
+    V_top i v1 v2 ->
+    wf_val v2.
+  Proof.
+    intros HV.
+    destruct i; simpl in *;
+      destruct HV as [Hv2 _]; auto.
+  Qed.
+
+  Lemma V_top_wf_val_Forall_r {i vs1 vs2} :
+    Forall2 (V_top i) vs1 vs2 ->
+    Forall wf_val vs2.
+  Proof.
+    intros.
+    induction H; auto.
+    constructor; auto.
+    eapply V_top_wf_val_r; eauto.
+  Qed.
+
+  Lemma V_top_wf_res_r {i v1 v2}:
+    V_top i v1 v2 ->
+    wf_res (Res v2).
+  Proof.
+    intros HV.
+    constructor.
+    eapply V_top_wf_val_r; eauto.
+  Qed.
+
+  Lemma V_top_exposed_r {i v1 v2}:
+    V_top i v1 v2 ->
+    exposed v2.
+  Proof.
+    intros.
+    destruct i; destruct v2;
+      simpl in *; fcrush.
+  Qed.
+
+  Lemma V_top_exposed_Forall_r {i vs1 vs2} :
+    Forall2 (V_top i) vs1 vs2 ->
+    Forall exposed vs2.
+  Proof.
+    intros.
+    induction H; auto.
+    constructor; auto.
+    eapply V_top_exposed_r; eauto.
+  Qed.
+
+  Lemma R_top_wf_res_l {i r1 r2} :
+    R_top i r1 r2 ->
+    wf_res r2.
+  Proof.
+    unfold R.
+    intros.
+    destruct r1; destruct r2; try contradiction; auto.
+    constructor.
+    eapply V_top_wf_val_r; eauto.
+  Qed.
+
+  (* Top-level Inversion Lemmas *)
+  Lemma R_top_res_inv_l i v1 r2 :
+    R_top i (A0.Res v1) r2 ->
+    exists v2, r2 = A1.Res v2 /\ V_top i v1 v2.
+  Proof.
+    intros.
+    destruct r2; simpl in *; try contradiction.
+    eexists; split; eauto.
+  Qed.
+
+  (* Top-level Monotonicity Lemmas *)
+    Lemma V_mono_Forall_aux :
+    forall i j (V : nat -> A0.val -> A1.wval -> Prop) vs1 vs2,
+      (forall k : nat,
+          k < S i ->
+          forall (j : nat) v1 v2, V k v1 v2 -> j <= k -> V j v1 v2) ->
+      Forall2 (V i) vs1 vs2 ->
+      j <= i ->
+      Forall2 (V j) vs1 vs2.
+  Proof.
+    intros.
+    revert vs2 H0.
+    induction vs1; intros; inv H0; auto.
+    rename l' into vs2.
+    constructor; auto.
+    eapply H; eauto; lia.
+  Qed.
+
+  Lemma V_top_mono i :
+    forall {j v1 v2},
+      V_top i v1 v2 ->
+      j <= i ->
+      V_top j v1 v2.
+  Proof.
+    induction i using lt_wf_rec; intros.
+    destruct v2.
+    destruct i; simpl in H0;
+      destruct j; simpl; intros;
+      destruct H0 as [Hv1 [Hex HV]]; subst.
+    - repeat (split; auto).
+    - inv H1.
+    - repeat (split; auto).
+      destruct v1; destruct v; try contradiction.
+      + destruct HV.
+        destruct (exposed_reflect w); fcrush.
+      + destruct HV as [Hc HV]; subst.
+        repeat split; auto.
+        eapply Forall2_length; eauto.
+    - repeat (split; auto).
+      destruct v1; destruct v; try contradiction.
+      + destruct HV as [Hlen HV]; subst.
+        repeat split; auto; intros.
+        inv Hex.
+        destruct (exposed_reflect w); try contradiction.
+        specialize (HV j0 vs1 vs2 ρ3 ρ4).
+        rewrite normalize_step in *; try lia.
+        apply HV; eauto; lia.
+      + destruct HV as [Heqc HV]; subst.
+        repeat split; auto.
+        eapply V_mono_Forall_aux; eauto; lia.
+  Qed.
+
+  Lemma V_top_mono_Forall {vs1 vs2} i j :
+    Forall2 (V_top i) vs1 vs2 ->
+    j <= i ->
+    Forall2 (V_top j) vs1 vs2.
+  Proof.
+    intros H.
+    revert j.
+    induction H; simpl; intros; auto.
+    constructor; eauto.
+    eapply V_top_mono; eauto.
+  Qed.
+
+  Lemma R_top_mono {r1 r2} i j :
+    R_top i r1 r2 ->
+    j <= i ->
+    R_top j r1 r2.
+  Proof.
+    unfold R.
+    intros.
+    destruct r1; auto.
+    destruct r2; auto.
+    eapply V_top_mono; eauto.
+  Qed.
+
+  Lemma E_top_mono {ex ρ1 ρ2 e1 e2} i j:
+    E_top ex i ρ1 e1 ρ2 e2 ->
+    j <= i ->
+    E_top ex j ρ1 e1 ρ2 e2.
+  Proof.
+    unfold E_top, E'.
+    intros.
+    destruct (H j1 r1) as [j2 [r2 [Hr2 HR]]]; auto; try lia.
+    exists j2, r2; split; eauto.
+    apply R_top_mono with (i - j1); try lia; auto.
+  Qed.
+
+  Lemma G_top_mono {Γ1 Γ2 ρ1 ρ2} i j:
+    G_top i Γ1 ρ1 Γ2 ρ2 ->
+    j <= i ->
+    G_top j Γ1 ρ1 Γ2 ρ2.
+  Proof.
+    unfold G_top.
+    intros.
+    destruct H as [Hwf [HS HG]].
+    split; auto.
+    split; auto; intros.
+    edestruct HG as [v1 [v2 [Heqv1 [Heqv2 HV]]]]; eauto.
+    eexists; eexists; repeat (split; eauto).
+    apply V_top_mono with i; eauto.
+  Qed.
+
+
+Lemma G_top_wf_env_r i Γ1 ρ1 Γ2 ρ2 :
+  G_top i Γ1 ρ1 Γ2 ρ2 ->
+  wf_env ρ2.
+Proof. unfold G_top. intros; tauto. Qed.
+
+Lemma G_top_subset_inv i Γ1 ρ1 Γ2 ρ2 :
+  G_top i Γ1 ρ1 Γ2 ρ2 ->
+  Γ2 \subset Γ1.
+Proof. unfold G_top; intros; tauto. Qed.
+
+Lemma G_top_subset i Γ1 ρ1 Γ2 ρ2 Γ3 Γ4 :
+  G_top i Γ1 ρ1 Γ2 ρ2 ->
+  Γ3 \subset Γ1 ->
+  Γ4 \subset Γ3 ->
+  G_top i Γ3 ρ1 Γ4 ρ2.
+Proof.
+  unfold G_top.
+  intros.
+  destruct H as [Hr [Hs HG]].
+  repeat (split; auto).
+Qed.
+
+
+  (* Top-level Environment Lemmas *)
+  Lemma G_top_get {Γ1 Γ2 i ρ1 ρ2}:
+    G_top i Γ1 ρ1 Γ2 ρ2 ->
+    forall x,
+      (x \in Γ1) ->
+      exists v1 v2,
+        M.get x ρ1 = Some v1 /\
+          M.get x ρ2 = Some v2 /\
+          V_top i v1 v2.
+  Proof.
+    unfold G.
+    intros.
+    destruct H as [Hr1 [HΓ HG]].
+    eapply (HG x); eauto.
+  Qed.
+
+  Lemma G_top_get_list {i Γ1 ρ1 Γ2 ρ2} :
+    G_top i Γ1 ρ1 Γ2 ρ2 ->
+    forall xs,
+      (FromList xs) \subset Γ1 ->
+      exists vs1 vs2,
+        get_list xs ρ1 = Some vs1 /\
+          get_list xs ρ2 = Some vs2 /\
+          Forall2 (V_top i) vs1 vs2.
+  Proof.
+    intros HG xs.
+    intros.
+    induction xs; simpl; intros.
+    - eexists; eexists; repeat split; eauto.
+    - rewrite FromList_cons in H.
+      edestruct (G_top_get HG) as [v1 [v2 [Heqv1 [Heqv2 HV]]]]; eauto.
+
+      edestruct IHxs as [vs1 [vs2 [Heqvs1 [Heqvs2 HVs]]]]; eauto.
+      eapply Included_trans; eauto.
+      apply Included_Union_r.
+
+      rewrite Heqv1.
+      rewrite Heqvs1.
+      rewrite Heqv2.
+      rewrite Heqvs2.
+      exists (v1 :: vs1), (v2 :: vs2); repeat (split; auto).
+  Qed.
+
+  Lemma G_top_set {i Γ1 ρ1 Γ2 ρ2}:
+    G_top i Γ1 ρ1 Γ2 ρ2 ->
+    forall {x v1 v2},
+      V_top i v1 v2 ->
+      G_top i (x |: Γ1) (M.set x v1 ρ1) (x |: Γ2) (M.set x v2 ρ2).
+  Proof.
+    intros.
+    unfold G_top; intros.
+
+    split.
+    eapply wf_env_set; eauto.
+    eapply G_top_wf_env_r; eauto.
+    eapply V_top_wf_val_r; eauto.
+
+    split.
+    apply Included_Union_compat; auto.
+    apply Included_refl.
+    eapply G_top_subset_inv; eauto.
+
+    intros.
+    destruct (M.elt_eq x0 x); subst.
+    - repeat rewrite M.gss.
+      eexists; eexists; repeat split; eauto.
+    - repeat (rewrite M.gso; auto).
+      assert (x0 \in Γ1) by fcrush.
+      eapply G_top_get; eauto.
+  Qed.
+
+  Lemma G_top_set_lists {i Γ1 ρ1 Γ2 ρ2}:
+    G_top i Γ1 ρ1 Γ2 ρ2 ->
+    forall {xs vs1 vs2 ρ3 ρ4},
+      Forall2 (V_top i) vs1 vs2 ->
+      set_lists xs vs1 ρ1 = Some ρ3 ->
+      set_lists xs vs2 ρ2 = Some ρ4 ->
+      G_top i (FromList xs :|: Γ1) ρ3 (FromList xs :|: Γ2) ρ4.
+  Proof.
+    intros HG xs.
+    assert (HΓ : Γ2 \subset Γ1) by (eapply G_top_subset_inv; eauto).
+    induction xs; simpl; intros.
+    - destruct vs1; try discriminate.
+      destruct vs2; try discriminate.
+      inv H0; inv H1.
+      eapply G_top_subset; eauto.
+      normalize_sets.
+      rewrite Union_Empty_set_neut_l; eauto.
+      apply Included_refl.
+      eapply Included_Union_compat; eauto.
+      apply Included_refl.
+    - destruct vs1; try discriminate.
+      destruct vs2; try discriminate.
+      destruct (set_lists xs vs1 ρ1) eqn:Heq1; try discriminate.
+      destruct (set_lists xs vs2 ρ2) eqn:Heq2; try discriminate.
+      inv H; inv H0; inv H1.
+      eapply G_top_subset with (Γ1 := (a |: (FromList xs :|: Γ1))) (Γ2 := (a |: (FromList xs :|: Γ2))); eauto.
+      eapply G_top_set; eauto.
+      normalize_sets.
+      rewrite Union_assoc.
+      apply Included_refl.
+      eapply Included_Union_compat; eauto.
+      apply Included_refl.
+  Qed.
+
+
+Definition trans_top Γ1 e1 e2 :=
+  exists l l' e3 W,
+    L.trans Γ1 l e1 l' e3 /\
+    C.web_map_spec W Γ1 e3 /\
+    R.trans W Γ1 e3 e2.
+
+Lemma ret_compat_top Γ x :
+  (x \in Γ) ->
+  trans_correct_top (AS.Eret x) (AT.Eret x).
+Proof.
+  unfold trans_correct_top.
+  intros.
+  split.
+  unfold Ensembles.Included, Ensembles.In; intros; fcrush.
+
+  unfold E_top, E', R'.
+  intros.
+
+  inv H2.
+  + eexists; eexists; split; simpl; fcrush.
+  + inv H3.
+    edestruct (G_top_get H0) as [v1 [v2 [Heqv1 [Heqv2 HV]]]]; eauto; invc.
+    exists 1, (AT.Res v2); split; eauto; simpl.
+    econstructor; eauto.
+    constructor.
+    eapply V_top_exposed_r; eauto.
+    eapply V_top_mono; eauto; lia.
+Qed.
+
+Lemma fp_top Γ1 e1 e2 :
+  trans_top Γ1 e1 e2 ->
+  trans_correct_top e1 e2.
+Proof.
+  unfold trans_top.
+  intros.
+  destruct H as [l [l' [e3 [W [LT [CT RT]]]]]].
+
+  generalize dependent W.
+  generalize dependent e2.
+  induction LT; intros e2 W CT RT; inv CT; inv RT; invc.
+  - eauto using ret_compat_top.
+  - assert (Hk1 : trans_correct_top k0 k3) by eauto.
+    rename e4 into e3.
+    assert (He1 : trans_correct_top e0 e3) by eauto.
+    (* the web isn't exposed *)
+Abort.
+
+(*
+  Lemma Vfun_V_top e e' :
+    trans_correct_top e e' ->
+    forall i f xs Γ1 Γ2 ρ1 ρ2,
+      G_top i Γ1 ρ1 Γ2 ρ2 ->
+      A0.occurs_free e \subset (FromList xs :|: (f |: Γ1)) ->
+      A1.occurs_free e' \subset (FromList xs :|: (f |: Γ2)) ->
+      V_top i (AS.Vfun f ρ1 xs e) (AT.Tag w0 (AT.Vfun f ρ2 xs e')).
+*)
+
+Lemma fun_compat_top e e' k k' f w xs :
+  trans_correct_top e e' ->
+  trans_correct_top k k' ->
+  trans_correct_top (AS.Efun f xs e k) (AT.Efun f w xs e' k').
+Proof.
+  unfold trans_correct_top, E_top, E'.
+  intros.
+  destruct H as [HSe He].
+  destruct H0 as [HSk Hk].
+
+  split.
+  unfold Ensembles.Included, Ensembles.In in *.
+  admit.
+
+  intros.
+  inv H1.
+  - exists 0, OOT; split; simpl; eauto.
+  - inv H2.
+    edestruct (Hk (i - 1) (M.set f (AS.Vfun f ρ1 xs e) ρ1) (M.set f (Tag w (AT.Vfun f ρ2 xs e')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+    + eapply G_top_subset with (Γ1 := (f |: (AS.occurs_free (A0.Efun f xs e k)))) (Γ2 := (f |: (AT.occurs_free (A1.Efun f w xs e' k')))); eauto.
+      * eapply G_top_set; eauto.
+        eapply G_top_mono; eauto; try lia.
+
+        (*
+        eapply Vfun_V_top with (Γ1 := (AS.occurs_free (AS.Efun f xs e k))) (Γ2 := (AT.occurs_free (AT.Efun f w xs e' k'))); eauto.
+        -- unfold trans_correct_top.
+           split; auto.
+        -- eapply G_top_mono; eauto; try lia.
+        -- eapply A0.free_fun_e_subset; eauto.
+        -- eapply A1.free_fun_e_subset; eauto.
+         *)
+        admit.
+      * eapply A0.free_fun_k_subset; eauto.
+    + exists (S j2), r2; split; auto.
+      * constructor; auto.
+        eapply bstep_fuel_exposed_inv; eauto.
+      * apply R_top_mono with ((i - 1) - c); try lia; auto.
+Abort.
