@@ -2233,52 +2233,111 @@ Proof.
   eapply Included_refl; eauto.
 Qed.
 
-Lemma fun_compat_top W w e k k' f l xs :
-  W ! l = Some w ->
-  (w \in Exposed) ->
-  trans_correct_top e (CEexp W e) ->
-  trans_correct_top k k' ->
-  trans_correct_top (AS.Efun f l xs e k) (CEfun f l xs W e k').
-Proof.
-  unfold trans_correct_top, E_top, E_top'.
-  intros HW Hw; intros.
-  pose proof H as HE.
-  destruct H as [Hwe He].
-  destruct H0 as [Hwk Hk].
-  split.
-  - unfold web_map_sound_top in *.
-    intros.
-    inv H.
-    fcrush.
-    inv H1.
-    edestruct (Hwk c (M.set f (AS.Tag l (AS.Vfun f ρ1 xs e)) ρ1) (M.set f (CTag l W (CVfun f ρ2 xs e)) ρ2) r1) as [r2 [Hcbstep_k Href]]; eauto.
-    eapply refine_env_set; eauto.
-    inv Hcbstep_k.
-    fcrush.
-    eexists; split; eauto.
-  - intros.
-
-    inv H1.
-    + exists 0, COOT; split; simpl; eauto.
-    + inv H2.
-      edestruct (Hk (i - 1) (M.set f (AS.Tag l (AS.Vfun f ρ1 xs e)) ρ1) (M.set f (CTag l W (CVfun f ρ2 xs e)) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
-      * eapply G_top_subset with (Γ1 := (f |: (AS.occurs_free (AS.Efun f l xs e k)))); eauto.
-        -- eapply G_top_set; eauto.
-           eapply G_top_mono; eauto; try lia.
-
-           eapply Vfun_V_top; eauto.
-           eapply G_top_mono; eauto; try lia.
-           eapply AS.free_fun_e_subset; eauto.
-        -- eapply AS.free_fun_k_subset; eauto.
-        -- eapply Included_refl; eauto.
-      * exists (S j2), r2; split; eauto.
-        -- constructor; auto.
-           econstructor; eauto.
-           inv Hk2; auto.
-        -- apply R_top_mono with ((i - 1) - c); try lia; auto.
-Qed.
-
 (* TODO: at the top level, labeling pass should link with the trivial label *)
+
+Lemma web_map_sound_top_preserves_linking W1 W2 f w l1 l2 x e1 e2 :
+  W1 ! l1 = Some w ->
+  Ensembles.In web Exposed w ->
+  web_map_sound_top e1 (CEexp W1 e1) ->
+  web_map_sound_top e2 (CEexp W2 e2) ->
+  web_map_sound_top (AS.link f x l1 e1 l2 e2) (link f x l1 W1 e1 W2 e2).
+Proof.
+  unfold link.
+  intros HW Hw H1 H2.
+  unfold web_map_sound_top in *.
+  intros i ρ1 ρ2 r1 Hbstep Href.
+  inv Hbstep.
+  { exists COOT; split; eauto. }
+  match goal with
+  | [ H : AS.bstep _ _ _ _ |- _ ] => inv H
+  end.
+  match goal with
+  | [ H : AS.bstep_fuel _ (AS.Eletapp _ _ _ _ _) _ _ |- _ ] => inv H
+  end.
+  { exists COOT; split; eauto. }
+  match goal with
+  | [ H : AS.bstep _ (AS.Eletapp _ _ _ _ _) _ _ |- _ ] => inv H
+  end;
+    match goal with
+    | [ H : M.get _ (M.set _ _ _) = Some _ |- _ ] =>
+        rewrite M.gss in H; inv H
+    end;
+    match goal with
+    | [ H : get_list [] _ = Some _ |- _ ] => simpl in H; inv H
+    end;
+    match goal with
+    | [ H : set_lists [] [] _ = Some _ |- _ ] => simpl in H; inv H
+    end.
+  - (* BStep_letapp_Res *)
+    match goal with
+    | [ Hb : AS.bstep_fuel _ _ _ (AS.Res _) |- _ ] => rename Hb into Hbstep_e1
+    end.
+    match goal with
+    | [ Hk : AS.bstep_fuel _ e2 _ _ |- _ ] => rename Hk into Hbstep_e2
+    end.
+    match goal with
+    | [ Hbody : AS.bstep_fuel
+                  (M.set ?fv (AS.Tag ?lv (AS.Vfun ?fv ?ρv [] ?ev)) ?ρv)
+                  _ _ _ |- _ ] =>
+        assert (Href_inner :
+                 refine_env
+                   (M.set fv (AS.Tag lv (AS.Vfun fv ρv [] ev)) ρv)
+                   (M.set fv (CTag lv W1 (CVfun fv ρ2 [] ev)) ρ2))
+          by (eapply refine_env_set; eauto)
+    end.
+    edestruct (H1 _ _ _ _ Hbstep_e1 Href_inner)
+      as [re1 [Hcb_top_e1 Href_e1]].
+    inv Href_e1.
+    match goal with
+    | [ Hrv : refine_val _ _ |- _ ] => rename Hrv into Hrefval
+    end.
+    match goal with
+    | [ Htop : cbstep_top_fuel _ (CEexp W1 _) _ (CRes _) |- _ ] =>
+        apply cbstep_top_fuel_cbstep_fuel in Htop;
+        rename Htop into Hcb_e1
+    end.
+    rename v' into v0.
+    assert (Hexv' : to_exposed_cres (CRes v0))
+      by (eapply cbstep_fuel_exposed_inv; eauto).
+    inv Hexv'.
+    edestruct (H2 _ _ _ _ Hbstep_e2
+                 (refine_env_set Href_inner Hrefval))
+      as [re2 [Hcb_top_e2 Href_e2]].
+    exists re2; split; auto.
+    assert (Hex_re2 : to_exposed_cres re2)
+      by (inv Hcb_top_e2; eauto).
+    eapply CbstepTF_Step; eauto.
+    eapply Cbstep_fun_top; eauto.
+    eapply CbstepTF_Step; eauto.
+    eapply Cbstep_letapp_top_Res; eauto using M.gss; simpl; auto.
+  - (* BStep_letapp_OOT *)
+    match goal with
+    | [ Hb : AS.bstep_fuel _ _ _ AS.OOT |- _ ] => rename Hb into Hbstep_e1
+    end.
+    match goal with
+    | [ Hbody : AS.bstep_fuel
+                  (M.set ?fv (AS.Tag ?lv (AS.Vfun ?fv ?ρv [] ?ev)) ?ρv)
+                  _ _ _ |- _ ] =>
+        assert (Href_inner :
+                 refine_env
+                   (M.set fv (AS.Tag lv (AS.Vfun fv ρv [] ev)) ρv)
+                   (M.set fv (CTag lv W1 (CVfun fv ρ2 [] ev)) ρ2))
+          by (eapply refine_env_set; eauto)
+    end.
+    edestruct (H1 _ _ _ _ Hbstep_e1 Href_inner)
+      as [re1 [Hcb_top_e1 Href_e1]].
+    inv Href_e1.
+    match goal with
+    | [ Htop : cbstep_top_fuel _ (CEexp W1 _) _ COOT |- _ ] =>
+        apply cbstep_top_fuel_cbstep_fuel in Htop;
+        rename Htop into Hcb_e1
+    end.
+    exists COOT; split; eauto.
+    eapply CbstepTF_Step; eauto.
+    eapply Cbstep_fun_top; eauto.
+    eapply CbstepTF_Step; eauto.
+    eapply Cbstep_letapp_top_OOT; eauto using M.gss; simpl; auto.
+Qed.
 
 Lemma preserves_linking W1 W2 f w l1 l2 x e1 e2 :
   W1 ! l1 = Some w ->
@@ -2288,101 +2347,169 @@ Lemma preserves_linking W1 W2 f w l1 l2 x e1 e2 :
   trans_correct_top (AS.link f x l1 e1 l2 e2) (link f x l1 W1 e1 W2 e2).
 Proof.
   unfold AS.link, link.
-  intros.
-  eapply fun_compat_top; eauto.
-  (* eapply letapp_compat_top; eauto. *)
-Abort.
-
-
-Lemma letapp_compat_top W k l xs x f :
-  trans_correct_top k (CEexp W k) ->
-  trans_correct_top (AS.Eletapp x f l xs k) (CEletapp x f xs (CEexp W k)).
-Proof.
-  unfold trans_correct_top, E_top, E_top'.
-  intros [HWk Hk]; intros.
-  split.
-  - unfold web_map_sound_top in *.
-    intros.
-    inv H.
-    fcrush.
-    inv H1.
-    edestruct (HWk
-
-  pose proof H1 as Hbstep.
-
-  inv H1.
-  - exists 0, COOT; split; simpl; auto.
-  - inv H2.
-    + edestruct (G_top_get H) as [fv1 [fv2 [Heqfv1 [Heqfv2 HVf]]]]; eauto.
-      invc.
-      destruct fv2.
-      destruct i.
-      fcrush.
-      simpl in HVf.
-      rename w into W'.
-      destruct HVf as [Hfv2 [Href [Hexf2 [Heql HV]]]]; subst.
-      destruct c; try contradiction.
-      destruct HV as [Heqf [Heqxs [Heqe HV]]]; subst.
-
-      edestruct (G_top_get_list H xs) as [vs1 [vs2 [Heqvs1 [Heqvs2 HVvs]]]]; eauto.
-      eapply AS.free_letapp_xs_subset; eauto.
-
-      invc.
-
-      destruct (set_lists_length3 (M.set v0 (CTag l0 W' (CVfun v0 t l1 e0)) t) l1 vs2) as [ρ4 Heqρ4].
-      unfold clval in *.
-      rewrite <- (Forall2_length _ _ _ HVvs).
-      rewrite <- (set_lists_length_eq _ _ _ _ H11); auto.
-
-      unfold E' in HV.
-      edestruct (HV i vs1 vs2 ρ'' ρ4) with (j1 := c0) as [j2 [r2 [He0 HR]]]; eauto; try lia.
-      * eapply V_top_exposed_Forall_r; eauto.
-      * eapply V_top_mono_Forall; eauto; lia.
-      * unfold web_map_sound; intros.
-        unfold web_map_sound_top in *.
-        destruct r1.
-        -- edestruct (HW (S i0) _ _ AS.OOT) as [r2 [Hcbstep_e Hrefr]]; eauto.
-           inv Hcbstep_e.
-           inv Hrefr.
-           inv H8.
-           unfold clval in *; invc.
-
-        assert (Hc : c = c0 /\ refine_val v v1).
-        {
-          eapply bstep_fuel_cbstep_fuel_refine; eauto.
-        }
-        inv Hc.
-        eapply AS.bstep_fuel_lt_Res_not_OOT with (c0 := (c0 + c'0)) in H14; eauto; try lia.
-        contradiction.
-
-        unfold clval in *; invc; eauto.
-      - assert (Hcv : v = w /\ c = i0).
-        {
-          eapply AS.bstep_fuel_deterministic; eauto.
-        }
-        inv Hcv.
-
-        edestruct (H (S (i0 + c')) (AS.Res w0)) as [r2 [Hcbstep_e Hrefr]]; eauto.
-        admit.
-      * destruct r2; simpl in HR; try contradiction.
-        edestruct (H0 (i - c0) (M.set x v ρ1) (M.set x w ρ2)) with (j1 := c') as [j3 [r3 [He1 HR']]]; eauto; try lia.
-        eapply G_top_subset with (Γ1 := x |: (A0.occurs_free (A0.Eletapp x f xs k))) (Γ2 := x |: (A1.occurs_free (A1.Eletapp x f w0 xs k'))); eauto.
+  intros HW Hwex Htr1 Htr2.
+  assert (Hweb_link :
+           web_map_sound_top
+             (AS.Efun f l1 [] e1 (AS.Eletapp x f l2 [] e2))
+             (CEfun f l1 [] W1 e1 (CEletapp x f [] (CEexp W2 e2))))
+    by (destruct Htr1 as [Hwe1 _]; destruct Htr2 as [Hwe2 _];
+        eapply web_map_sound_top_preserves_linking; eauto).
+  pose proof Htr1 as Htr1c.
+  pose proof Htr2 as Htr2c.
+  destruct Htr1c as [Hwe1 He].
+  destruct Htr2c as [Hwe2 Hk].
+  unfold trans_correct_top.
+  split; [auto |].
+  intros i ρ1 ρ2 HG.
+  unfold E_top, E_top'.
+  intros j1 r1 Hj1 Hbstep.
+  inv Hbstep.
+  { exists 0, COOT; split; simpl; eauto. }
+  match goal with
+  | [ H : AS.bstep _ _ _ _ |- _ ] => inv H
+  end.
+  match goal with
+  | [ H : AS.bstep_fuel _ (AS.Eletapp _ _ _ _ _) _ _ |- _ ] => inv H
+  end.
+  { exists 0, COOT; split; simpl; eauto. }
+  match goal with
+  | [ H : AS.bstep _ (AS.Eletapp _ _ _ _ _) _ _ |- _ ] => inv H
+  end;
+    match goal with
+    | [ H : M.get _ (M.set _ _ _) = Some _ |- _ ] =>
+        rewrite M.gss in H; inv H
+    end;
+    match goal with
+    | [ H : get_list [] _ = Some _ |- _ ] => simpl in H; inv H
+    end;
+    match goal with
+    | [ H : set_lists [] [] _ = Some _ |- _ ] => simpl in H; inv H
+    end.
+  - (* BStep_letapp_Res; vars from inversion: f', w', ρ', e, v, c, c' *)
+    match goal with
+    | [ Hb : AS.bstep_fuel _ _ _ (AS.Res _) |- _ ] => rename Hb into Hbody
+    end.
+    match goal with
+    | [ Hk' : AS.bstep_fuel _ e2 _ _ |- _ ] => rename Hk' into Hcont
+    end.
+    assert (HVfun :
+             V_top i (AS.Tag w' (AS.Vfun f' ρ' [] e))
+                      (CTag w' W1 (CVfun f' ρ2 [] e))).
+    { eapply Vfun_V_top with
+        (xs := [])
+        (Γ1 := AS.occurs_free
+                 (AS.Efun f' w' [] e (AS.Eletapp x f' l2 [] e2)))
+        (Γ2 := AS.occurs_free
+                 (AS.Efun f' w' [] e (AS.Eletapp x f' l2 [] e2)));
+      eauto using AS.free_fun_e_subset. }
+    assert (HGbody :
+             G_top i (AS.occurs_free e)
+                    (M.set f' (AS.Tag w' (AS.Vfun f' ρ' [] e)) ρ')
+                    (AS.occurs_free e)
+                    (M.set f' (CTag w' W1 (CVfun f' ρ2 [] e)) ρ2)).
+    { eapply G_top_subset with
+        (Γ1 := (FromList [] :|:
+                  (f' |: AS.occurs_free
+                       (AS.Efun f' w' [] e
+                          (AS.Eletapp x f' l2 [] e2)))))
+      (Γ2 := (FromList [] :|:
+                  (f' |: AS.occurs_free
+                       (AS.Efun f' w' [] e
+                         (AS.Eletapp x f' l2 [] e2))))).
+      - eapply G_top_set_lists; eauto.
         eapply G_top_set; eauto.
-        eapply G_top_mono; eauto; lia.
-        -- eapply V_top_mono; eauto; try lia.
-        -- eapply A0.free_letapp_k_subset; eauto.
-        -- exists (S (j2 + j3)), r3; split; eauto.
-           2 : { eapply R_top_mono; eauto; lia. }
-
-           constructor; auto.
-           eapply BStep_letapp_Res with (v := w); eauto.
-           destruct (exposed_reflect w0); try contradiction; auto.
-
-           intros.
-           split; auto.
-           eapply V_top_exposed_Forall_r; eauto.
-           assert (Hw : exposed_res (A1.Res w)) by (eapply bstep_fuel_exposed_inv; eauto); inv Hw; auto.
-
-           eapply bstep_fuel_exposed_inv; eauto.
-    + eexists; exists OOT; split; simpl; eauto.
+        simpl; auto.
+        simpl; auto.
+      - apply AS.free_fun_e_subset.
+      - apply Included_refl. }
+    edestruct (He i _ _ HGbody c (AS.Res v))
+      as [je [re [Hcb_top_e HRe]]];
+      [ lia | assumption | ].
+    destruct re as [|vt]; [ contradiction | simpl in HRe ].
+    assert (Hexvt : to_exposed vt)
+      by (eapply V_top_exposed_r; eauto).
+    apply cbstep_top_fuel_cbstep_fuel in Hcb_top_e.
+    assert (HGcont :
+             G_top (i - c) (AS.occurs_free e2)
+               (M.set x v
+                 (M.set f' (AS.Tag w' (AS.Vfun f' ρ' [] e)) ρ'))
+               (AS.occurs_free e2)
+               (M.set x vt
+                 (M.set f' (CTag w' W1 (CVfun f' ρ2 [] e)) ρ2))).
+    { eapply G_top_subset with
+        (Γ1 := x |: AS.occurs_free
+                      (AS.Eletapp x f' l2 [] e2)).
+      - eapply G_top_set.
+        + eapply G_top_subset with
+            (Γ1 := f' |: AS.occurs_free
+                          (AS.Efun f' w' [] e
+                            (AS.Eletapp x f' l2 [] e2))).
+          * eapply G_top_set.
+            -- eapply G_top_mono; [ eassumption | lia ].
+            -- eapply V_top_mono; [ eassumption | lia ].
+          * apply AS.free_fun_k_subset.
+          * apply Included_refl.
+        + assumption.
+      - apply AS.free_letapp_k_subset.
+      - apply Included_refl. }
+    edestruct (Hk (i - c) _ _ HGcont) with (j1 := c') (r1 := r1)
+      as [jk [rk [Hcb_top_k HRk]]];
+      [ lia | assumption | ].
+    assert (Hex_rk : to_exposed_cres rk)
+      by (eapply cbstep_top_fuel_exposed_inv; eauto).
+    exists (S (S (je + jk))), rk; split.
+    + eapply CbstepTF_Step; [|assumption].
+      eapply Cbstep_fun_top; eauto.
+      eapply CbstepTF_Step; [|assumption].
+      eapply Cbstep_letapp_top_Res with (vs := []); eauto; simpl; auto.
+      apply M.gss; simpl; auto.
+      simpl; auto.
+    + eapply R_top_mono; [ exact HRk | lia ].
+  - (* BStep_letapp_OOT; vars from inversion: f', w', ρ', e, c *)
+    match goal with
+    | [ Hb : AS.bstep_fuel _ _ _ AS.OOT |- _ ] => rename Hb into Hbody
+    end.
+    assert (HVfun :
+             V_top i (AS.Tag w' (AS.Vfun f' ρ' [] e))
+                      (CTag w' W1 (CVfun f' ρ2 [] e))).
+    { eapply Vfun_V_top with
+        (xs := [])
+        (Γ1 := AS.occurs_free
+                 (AS.Efun f' w' [] e (AS.Eletapp x f' l2 [] e2)))
+        (Γ2 := AS.occurs_free
+                 (AS.Efun f' w' [] e (AS.Eletapp x f' l2 [] e2)));
+      eauto using AS.free_fun_e_subset. }
+    assert (HGbody :
+             G_top i (AS.occurs_free e)
+                    (M.set f' (AS.Tag w' (AS.Vfun f' ρ' [] e)) ρ')
+                    (AS.occurs_free e)
+                    (M.set f' (CTag w' W1 (CVfun f' ρ2 [] e)) ρ2)).
+    { eapply G_top_subset with
+        (Γ1 := (FromList [] :|:
+                  (f' |: AS.occurs_free
+                       (AS.Efun f' w' [] e
+                          (AS.Eletapp x f' l2 [] e2)))))
+      (Γ2 := (FromList [] :|:
+                  (f' |: AS.occurs_free
+                       (AS.Efun f' w' [] e
+                         (AS.Eletapp x f' l2 [] e2))))).
+      - eapply G_top_set_lists; eauto.
+        eapply G_top_set; eauto.
+        simpl; auto.
+        simpl; auto.
+      - apply AS.free_fun_e_subset.
+      - apply Included_refl. }
+    edestruct (He i _ _ HGbody c0 AS.OOT)
+      as [je [re [Hcb_top_e HRe]]];
+      [ lia | assumption | ].
+    destruct re; [| contradiction ].
+    apply cbstep_top_fuel_cbstep_fuel in Hcb_top_e.
+    exists (S (S je)), COOT; split.
+    + eapply CbstepTF_Step; [|constructor].
+      eapply Cbstep_fun_top; eauto.
+      eapply CbstepTF_Step; [|constructor].
+      eapply Cbstep_letapp_top_OOT with (vs := []); eauto.
+      apply M.gss; simpl; auto.
+      simpl; auto.
+    + simpl; trivial.
 Qed.
