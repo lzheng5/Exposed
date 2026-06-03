@@ -1827,123 +1827,6 @@ Proof.
     eapply cbstep_top_fuel_exposed_inv; eauto.
 Qed.
 
-Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
-  wf_cenv ρ2 /\
-    refine_env ρ1 ρ2 /\
-    Γ2 \subset Γ1 /\
-    forall x,
-      (x \in Γ1) ->
-      exists v1 v2,
-        M.get x ρ1 = Some v1 /\
-          M.get x ρ2 = Some v2 /\
-          to_exposed v2 /\
-          V_top i v1 v2.
-
-Lemma G_top_wf_cenv_r i Γ1 ρ1 Γ2 ρ2 :
-  G_top i Γ1 ρ1 Γ2 ρ2 ->
-  wf_cenv ρ2.
-Proof. unfold G_top. intros; tauto. Qed.
-
-Lemma G_top_refine_env i Γ1 ρ1 Γ2 ρ2 :
-  G_top i Γ1 ρ1 Γ2 ρ2 ->
-  refine_env ρ1 ρ2.
-Proof. unfold G_top. intros; tauto. Qed.
-
-Lemma G_top_subset_inv i Γ1 ρ1 Γ2 ρ2 :
-  G_top i Γ1 ρ1 Γ2 ρ2 ->
-  Γ2 \subset Γ1.
-Proof. unfold G_top; intros; tauto. Qed.
-
-Lemma G_top_subset i Γ1 ρ1 Γ2 ρ2 Γ3 Γ4 :
-  G_top i Γ1 ρ1 Γ2 ρ2 ->
-  Γ3 \subset Γ1 ->
-  Γ4 \subset Γ3 ->
-  G_top i Γ3 ρ1 Γ4 ρ2.
-Proof.
-  unfold G_top.
-  intros.
-  destruct H as [Hwf [Href [Hs HG]]].
-  repeat (split; auto).
-Qed.
-
-Lemma G_top_G :
-  forall {i Γ1 ρ1 Γ2 ρ2},
-    G_top i Γ1 ρ1 Γ2 ρ2 ->
-    G i Γ1 ρ1 Γ2 ρ2.
-Proof.
-  unfold G_top, G.
-  intros.
-  destruct H as [Hwf [Href [Hs HG]]].
-  unfold Ensembles.Included, Ensembles.In, Dom_map in *.
-  repeat (split; auto); intros.
-  edestruct HG as [v1' [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; eauto; invc.
-  eexists; split; eauto.
-  eapply V_V_top; eauto.
-Qed.
-
-(* W is sound for *every* program trace of an open program e *)
-Definition web_map_sound_top e e' :=
-  forall i ρ1 ρ2 r1,
-    AS.bstep_fuel ρ1 e i r1 ->
-    refine_env ρ1 ρ2 ->
-    exists r2,
-      cbstep_top_fuel ρ2 e' i r2 /\
-        refine_res r1 r2.
-
-Lemma web_map_sound_top_web_map_sound W e :
-  web_map_sound_top e (CEexp W e) ->
-  forall ρ1 ρ2,
-    web_map_sound W true ρ1 ρ2 e.
-Proof.
-  unfold web_map_sound_top, web_map_sound.
-  intros.
-  edestruct H as [r2 [Hcbstep_top Href]]; eauto.
-  eexists; split; eauto.
-  eapply cbstep_top_fuel_cbstep_fuel; eauto.
-Qed.
-
-Lemma web_map_sound_web_map_sound_top W e :
-  (forall ρ1 ρ2,
-      web_map_sound W true ρ1 ρ2 e) ->
-  web_map_sound_top e (CEexp W e).
-Proof.
-  unfold web_map_sound_top, web_map_sound.
-  intros.
-  edestruct H as [r2 [Hcbstep_top Href]]; eauto.
-  eexists; split; eauto.
-  eapply cbstep_fuel_cbstep_top_fuel; eauto.
-Qed.
-
-Definition trans_correct_top e e' :=
-  web_map_sound_top e e' /\
-  forall i ρ1 ρ2,
-    G_top i (AS.occurs_free e) ρ1 (AS.occurs_free e) ρ2 ->
-    E_top i ρ1 e ρ2 e'.
-
-Lemma cexp_compat_top W e :
-  web_map_spec W (AS.occurs_free e) e ->
-  web_map_sound_top e (CEexp W e) ->
-  trans_correct_top e (CEexp W e).
-Proof.
-  unfold trans_correct_top.
-  intros.
-  split; eauto; intros.
-  eapply E_E_top; eauto.
-  eapply fundamental_property; eauto.
-  eapply web_map_sound_top_web_map_sound; eauto.
-  eapply G_top_G; eauto.
-Qed.
-
-Theorem top W etop:
-  (has_label etop \subset (Dom_map W)) ->
-  web_map_sound_top etop (CEexp W etop) ->
-  trans_correct_top etop (CEexp W etop).
-Proof.
-  intros H; intros.
-  eauto using cexp_compat_top, web_map_total.
-Qed.
-
-(* Linking Preservation *)
 
 Lemma V_top_wf_cval_r {i v1 v2}:
   V_top i v1 v2 ->
@@ -2020,70 +1903,45 @@ Proof.
   eexists; split; eauto.
 Qed.
 
-(* Top-level Monotonicity Lemmas *)
-Lemma V_top_mono i :
-  forall {j v1 v2},
-    V_top i v1 v2 ->
-    j <= i ->
-    V_top j v1 v2.
-Proof.
-  intros.
-  eapply V_V_top; eauto.
-  eapply V_top_exposed_r; eauto.
-  eapply V_mono; eauto.
-  eapply V_V_top; eauto.
-  eapply V_top_exposed_r; eauto.
-Qed.
+Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
+  wf_cenv ρ2 /\
+    refine_env ρ1 ρ2 /\
+    Γ2 \subset Γ1 /\
+    forall x,
+      (x \in Γ1) ->
+      exists v1 v2,
+        M.get x ρ1 = Some v1 /\
+          M.get x ρ2 = Some v2 /\
+          to_exposed v2 /\
+          V_top i v1 v2.
 
-Lemma V_top_mono_Forall {vs1 vs2} i j :
-  Forall2 (V_top i) vs1 vs2 ->
-  j <= i ->
-  Forall2 (V_top j) vs1 vs2.
-Proof.
-  intros H.
-  revert j.
-  induction H; simpl; intros; auto.
-  constructor; eauto.
-  eapply V_top_mono; eauto.
-Qed.
-
-Lemma R_top_mono {r1 r2} i j :
-  R_top i r1 r2 ->
-  j <= i ->
-  R_top j r1 r2.
-Proof.
-  unfold R.
-  intros.
-  destruct r1; auto.
-  destruct r2; auto.
-  eapply V_top_mono; eauto.
-Qed.
-
-Lemma E_top_mono {ρ1 ρ2 e1 e2} i j:
-  E_top i ρ1 e1 ρ2 e2 ->
-  j <= i ->
-  E_top j ρ1 e1 ρ2 e2.
-Proof.
-  unfold E_top, E_top'.
-  intros.
-  destruct (H j1 r1) as [j2 [r2 [Hr2 HR]]]; auto; try lia.
-  exists j2, r2; split; eauto.
-  apply R_top_mono with (i - j1); try lia; auto.
-Qed.
-
-Lemma G_top_mono {Γ1 Γ2 ρ1 ρ2} i j:
+Lemma G_top_wf_cenv_r i Γ1 ρ1 Γ2 ρ2 :
   G_top i Γ1 ρ1 Γ2 ρ2 ->
-  j <= i ->
-  G_top j Γ1 ρ1 Γ2 ρ2.
+  wf_cenv ρ2.
+Proof. unfold G_top. intros; tauto. Qed.
+
+Lemma G_top_refine_env i Γ1 ρ1 Γ2 ρ2 :
+  G_top i Γ1 ρ1 Γ2 ρ2 ->
+  refine_env ρ1 ρ2.
+Proof. unfold G_top. intros; tauto. Qed.
+
+Lemma G_top_subset_inv i Γ1 ρ1 Γ2 ρ2 :
+  G_top i Γ1 ρ1 Γ2 ρ2 ->
+  Γ2 \subset Γ1.
+Proof. unfold G_top; intros; tauto. Qed.
+
+Lemma G_top_subset i Γ1 ρ1 Γ2 ρ2 Γ3 Γ4 :
+  G_top i Γ1 ρ1 Γ2 ρ2 ->
+  Γ3 \subset Γ1 ->
+  Γ4 \subset Γ3 ->
+  G_top i Γ3 ρ1 Γ4 ρ2.
 Proof.
   unfold G_top.
   intros.
-  destruct H as [Hwf [Href [HS HG]]].
-  repeat (split; eauto); intros.
-  edestruct HG as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; eauto.
-  eexists; eexists; repeat (split; eauto).
-  apply V_top_mono with i; eauto.
+  destruct H as [Hwf [Href [Hs HG]]].
+  repeat (split; auto).
 Qed.
+
 
 (* Top-level Environment Lemmas *)
 Lemma G_top_get {Γ1 Γ2 i ρ1 ρ2}:
@@ -2192,6 +2050,151 @@ Proof.
     eapply Included_Union_compat; eauto.
     apply Included_refl.
 Qed.
+
+Lemma G_top_G :
+  forall {i Γ1 ρ1 Γ2 ρ2},
+    G_top i Γ1 ρ1 Γ2 ρ2 ->
+    G i Γ1 ρ1 Γ2 ρ2.
+Proof.
+  unfold G_top, G.
+  intros.
+  destruct H as [Hwf [Href [Hs HG]]].
+  unfold Ensembles.Included, Ensembles.In, Dom_map in *.
+  repeat (split; auto); intros.
+  edestruct HG as [v1' [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; eauto; invc.
+  eexists; split; eauto.
+  eapply V_V_top; eauto.
+Qed.
+
+
+(* Top-level Monotonicity Lemmas *)
+Lemma V_top_mono i :
+  forall {j v1 v2},
+    V_top i v1 v2 ->
+    j <= i ->
+    V_top j v1 v2.
+Proof.
+  intros.
+  eapply V_V_top; eauto.
+  eapply V_top_exposed_r; eauto.
+  eapply V_mono; eauto.
+  eapply V_V_top; eauto.
+  eapply V_top_exposed_r; eauto.
+Qed.
+
+Lemma V_top_mono_Forall {vs1 vs2} i j :
+  Forall2 (V_top i) vs1 vs2 ->
+  j <= i ->
+  Forall2 (V_top j) vs1 vs2.
+Proof.
+  intros H.
+  revert j.
+  induction H; simpl; intros; auto.
+  constructor; eauto.
+  eapply V_top_mono; eauto.
+Qed.
+
+Lemma R_top_mono {r1 r2} i j :
+  R_top i r1 r2 ->
+  j <= i ->
+  R_top j r1 r2.
+Proof.
+  unfold R.
+  intros.
+  destruct r1; auto.
+  destruct r2; auto.
+  eapply V_top_mono; eauto.
+Qed.
+
+Lemma E_top_mono {ρ1 ρ2 e1 e2} i j:
+  E_top i ρ1 e1 ρ2 e2 ->
+  j <= i ->
+  E_top j ρ1 e1 ρ2 e2.
+Proof.
+  unfold E_top, E_top'.
+  intros.
+  destruct (H j1 r1) as [j2 [r2 [Hr2 HR]]]; auto; try lia.
+  exists j2, r2; split; eauto.
+  apply R_top_mono with (i - j1); try lia; auto.
+Qed.
+
+Lemma G_top_mono {Γ1 Γ2 ρ1 ρ2} i j:
+  G_top i Γ1 ρ1 Γ2 ρ2 ->
+  j <= i ->
+  G_top j Γ1 ρ1 Γ2 ρ2.
+Proof.
+  unfold G_top.
+  intros.
+  destruct H as [Hwf [Href [HS HG]]].
+  repeat (split; eauto); intros.
+  edestruct HG as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; eauto.
+  eexists; eexists; repeat (split; eauto).
+  apply V_top_mono with i; eauto.
+Qed.
+
+(* W is sound for *every* program trace of an open program e *)
+Definition web_map_sound_top e e' :=
+  forall i ρ1 ρ2 r1,
+    AS.bstep_fuel ρ1 e i r1 ->
+    refine_env ρ1 ρ2 ->
+    exists r2,
+      cbstep_top_fuel ρ2 e' i r2 /\
+        refine_res r1 r2.
+
+Lemma web_map_sound_top_web_map_sound W e :
+  web_map_sound_top e (CEexp W e) ->
+  forall ρ1 ρ2,
+    web_map_sound W true ρ1 ρ2 e.
+Proof.
+  unfold web_map_sound_top, web_map_sound.
+  intros.
+  edestruct H as [r2 [Hcbstep_top Href]]; eauto.
+  eexists; split; eauto.
+  eapply cbstep_top_fuel_cbstep_fuel; eauto.
+Qed.
+
+Lemma web_map_sound_web_map_sound_top W e :
+  (forall ρ1 ρ2,
+      web_map_sound W true ρ1 ρ2 e) ->
+  web_map_sound_top e (CEexp W e).
+Proof.
+  unfold web_map_sound_top, web_map_sound.
+  intros.
+  edestruct H as [r2 [Hcbstep_top Href]]; eauto.
+  eexists; split; eauto.
+  eapply cbstep_fuel_cbstep_top_fuel; eauto.
+Qed.
+
+Definition trans_correct_top e e' :=
+  web_map_sound_top e e' /\
+  forall i ρ1 ρ2,
+    G_top i (AS.occurs_free e) ρ1 (AS.occurs_free e) ρ2 ->
+    E_top i ρ1 e ρ2 e'.
+
+Lemma cexp_compat_top W e :
+  web_map_spec W (AS.occurs_free e) e ->
+  web_map_sound_top e (CEexp W e) ->
+  trans_correct_top e (CEexp W e).
+Proof.
+  unfold trans_correct_top.
+  intros.
+  split; eauto; intros.
+  eapply E_E_top; eauto.
+  eapply fundamental_property; eauto.
+  eapply web_map_sound_top_web_map_sound; eauto.
+  eapply G_top_G; eauto.
+Qed.
+
+Theorem top W etop:
+  (has_label etop \subset (Dom_map W)) ->
+  web_map_sound_top etop (CEexp W etop) ->
+  trans_correct_top etop (CEexp W etop).
+Proof.
+  intros H; intros.
+  eauto using cexp_compat_top, web_map_total.
+Qed.
+
+(* Linking Preservation *)
 
 (* well_annotated is strictly stronger than trans_correct_top *)
 Lemma trans_correct_top_trans_correct W e :
