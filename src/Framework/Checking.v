@@ -1882,44 +1882,52 @@ Proof.
 Qed.
 
 (* W is sound for *every* program trace of an open program e *)
-Definition web_map_sound_top W e :=
+Definition web_map_sound_top e e' :=
   forall i ρ1 ρ2 r1,
     AS.bstep_fuel ρ1 e i r1 ->
     refine_env ρ1 ρ2 ->
     exists r2,
-      cbstep_fuel W true ρ2 e i r2 /\
+      cbstep_top_fuel ρ2 e' i r2 /\
         refine_res r1 r2.
 
 Lemma web_map_sound_top_web_map_sound W e :
-  web_map_sound_top W e ->
+  web_map_sound_top e (CEexp W e) ->
   forall ρ1 ρ2,
     web_map_sound W true ρ1 ρ2 e.
 Proof.
   unfold web_map_sound_top, web_map_sound.
-  intros; eauto.
+  intros.
+  edestruct H as [r2 [Hcbstep_top Href]]; eauto.
+  eexists; split; eauto.
+  eapply cbstep_top_fuel_cbstep_fuel; eauto.
 Qed.
 
 Lemma web_map_sound_web_map_sound_top W e :
   (forall ρ1 ρ2,
       web_map_sound W true ρ1 ρ2 e) ->
-  web_map_sound_top W e.
+  web_map_sound_top e (CEexp W e).
 Proof.
   unfold web_map_sound_top, web_map_sound.
-  intros; eauto.
+  intros.
+  edestruct H as [r2 [Hcbstep_top Href]]; eauto.
+  eexists; split; eauto.
+  eapply cbstep_fuel_cbstep_top_fuel; eauto.
 Qed.
 
 Definition trans_correct_top e e' :=
+  web_map_sound_top e e' /\
   forall i ρ1 ρ2,
     G_top i (AS.occurs_free e) ρ1 (AS.occurs_free e) ρ2 ->
     E_top i ρ1 e ρ2 e'.
 
 Lemma cexp_compat_top W e :
   web_map_spec W (AS.occurs_free e) e ->
-  web_map_sound_top W e ->
+  web_map_sound_top e (CEexp W e) ->
   trans_correct_top e (CEexp W e).
 Proof.
   unfold trans_correct_top.
   intros.
+  split; eauto; intros.
   eapply E_E_top; eauto.
   eapply fundamental_property; eauto.
   eapply web_map_sound_top_web_map_sound; eauto.
@@ -1928,7 +1936,7 @@ Qed.
 
 Theorem top W etop:
   (has_label etop \subset (Dom_map W)) ->
-  web_map_sound_top W etop ->
+  web_map_sound_top etop (CEexp W etop) ->
   trans_correct_top etop (CEexp W etop).
 Proof.
   intros H; intros.
@@ -2187,7 +2195,7 @@ Qed.
 
 (* well_annotated is strictly stronger than trans_correct_top *)
 Lemma trans_correct_top_trans_correct W e :
-  web_map_sound_top W e ->
+  web_map_sound_top e (CEexp W e) ->
   trans_correct_top e (CEexp W e) ->
   well_annotated W (AS.occurs_free e) e.
 Proof.
@@ -2212,7 +2220,9 @@ Proof.
     assert (Hwf : wf_cval (CTag l W (CVfun f ρ2 xs e))) by eauto;
     assert (Href : refine_val (AS.Tag l (AS.Vfun f ρ1 xs e)) (CTag l W (CVfun f ρ2 xs e))) by eauto using G_top_refine_env;
     repeat (split; eauto); intros.
-  apply (He (i - (i - j)) ρ3 ρ4); auto.
+  destruct He as [Hweb He].
+
+  eapply (He (i - (i - j)) ρ3 ρ4); eauto.
   eapply G_top_subset with (Γ1 := FromList xs :|: (f |: Γ1)) (Γ2 := FromList xs :|: (f |: Γ2)); eauto.
   eapply G_top_set_lists; eauto.
   eapply G_top_set; eauto.
@@ -2232,27 +2242,41 @@ Lemma fun_compat_top W w e k k' f l xs :
 Proof.
   unfold trans_correct_top, E_top, E_top'.
   intros HW Hw; intros.
+  pose proof H as HE.
+  destruct H as [Hwe He].
+  destruct H0 as [Hwk Hk].
+  split.
+  - unfold web_map_sound_top in *.
+    intros.
+    inv H.
+    fcrush.
+    inv H1.
+    edestruct (Hwk c (M.set f (AS.Tag l (AS.Vfun f ρ1 xs e)) ρ1) (M.set f (CTag l W (CVfun f ρ2 xs e)) ρ2) r1) as [r2 [Hcbstep_k Href]]; eauto.
+    eapply refine_env_set; eauto.
+    inv Hcbstep_k.
+    fcrush.
+    eexists; split; eauto.
+  - intros.
 
-  inv H3.
-  - exists 0, COOT; split; simpl; eauto.
-  - inv H4.
-    edestruct (H0 (i - 1) (M.set f (AS.Tag l (AS.Vfun f ρ1 xs e)) ρ1) (M.set f (CTag l W (CVfun f ρ2 xs e)) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
-    + eapply G_top_subset with (Γ1 := (f |: (AS.occurs_free (AS.Efun f l xs e k)))); eauto.
-      * eapply G_top_set; eauto.
-        eapply G_top_mono; eauto; try lia.
+    inv H1.
+    + exists 0, COOT; split; simpl; eauto.
+    + inv H2.
+      edestruct (Hk (i - 1) (M.set f (AS.Tag l (AS.Vfun f ρ1 xs e)) ρ1) (M.set f (CTag l W (CVfun f ρ2 xs e)) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+      * eapply G_top_subset with (Γ1 := (f |: (AS.occurs_free (AS.Efun f l xs e k)))); eauto.
+        -- eapply G_top_set; eauto.
+           eapply G_top_mono; eauto; try lia.
 
-        eapply Vfun_V_top; eauto.
-        -- eapply G_top_mono; eauto; try lia.
-        -- eapply AS.free_fun_e_subset; eauto.
-      * eapply AS.free_fun_k_subset; eauto.
-      * eapply Included_refl; eauto.
-    + exists (S j2), r2; split; eauto.
-      * constructor; auto.
-        econstructor; eauto.
-        inv Hk2; auto.
-      * apply R_top_mono with ((i - 1) - c); try lia; auto.
+           eapply Vfun_V_top; eauto.
+           eapply G_top_mono; eauto; try lia.
+           eapply AS.free_fun_e_subset; eauto.
+        -- eapply AS.free_fun_k_subset; eauto.
+        -- eapply Included_refl; eauto.
+      * exists (S j2), r2; split; eauto.
+        -- constructor; auto.
+           econstructor; eauto.
+           inv Hk2; auto.
+        -- apply R_top_mono with ((i - 1) - c); try lia; auto.
 Qed.
-
 
 (* TODO: at the top level, labeling pass should link with the trivial label *)
 
@@ -2270,17 +2294,26 @@ Proof.
 Abort.
 
 
-Lemma letapp_compat_top k k' l xs x f :
-  trans_correct_top k k' ->
-  trans_correct_top (AS.Eletapp x f l xs k) (CEletapp x f xs k').
+Lemma letapp_compat_top W k l xs x f :
+  trans_correct_top k (CEexp W k) ->
+  trans_correct_top (AS.Eletapp x f l xs k) (CEletapp x f xs (CEexp W k)).
 Proof.
   unfold trans_correct_top, E_top, E_top'.
-  intros.
+  intros [HWk Hk]; intros.
+  split.
+  - unfold web_map_sound_top in *.
+    intros.
+    inv H.
+    fcrush.
+    inv H1.
+    edestruct (HWk
 
-  inv H2.
+  pose proof H1 as Hbstep.
+
+  inv H1.
   - exists 0, COOT; split; simpl; auto.
-  - inv H3.
-    + edestruct (G_top_get H0) as [fv1 [fv2 [Heqfv1 [Heqfv2 HVf]]]]; eauto.
+  - inv H2.
+    + edestruct (G_top_get H) as [fv1 [fv2 [Heqfv1 [Heqfv2 HVf]]]]; eauto.
       invc.
       destruct fv2.
       destruct i.
@@ -2291,7 +2324,7 @@ Proof.
       destruct c; try contradiction.
       destruct HV as [Heqf [Heqxs [Heqe HV]]]; subst.
 
-      edestruct (G_top_get_list H0 xs) as [vs1 [vs2 [Heqvs1 [Heqvs2 HVvs]]]]; eauto.
+      edestruct (G_top_get_list H xs) as [vs1 [vs2 [Heqvs1 [Heqvs2 HVvs]]]]; eauto.
       eapply AS.free_letapp_xs_subset; eauto.
 
       invc.
@@ -2299,13 +2332,38 @@ Proof.
       destruct (set_lists_length3 (M.set v0 (CTag l0 W' (CVfun v0 t l1 e0)) t) l1 vs2) as [ρ4 Heqρ4].
       unfold clval in *.
       rewrite <- (Forall2_length _ _ _ HVvs).
-      rewrite <- (set_lists_length_eq _ _ _ _ H12); auto.
+      rewrite <- (set_lists_length_eq _ _ _ _ H11); auto.
 
       unfold E' in HV.
       edestruct (HV i vs1 vs2 ρ'' ρ4) with (j1 := c0) as [j2 [r2 [He0 HR]]]; eauto; try lia.
       * eapply V_top_exposed_Forall_r; eauto.
       * eapply V_top_mono_Forall; eauto; lia.
-      * admit.
+      * unfold web_map_sound; intros.
+        unfold web_map_sound_top in *.
+        destruct r1.
+        -- edestruct (HW (S i0) _ _ AS.OOT) as [r2 [Hcbstep_e Hrefr]]; eauto.
+           inv Hcbstep_e.
+           inv Hrefr.
+           inv H8.
+           unfold clval in *; invc.
+
+        assert (Hc : c = c0 /\ refine_val v v1).
+        {
+          eapply bstep_fuel_cbstep_fuel_refine; eauto.
+        }
+        inv Hc.
+        eapply AS.bstep_fuel_lt_Res_not_OOT with (c0 := (c0 + c'0)) in H14; eauto; try lia.
+        contradiction.
+
+        unfold clval in *; invc; eauto.
+      - assert (Hcv : v = w /\ c = i0).
+        {
+          eapply AS.bstep_fuel_deterministic; eauto.
+        }
+        inv Hcv.
+
+        edestruct (H (S (i0 + c')) (AS.Res w0)) as [r2 [Hcbstep_e Hrefr]]; eauto.
+        admit.
       * destruct r2; simpl in HR; try contradiction.
         edestruct (H0 (i - c0) (M.set x v ρ1) (M.set x w ρ2)) with (j1 := c') as [j3 [r3 [He1 HR']]]; eauto; try lia.
         eapply G_top_subset with (Γ1 := x |: (A0.occurs_free (A0.Eletapp x f xs k))) (Γ2 := x |: (A1.occurs_free (A1.Eletapp x f w0 xs k'))); eauto.
