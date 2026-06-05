@@ -1867,7 +1867,6 @@ Proof.
     eapply cbstep_top_fuel_exposed_inv; eauto.
 Qed.
 
-
 Lemma V_top_wf_cval_r {i v1 v2}:
   V_top i v1 v2 ->
   wf_cval v2.
@@ -1982,7 +1981,6 @@ Proof.
   repeat (split; auto).
 Qed.
 
-
 (* Top-level Environment Lemmas *)
 Lemma G_top_get {Γ1 Γ2 i ρ1 ρ2}:
   G_top i Γ1 ρ1 Γ2 ρ2 ->
@@ -2091,6 +2089,7 @@ Proof.
     apply Included_refl.
 Qed.
 
+(* G_top is stronger than G *)
 Lemma G_top_G :
   forall {i Γ1 ρ1 Γ2 ρ2},
     G_top i Γ1 ρ1 Γ2 ρ2 ->
@@ -2106,6 +2105,16 @@ Proof.
   eapply V_V_top; eauto.
 Qed.
 
+Lemma G_G_top i Γ1 ρ1 Γ2 ρ2 :
+  G i Γ1 ρ1 Γ2 ρ2 ->
+  Γ2 \subset Γ1 ->
+  G_top i Γ1 ρ1 Γ2 ρ2.
+Proof.
+  unfold G, G_top.
+  intros.
+  destruct H as [Hwf1 [Href HG]].
+  repeat (split; auto); intros.
+Abort.
 
 (* Top-level Monotonicity Lemmas *)
 Lemma V_top_mono i :
@@ -2211,6 +2220,11 @@ Definition trans_correct_top e e' :=
   forall i ρ1 ρ2,
     G_top i (AS.occurs_free e) ρ1 (occurs_free_top e') ρ2 ->
     E_top i ρ1 e ρ2 e'.
+
+Lemma trans_correct_top_subset e1 e2 :
+  trans_correct_top e1 e2 ->
+  occurs_free_top e2 \subset AS.occurs_free e1.
+Proof. unfold trans_correct_top. fcrush. Qed.
 
 Lemma cexp_compat_top W e :
   web_map_spec W (AS.occurs_free e) e ->
