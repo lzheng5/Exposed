@@ -1610,6 +1610,51 @@ Lemma occurs_free_top_cexp W e :
   (occurs_free_top (CEexp W e)) <--> (AS.occurs_free e).
 Proof. split; unfold Ensembles.Included, Ensembles.In; fcrush. Qed.
 
+Lemma free_fun_e_subset f xs W e k l :
+  (AS.occurs_free e) \subset (FromList xs :|: (f |: occurs_free_top (CEfun f l xs W e k))).
+Proof.
+  unfold Ensembles.Included, Ensembles.In.
+  intros.
+  destruct (in_dec M.elt_eq x xs).
+  - apply Union_introl; auto.
+  - apply Union_intror; auto.
+    unfold Ensembles.In.
+    destruct (M.elt_eq f x); subst.
+    + apply Union_introl; auto.
+    + apply Union_intror.
+      unfold Ensembles.In.
+      fcrush.
+Qed.
+
+Lemma free_fun_k_subset k f l W xs e :
+  (occurs_free_top k) \subset (f |: occurs_free_top (CEfun f l xs W e k)).
+Proof.
+  unfold Ensembles.Included, Ensembles.In.
+  intros.
+  destruct (M.elt_eq f x); subst.
+  - apply Union_introl; auto.
+  - apply Union_intror.
+    unfold Ensembles.In.
+    constructor; auto.
+Qed.
+
+Lemma free_letapp_xs_subset xs x f k :
+  FromList xs \subset occurs_free_top (CEletapp x f xs k).
+Proof. unfold Ensembles.Included, Ensembles.In. fcrush. Qed.
+
+Lemma free_letapp_k_subset k x f xs :
+  occurs_free_top k \subset x |: occurs_free_top (CEletapp x f xs k).
+Proof.
+  unfold Ensembles.Included, Ensembles.In.
+  intros.
+  intros.
+  destruct (M.elt_eq x x0); subst.
+  - apply Union_introl; auto.
+  - apply Union_intror.
+    unfold Ensembles.In.
+    constructor; auto.
+Qed.
+
 (* Top-level Checking Semantics *)
 Inductive cbstep_top (ρ : cenv) : cexp -> fuel -> cres -> Prop :=
 | Cbstep_exp_top :

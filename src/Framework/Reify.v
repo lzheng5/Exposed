@@ -1274,35 +1274,6 @@ Proof.
   inv H1; fcrush.
 Qed.
 
-(* TODO: refactor *)
-Lemma free_fun_e_subset f xs W e k l :
-  (AS.occurs_free e) \subset (FromList xs :|: (f |: AC.occurs_free_top (AC.CEfun f l xs W e k))).
-Proof.
-  unfold Ensembles.Included, Ensembles.In.
-  intros.
-  destruct (in_dec M.elt_eq x xs).
-  - apply Union_introl; auto.
-  - apply Union_intror; auto.
-    unfold Ensembles.In.
-    destruct (M.elt_eq f x); subst.
-    + apply Union_introl; auto.
-    + apply Union_intror.
-      unfold Ensembles.In.
-      fcrush.
-Qed.
-
-Lemma free_fun_k_subset k f l W xs e :
-  (AC.occurs_free_top k) \subset (f |: AC.occurs_free_top (AC.CEfun f l xs W e k)).
-Proof.
-  unfold Ensembles.Included, Ensembles.In.
-  intros.
-  destruct (M.elt_eq f x); subst.
-  - apply Union_introl; auto.
-  - apply Union_intror.
-    unfold Ensembles.In.
-    constructor; auto.
-Qed.
-
 Lemma fun_compat_top W l w e e' k k' f xs :
   W ! l = Some w ->
   (w \in Exposed) ->
@@ -1330,8 +1301,8 @@ Proof.
         -- unfold trans_correct_top.
            split; auto.
         -- eapply G_top_mono; eauto; try lia.
-        -- eapply free_fun_e_subset; eauto.
-      * eapply free_fun_k_subset; eauto.
+        -- eapply AC.free_fun_e_subset; eauto.
+      * eapply AC.free_fun_k_subset; eauto.
     + exists (S j2), r2; split; auto.
       * constructor; auto.
         eapply bstep_fuel_exposed_inv; eauto.
@@ -1345,23 +1316,6 @@ Proof.
   unfold Ensembles.Included, Ensembles.In.
   intros.
   inv H0; auto.
-Qed.
-
-Lemma free_letapp_xs_subset xs x f k :
-  FromList xs \subset AC.occurs_free_top (AC.CEletapp x f xs k).
-Proof. unfold Ensembles.Included, Ensembles.In. fcrush. Qed.
-
-Lemma free_letapp_k_subset k x f xs :
-  AC.occurs_free_top k \subset x |: AC.occurs_free_top (CEletapp x f xs k).
-Proof.
-  unfold Ensembles.Included, Ensembles.In.
-  intros.
-  intros.
-  destruct (M.elt_eq x x0); subst.
-  - apply Union_introl; auto.
-  - apply Union_intror.
-    unfold Ensembles.In.
-    constructor; auto.
 Qed.
 
 Lemma letapp_compat_top k k' xs x f :
@@ -1393,7 +1347,7 @@ Proof.
     inv Hexf2.
     destruct (exposed_reflect w); try contradiction.
     edestruct (G_top_get_list H0 xs) as [vs1 [vs2 [Heqvs1 [Heqvs2 HVvs]]]]; eauto.
-    eapply free_letapp_xs_subset; eauto.
+    eapply AC.free_letapp_xs_subset; eauto.
 
     invc.
 
@@ -1419,7 +1373,7 @@ Proof.
       eapply G_top_set; eauto.
       eapply G_top_mono; eauto; lia.
       -- eapply V_top_mono; eauto; try lia.
-      -- eapply free_letapp_k_subset; eauto.
+      -- eapply AC.free_letapp_k_subset; eauto.
       -- exists (S (j2 + j3)), r3; split; eauto.
            2 : { eapply R_top_mono; eauto; lia. }
 
