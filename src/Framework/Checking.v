@@ -1564,6 +1564,52 @@ Inductive cexp : Type :=
 
 Hint Constructors cexp : core.
 
+(* Linking *)
+Definition link f x l1 W1 e1 W2 e2 : cexp :=
+  CEfun f l1 [] W1 e1
+    (CEletapp x f []
+       (CEexp W2 e2)).
+
+Inductive occurs_free_top : cexp -> vars :=
+| Free_cexp :
+  forall W e x,
+    AS.occurs_free e x ->
+    occurs_free_top (CEexp W e) x
+
+| Free_cfun1 :
+  forall x f l xs W e k,
+    f <> x ->
+    occurs_free_top k x ->
+    occurs_free_top (CEfun f l xs W e k) x
+
+| Free_cfun2 :
+  forall x f l xs W e k,
+    f <> x ->
+    ~ (List.In x xs) ->
+    AS.occurs_free e x ->
+    occurs_free_top (CEfun f l xs W e k) x
+
+| Free_cletapp1 :
+  forall y x f xs k,
+    x <> y ->
+    occurs_free_top k y ->
+    occurs_free_top (CEletapp x f xs k) y
+
+| Free_cletapp2 :
+  forall x f xs k,
+    occurs_free_top (CEletapp x f xs k) f
+
+| Free_cletapp3 :
+  forall y x f xs k,
+    List.In y xs ->
+    occurs_free_top (CEletapp x f xs k) y.
+
+Hint Constructors occurs_free_top : core.
+
+Lemma occurs_free_top_cexp W e :
+  (occurs_free_top (CEexp W e)) <--> (AS.occurs_free e).
+Proof. split; unfold Ensembles.Included, Ensembles.In; fcrush. Qed.
+
 (* Top-level Checking Semantics *)
 Inductive cbstep_top (ρ : cenv) : cexp -> fuel -> cres -> Prop :=
 | Cbstep_exp_top :
@@ -1637,12 +1683,6 @@ Lemma cbstep_top_fuel_exposed_inv ρ e j r :
   cbstep_top_fuel ρ e j r ->
   to_exposed_cres r.
 Proof. intros. inv H; eauto. Qed.
-
-(* Linking *)
-Definition link f x l1 W1 e1 W2 e2 : cexp :=
-  CEfun f l1 [] W1 e1
-    (CEletapp x f []
-       (CEexp W2 e2)).
 
 (* Cross-language Logical Relations *)
 
@@ -2166,9 +2206,10 @@ Proof.
 Qed.
 
 Definition trans_correct_top e e' :=
+  (occurs_free_top e') \subset (AS.occurs_free e) /\
   web_map_sound_top e e' /\
   forall i ρ1 ρ2,
-    G_top i (AS.occurs_free e) ρ1 (AS.occurs_free e) ρ2 ->
+    G_top i (AS.occurs_free e) ρ1 (occurs_free_top e') ρ2 ->
     E_top i ρ1 e ρ2 e'.
 
 Lemma cexp_compat_top W e :
@@ -2178,11 +2219,14 @@ Lemma cexp_compat_top W e :
 Proof.
   unfold trans_correct_top.
   intros.
+  split.
+  eapply occurs_free_top_cexp; eauto.
   split; eauto; intros.
   eapply E_E_top; eauto.
   eapply fundamental_property; eauto.
   eapply web_map_sound_top_web_map_sound; eauto.
   eapply G_top_G; eauto.
+  eapply G_top_subset; eauto using Included_refl, occurs_free_top_cexp.
 Qed.
 
 Theorem top W etop:
@@ -2196,14 +2240,12 @@ Qed.
 
 (* Linking Preservation *)
 
-(* well_annotated is strictly stronger than trans_correct_top *)
+(* well_annotated is strictly stronger than trans_correct_top, since G_top requires to_exposed *)
 Lemma trans_correct_top_trans_correct W e :
   web_map_sound_top e (CEexp W e) ->
   trans_correct_top e (CEexp W e) ->
   well_annotated W (AS.occurs_free e) e.
 Proof.
-  unfold trans_correct_top, well_annotated.
-  intros.
 Abort.
 
 Lemma Vfun_V_top W l w e :
@@ -2223,7 +2265,7 @@ Proof.
     assert (Hwf : wf_cval (CTag l W (CVfun f ρ2 xs e))) by eauto;
     assert (Href : refine_val (AS.Tag l (AS.Vfun f ρ1 xs e)) (CTag l W (CVfun f ρ2 xs e))) by eauto using G_top_refine_env;
     repeat (split; eauto); intros.
-  destruct He as [Hweb He].
+  destruct He as [HFve [Hweb He]].
 
   eapply (He (i - (i - j)) ρ3 ρ4); eauto.
   eapply G_top_subset with (Γ1 := FromList xs :|: (f |: Γ1)) (Γ2 := FromList xs :|: (f |: Γ2)); eauto.
@@ -2233,7 +2275,6 @@ Proof.
   apply V_top_mono with i; try lia.
   eapply IHi with (Γ2 := Γ2); eauto.
   apply G_top_mono with (S i); eauto; lia.
-  eapply Included_refl; eauto.
 Qed.
 
 (* TODO: at the top level, labeling pass should link with the trivial label *)
@@ -2342,6 +2383,10 @@ Proof.
     eapply Cbstep_letapp_top_OOT; eauto using M.gss; simpl; auto.
 Qed.
 
+Lemma occurs_free_top_link f x l1 W1 e1 W2 e2 l2 :
+  occurs_free_top (link f x l1 W1 e1 W2 e2) <--> AS.occurs_free (AS.link f x l1 e1 l2 e2).
+Proof. split; unfold Ensembles.Included, Ensembles.In; fcrush. Qed.
+
 Lemma preserves_linking W1 W2 f w l1 l2 x e1 e2 :
   W1 ! l1 = Some w ->
   (w \in Exposed) ->
@@ -2351,17 +2396,19 @@ Lemma preserves_linking W1 W2 f w l1 l2 x e1 e2 :
 Proof.
   unfold AS.link, link.
   intros HW Hwex Htr1 Htr2.
+  pose proof Htr1 as Htr1c.
+  pose proof Htr2 as Htr2c.
+  destruct Htr1c as [HFve1 [Hwe1 He]].
+  destruct Htr2c as [HFVe2 [Hwe2 Hk]].
   assert (Hweb_link :
            web_map_sound_top
              (AS.Efun f l1 [] e1 (AS.Eletapp x f l2 [] e2))
              (CEfun f l1 [] W1 e1 (CEletapp x f [] (CEexp W2 e2))))
-    by (destruct Htr1 as [Hwe1 _]; destruct Htr2 as [Hwe2 _];
-        eapply web_map_sound_top_preserves_linking; eauto).
-  pose proof Htr1 as Htr1c.
-  pose proof Htr2 as Htr2c.
-  destruct Htr1c as [Hwe1 He].
-  destruct Htr2c as [Hwe2 Hk].
+    by (eapply web_map_sound_top_preserves_linking; eauto).
+
   unfold trans_correct_top.
+  split.
+  eapply occurs_free_top_link; eauto.
   split; [auto |].
   intros i ρ1 ρ2 HG.
   unfold E_top, E_top'.
@@ -2402,29 +2449,29 @@ Proof.
         (xs := [])
         (Γ1 := AS.occurs_free
                  (AS.Efun f' w' [] e (AS.Eletapp x f' l2 [] e2)))
-        (Γ2 := AS.occurs_free
-                 (AS.Efun f' w' [] e (AS.Eletapp x f' l2 [] e2)));
+        (Γ2 := (occurs_free_top
+            (CEfun f' w' [] W1 e (CEletapp x f' [] (CEexp W2 e2)))));
       eauto using AS.free_fun_e_subset. }
+
     assert (HGbody :
              G_top i (AS.occurs_free e)
                     (M.set f' (AS.Tag w' (AS.Vfun f' ρ' [] e)) ρ')
-                    (AS.occurs_free e)
+                    (occurs_free_top (CEexp W1 e))
                     (M.set f' (CTag w' W1 (CVfun f' ρ2 [] e)) ρ2)).
     { eapply G_top_subset with
-        (Γ1 := (FromList [] :|:
-                  (f' |: AS.occurs_free
+        (Γ1 := f' |: AS.occurs_free
                        (AS.Efun f' w' [] e
-                          (AS.Eletapp x f' l2 [] e2)))))
-      (Γ2 := (FromList [] :|:
-                  (f' |: AS.occurs_free
-                       (AS.Efun f' w' [] e
-                         (AS.Eletapp x f' l2 [] e2))))).
-      - eapply G_top_set_lists; eauto.
-        eapply G_top_set; eauto.
-        simpl; auto.
-        simpl; auto.
-      - apply AS.free_fun_e_subset.
-      - apply Included_refl. }
+                         (AS.Eletapp x f' l2 [] e2)))
+        (Γ2 := f' |: occurs_free_top
+                       (CEfun f' w' [] W1 e
+                         (CEletapp x f' [] (CEexp W2 e2)))).
+      - eapply G_top_set; eauto.
+      - eapply Included_trans.
+        eapply AS.free_fun_e_subset with (xs := []); eauto.
+        normalize_sets.
+        erewrite Union_Empty_set_neut_l; eauto using Included_refl.
+      - unfold Ensembles.Included, Ensembles.In;
+          intros y Hy; inv Hy; auto. }
     edestruct (He i _ _ HGbody c (AS.Res v))
       as [je [re [Hcb_top_e HRe]]];
       [ lia | assumption | ].
@@ -2436,25 +2483,28 @@ Proof.
              G_top (i - c) (AS.occurs_free e2)
                (M.set x v
                  (M.set f' (AS.Tag w' (AS.Vfun f' ρ' [] e)) ρ'))
-               (AS.occurs_free e2)
+               (occurs_free_top (CEexp W2 e2))
                (M.set x vt
                  (M.set f' (CTag w' W1 (CVfun f' ρ2 [] e)) ρ2))).
     { eapply G_top_subset with
-        (Γ1 := x |: AS.occurs_free
-                      (AS.Eletapp x f' l2 [] e2)).
+        (Γ1 := x |: (f' |: AS.occurs_free
+                            (AS.Efun f' w' [] e
+                              (AS.Eletapp x f' l2 [] e2))))
+        (Γ2 := x |: (f' |: occurs_free_top
+                            (CEfun f' w' [] W1 e
+                              (CEletapp x f' [] (CEexp W2 e2))))).
       - eapply G_top_set.
-        + eapply G_top_subset with
-            (Γ1 := f' |: AS.occurs_free
-                          (AS.Efun f' w' [] e
-                            (AS.Eletapp x f' l2 [] e2))).
-          * eapply G_top_set.
-            -- eapply G_top_mono; [ eassumption | lia ].
-            -- eapply V_top_mono; [ eassumption | lia ].
-          * apply AS.free_fun_k_subset.
-          * apply Included_refl.
+        + eapply G_top_set.
+          * eapply G_top_mono; [ eassumption | lia ].
+          * eapply V_top_mono; [ eassumption | lia ].
         + assumption.
-      - apply AS.free_letapp_k_subset.
-      - apply Included_refl. }
+      - eapply Included_trans;
+          [ apply AS.free_letapp_k_subset
+          | apply Included_Union_compat;
+            [ apply Included_refl
+            | apply AS.free_fun_k_subset ] ].
+      - unfold Ensembles.Included, Ensembles.In;
+          intros y Hy; inv Hy; auto. }
     edestruct (Hk (i - c) _ _ HGcont) with (j1 := c') (r1 := r1)
       as [jk [rk [Hcb_top_k HRk]]];
       [ lia | assumption | ].
@@ -2479,29 +2529,29 @@ Proof.
         (xs := [])
         (Γ1 := AS.occurs_free
                  (AS.Efun f' w' [] e (AS.Eletapp x f' l2 [] e2)))
-        (Γ2 := AS.occurs_free
-                 (AS.Efun f' w' [] e (AS.Eletapp x f' l2 [] e2)));
+        (Γ2 := (occurs_free_top
+                  (CEfun f' w' [] W1 e (CEletapp x f' [] (CEexp W2 e2)))));
       eauto using AS.free_fun_e_subset. }
     assert (HGbody :
              G_top i (AS.occurs_free e)
-                    (M.set f' (AS.Tag w' (AS.Vfun f' ρ' [] e)) ρ')
-                    (AS.occurs_free e)
-                    (M.set f' (CTag w' W1 (CVfun f' ρ2 [] e)) ρ2)).
+                     (M.set f' (AS.Tag w' (AS.Vfun f' ρ' [] e)) ρ')
+                     (occurs_free_top (CEexp W1 e))
+                     (M.set f' (CTag w' W1 (CVfun f' ρ2 [] e)) ρ2)).
     { eapply G_top_subset with
         (Γ1 := (FromList [] :|:
                   (f' |: AS.occurs_free
                        (AS.Efun f' w' [] e
                           (AS.Eletapp x f' l2 [] e2)))))
       (Γ2 := (FromList [] :|:
-                  (f' |: AS.occurs_free
-                       (AS.Efun f' w' [] e
-                         (AS.Eletapp x f' l2 [] e2))))).
+                  (f' |: occurs_free_top
+                       (CEfun f' w' [] W1 e
+                         (CEletapp x f' [] (CEexp W2 e2)))))).
       - eapply G_top_set_lists; eauto.
         eapply G_top_set; eauto.
         simpl; auto.
         simpl; auto.
       - apply AS.free_fun_e_subset.
-      - apply Included_refl. }
+      - eapply occurs_free_top_cexp; eauto. }
     edestruct (He i _ _ HGbody c0 AS.OOT)
       as [je [re [Hcb_top_e HRe]]];
       [ lia | assumption | ].

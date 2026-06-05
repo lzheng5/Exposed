@@ -658,6 +658,16 @@ Admitted.
 
 (* Top Level *)
 
+Module AC := Checking.
+
+Definition E_top' (P : nat -> clval -> AT.wval -> Prop) (i : nat) (ρ1 : cenv) (e1 : AC.cexp) (ρ2 : AT.env) (e2 : AT.exp) : Prop :=
+  forall j1 r1,
+    j1 <= i ->
+    cbstep_top_fuel ρ1 e1 j1 r1 ->
+    exists j2 r2,
+      AT.bstep_fuel true ρ2 e2 j2 r2 /\
+        R' P (i - j1) r1 r2.
+
 Fixpoint V_top (i : nat) (cv : clval) (wv : AT.wval) {struct i} : Prop :=
   wf_cval cv /\
     wf_val wv /\
@@ -685,7 +695,7 @@ Fixpoint V_top (i : nat) (cv : clval) (wv : AT.wval) {struct i} : Prop :=
                       Forall2 (V_top (i0 - (i0 - j))) vs1 vs2 ->
                       set_lists xs1 vs1 (M.set f1 (CTag l1 W (CVfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
                       set_lists xs2 vs2 (M.set f2 (AT.Tag w (AT.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
-                      E' V_top W true (i0 - (i0 - j)) ρ3 e1 ρ4 e2
+                      E_top' V_top (i0 - (i0 - j)) ρ3 (CEexp W e1) ρ4 e2
                 end
 
           | _, _ => False
@@ -735,10 +745,11 @@ Proof.
           eapply HV; eauto.
           eapply V_V_top_Forall; eauto; try lia.
         }
-        unfold E' in *; intros.
+        unfold E_top', E' in *; intros.
         inv H0; invc.
         destruct (exposed_reflect w0); try contradiction.
         edestruct HEV as [j2 [r2 [Hstep HR]]]; eauto.
+        eapply AC.cbstep_top_fuel_cbstep_fuel; eauto.
 
         eexists; eexists; split; eauto.
         unfold R' in *.
@@ -758,14 +769,15 @@ Proof.
         repeat (split; eauto); intros.
 
         inv H0; invc.
-        assert (HEV : E' V_top W true (i - (i - j)) ρ3 e0 ρ4 e).
+        assert (HEV : E_top' V_top (i - (i - j)) ρ3 (CEexp W e0) ρ4 e).
         {
           eapply (HV _ vs1 vs2); eauto.
           eapply V_V_top_Forall; eauto; try lia.
         }
-        unfold E' in *; intros.
+        unfold E_top', E' in *; intros.
         destruct (exposed_reflect w0); try contradiction.
         edestruct HEV as [j2 [r2 [Hstep HR]]]; eauto.
+        eapply AC.cbstep_fuel_cbstep_top_fuel; eauto.
 
         eexists; eexists; split; eauto.
         unfold R' in *.
@@ -790,15 +802,16 @@ Proof.
     eapply V_V_top; eauto.
 Qed.
 
-Definition E_top := (E' V_top).
+Definition E_top := (E_top' V_top).
 
 Lemma E_E_top W i ρ1 ρ2 e1 e2 :
   E W true i ρ1 e1 ρ2 e2 ->
-  E_top W true i ρ1 e1 ρ2 e2.
+  E_top i ρ1 (CEexp W e1) ρ2 e2.
 Proof.
-  unfold E, E_top, E'.
+  unfold E, E_top, E', E_top'.
   intros.
   edestruct H as [j2 [r2 [Hcbstep HR]]]; eauto.
+  eapply AC.cbstep_top_fuel_cbstep_fuel; eauto.
   eexists; eexists; split; eauto.
   eapply R_R_top; eauto.
   eapply AT.bstep_fuel_exposed_inv; eauto.
@@ -852,27 +865,47 @@ Proof.
   rewrite Heqv1 in H0; inv H0; eauto.
 Qed.
 
-Definition trans_correct_top W etop etop' :=
-  AT.occurs_free etop' \subset AS.occurs_free etop /\
+Definition trans_correct_top etop etop' :=
+  AT.occurs_free etop' \subset AC.occurs_free_top etop /\
   forall i ρ1 ρ2,
-    G_top i (AS.occurs_free etop) ρ1 (AT.occurs_free etop') ρ2 ->
-    E_top W true i ρ1 etop ρ2 etop'.
+    G_top i (AC.occurs_free_top etop) ρ1 (AT.occurs_free etop') ρ2 ->
+    E_top i ρ1 etop ρ2 etop'.
 
 Lemma trans_correct_trans_correct_top W e1 e2 :
   AT.occurs_free e2 \subset AS.occurs_free e1 ->
   trans_correct W (AS.occurs_free e1) e1 e2 ->
-  trans_correct_top W e1 e2.
+  trans_correct_top (AC.CEexp W e1) e2.
 Proof.
   unfold trans_correct, trans_correct_top.
   intros.
-  split; auto.
-  intros; eauto using G_top_G, E_E_top.
+  split.
+  - eapply Included_trans; eauto.
+    eapply AC.occurs_free_top_cexp; eauto.
+  - intros.
+    eapply E_E_top; eauto.
+    eapply H0; eauto.
+    eapply G_top_G; eauto.
+    eapply G_top_subset; eauto.
+    eapply AC.occurs_free_top_cexp; eauto.
 Qed.
 
 Theorem top W etop etop':
   trans W (AS.occurs_free etop) etop etop' ->
-  trans_correct_top W etop etop'.
+  trans_correct_top (AC.CEexp W etop) etop'.
 Proof.
   intros H; intros.
   eauto using fundamental_property, trans_correct_trans_correct_top, trans_exp_inv.
 Qed.
+
+(* Linking Preservation *)
+
+Lemma preserves_linking f w l1 W1 W2 x e1 e2 e1' e2' :
+  W1 ! l1 = Some w ->
+  (w \in Exposed) ->
+  trans_correct_top (AC.CEexp W1 e1) e1' ->
+  trans_correct_top (AC.CEexp W2 e2) e2' ->
+  trans_correct_top (AC.link f x l1 W1 e1 W2 e2) (AT.link f w x e1' e2').
+Proof.
+  unfold AC.link, AT.link.
+  intros.
+Admitted.
