@@ -17,8 +17,7 @@ Module C := Checking.
 Module R := Reify.
 
 Definition Top := Cross L.trans_correct_top
-                    (Cross C.trans_correct_top
-                       R.trans_correct_top).
+                    (Cross C.trans_correct_top R.trans_correct_top).
 
 Definition V := Cross (fun v1 v2 => forall k, L.V k v1 v2)
                   (Cross (fun v1 v2 => forall k, C.V_top k v1 v2)
@@ -77,9 +76,17 @@ Proof.
   destruct H as [e3 [HL1 [e4 [HC1 HR1]]]].
   destruct H0 as [e3' [HL2 [e4' [HC2 HR2]]]].
 
-  (*
-  eapply (L.preserves_linking f x n n') in HC0; eauto.
-  eapply (AC.preserves_linking f w x e4 e3 e4' e3') in HA1; eauto.
+  pose proof (L.preserves_linking_top f x _ _ _ _ HL1 HL2) as HL.
+  eexists; split; eauto.
+
+
+(*
+  destruct HC1 as [HC1 [W1 Heqe4]]; subst.
+  destruct HC2 as [HC2 [W2 Heqe4']]; subst.
+
+  assert (C.trans_correct_top (AS.link f x e3 e4) (C.link f x W1 e3' W2 e4'))
+
+  eapply (C.preserves_linking f w x e4 e3 e4' e3') in HA1; eauto.
   eapply (C1.Top_n_preserves_linking f w x m m') in HC1; eauto.
   eapply Exposed_unique; eauto.
    *)
