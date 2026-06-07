@@ -1276,10 +1276,10 @@ Proof.
 Qed.
 
 (* Linking Preservation *)
-Lemma preserves_linking f l1 l2 x e1 e2 e1' e2' :
+Lemma preserves_linking f x e1 e2 e1' e2' :
   trans_correct (A0.occurs_free e1) e1 e2 ->
   trans_correct (A0.occurs_free e1') e1' e2' ->
-  trans_correct (A0.occurs_free (A0.link f x e1 e1')) (A0.link f x e1 e1') (A1.link f x l1 e2 l2 e2').
+  trans_correct (A0.occurs_free (A0.link f x e1 e1')) (A0.link f x e1 e1') (A1.link f x e2 e2').
 Proof.
   unfold A0.link, A1.link.
   intros.
@@ -1297,10 +1297,10 @@ Proof.
         eapply A0.free_fun_k_subset; eauto.
 Qed.
 
-Lemma free_link_subset_compat f x e1 e1' e2 e2' l1 l2:
+Lemma free_link_subset_compat f x e1 e1' e2 e2' :
   A1.occurs_free e2 \subset A0.occurs_free e1 ->
   A1.occurs_free e2' \subset A0.occurs_free e1' ->
-  A1.occurs_free (A1.link f x l1 e2 l2 e2') \subset A0.occurs_free (A0.link f x e1 e1').
+  A1.occurs_free (A1.link f x e2 e2') \subset A0.occurs_free (A0.link f x e1 e1').
 Proof.
   unfold A1.link, A0.link.
   unfold Ensembles.Included, Ensembles.In.
@@ -1309,10 +1309,10 @@ Proof.
   inv H9; eauto.
 Qed.
 
-Lemma preserves_linking_top f l1 l2 x e1 e2 e1' e2' :
+Lemma preserves_linking_top f x e1 e2 e1' e2' :
   trans_correct_top e1 e2 ->
   trans_correct_top e1' e2' ->
-  trans_correct_top (A0.link f x e1 e1') (A1.link f x l1 e2 l2 e2').
+  trans_correct_top (A0.link f x e1 e1') (A1.link f x e2 e2').
 Proof.
   intros.
   eapply trans_correct_trans_correct_top; eauto.

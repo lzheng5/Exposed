@@ -1274,22 +1274,22 @@ Proof.
   eapply AC.occurs_free_top_cexp; eauto.
 Qed.
 
-Lemma free_fun_compat W e e' f k k' xs w l :
+Lemma free_fun_compat W e e' f k k' xs w :
   AT.occurs_free e' \subset AC.occurs_free_top (CEexp W e) ->
   AT.occurs_free k' \subset AC.occurs_free_top k ->
-  AT.occurs_free (AT.Efun f w xs e' k') \subset AC.occurs_free_top (CEfun f l xs W e k).
+  AT.occurs_free (AT.Efun f w xs e' k') \subset AC.occurs_free_top (CEfun f xs W e k).
 Proof.
   unfold Ensembles.Included, Ensembles.In.
   intros.
   inv H1; fcrush.
 Qed.
 
-Lemma fun_compat_top W l w e e' k k' f xs :
-  W ! l = Some w ->
+Lemma fun_compat_top W w e e' k k' f xs :
+  W ! AS.l0 = Some w ->
   (w \in Exposed) ->
   trans_correct_top (CEexp W e) e' ->
   trans_correct_top k k' ->
-  trans_correct_top (CEfun f l xs W e k) (AT.Efun f w xs e' k').
+  trans_correct_top (CEfun f xs W e k) (AT.Efun f w xs e' k').
 Proof.
   unfold trans_correct_top, E_top, E_top'.
   intros.
@@ -1302,12 +1302,12 @@ Proof.
   inv H3.
   - exists 0, AT.OOT; split; simpl; eauto.
   - inv H4.
-    edestruct (Hk (i - 1) (M.set f (AC.CTag l W (AC.CVfun f ρ1 xs e)) ρ1) (M.set f (AT.Tag w (AT.Vfun f ρ2 xs e')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
-    + eapply G_top_subset with (Γ1 := (f |: (AC.occurs_free_top (AC.CEfun f l xs W e k)))) (Γ2 := (f |: (AT.occurs_free (AT.Efun f w xs e' k')))); eauto.
+    edestruct (Hk (i - 1) (M.set f (AC.CTag AS.l0 W (AC.CVfun f ρ1 xs e)) ρ1) (M.set f (AT.Tag w (AT.Vfun f ρ2 xs e')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+    + eapply G_top_subset with (Γ1 := (f |: (AC.occurs_free_top (AC.CEfun f xs W e k)))) (Γ2 := (f |: (AT.occurs_free (AT.Efun f w xs e' k')))); eauto.
       * eapply G_top_set; eauto.
         eapply G_top_mono; eauto; try lia.
 
-        eapply Vfun_V_top with (Γ1 := (AC.occurs_free_top (AC.CEfun f l xs W e k))) (Γ2 := (AT.occurs_free (AT.Efun f w xs e' k'))); eauto.
+        eapply Vfun_V_top with (Γ1 := (AC.occurs_free_top (AC.CEfun f xs W e k))) (Γ2 := (AT.occurs_free (AT.Efun f w xs e' k'))); eauto.
         -- unfold trans_correct_top.
            split; auto.
         -- eapply G_top_mono; eauto; try lia.
@@ -1399,12 +1399,12 @@ Proof.
            eapply bstep_fuel_exposed_inv; eauto.
 Qed.
 
-Lemma preserves_linking f w l1 W1 W2 x e1 e2 e1' e2' :
-  W1 ! l1 = Some w ->
+Lemma preserves_linking f w W1 W2 x e1 e2 e1' e2' :
+  W1 ! AS.l0 = Some w ->
   (w \in Exposed) ->
   trans_correct_top (AC.CEexp W1 e1) e1' ->
   trans_correct_top (AC.CEexp W2 e2) e2' ->
-  trans_correct_top (AC.link f x l1 W1 e1 W2 e2) (AT.link f w x e1' e2').
+  trans_correct_top (AC.link f x W1 e1 W2 e2) (AT.link f w x e1' e2').
 Proof.
   unfold AC.link, AT.link.
   intros.

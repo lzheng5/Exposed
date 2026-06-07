@@ -1559,19 +1559,17 @@ Admitted.
 
 (* Top Level *)
 
-(* TODO: try to remove label on CEfun; every W can contain a dummy label for the top-level languages *)
-
 (* Top-level Expressions *)
 Inductive cexp : Type :=
 | CEexp : web_map -> AS.exp -> cexp
-| CEfun : var -> label -> list var -> web_map -> AS.exp -> cexp -> cexp
+| CEfun : var -> list var -> web_map -> AS.exp -> cexp -> cexp
 | CEletapp : var -> var -> list var -> cexp -> cexp.
 
 Hint Constructors cexp : core.
 
 (* Linking *)
-Definition link f x l1 W1 e1 W2 e2 : cexp :=
-  CEfun f l1 [] W1 e1
+Definition link f x W1 e1 W2 e2 : cexp :=
+  CEfun f [] W1 e1
     (CEletapp x f []
        (CEexp W2 e2)).
 
@@ -1582,17 +1580,17 @@ Inductive occurs_free_top : cexp -> vars :=
     occurs_free_top (CEexp W e) x
 
 | Free_cfun1 :
-  forall x f l xs W e k,
+  forall x f xs W e k,
     f <> x ->
     occurs_free_top k x ->
-    occurs_free_top (CEfun f l xs W e k) x
+    occurs_free_top (CEfun f xs W e k) x
 
 | Free_cfun2 :
-  forall x f l xs W e k,
+  forall x f xs W e k,
     f <> x ->
     ~ (List.In x xs) ->
     AS.occurs_free e x ->
-    occurs_free_top (CEfun f l xs W e k) x
+    occurs_free_top (CEfun f xs W e k) x
 
 | Free_cletapp1 :
   forall y x f xs k,
@@ -1615,8 +1613,8 @@ Lemma occurs_free_top_cexp W e :
   (occurs_free_top (CEexp W e)) <--> (AS.occurs_free e).
 Proof. split; unfold Ensembles.Included, Ensembles.In; fcrush. Qed.
 
-Lemma free_fun_e_subset f xs W e k l :
-  (AS.occurs_free e) \subset (FromList xs :|: (f |: occurs_free_top (CEfun f l xs W e k))).
+Lemma free_fun_e_subset f xs W e k :
+  (AS.occurs_free e) \subset (FromList xs :|: (f |: occurs_free_top (CEfun f xs W e k))).
 Proof.
   unfold Ensembles.Included, Ensembles.In.
   intros.
@@ -1631,8 +1629,8 @@ Proof.
       fcrush.
 Qed.
 
-Lemma free_fun_k_subset k f l W xs e :
-  (occurs_free_top k) \subset (f |: occurs_free_top (CEfun f l xs W e k)).
+Lemma free_fun_k_subset k f W xs e :
+  (occurs_free_top k) \subset (f |: occurs_free_top (CEfun f xs W e k)).
 Proof.
   unfold Ensembles.Included, Ensembles.In.
   intros.
@@ -1668,11 +1666,11 @@ Inductive cbstep_top (ρ : cenv) : cexp -> fuel -> cres -> Prop :=
     cbstep_top ρ (CEexp W e) c r
 
 | Cbstep_fun_top :
-  forall {W w l f xs e k c r},
-    W ! l = Some w ->
+  forall {W w f xs e k c r},
+    W ! AS.l0 = Some w ->
     (w \in Exposed) ->
-    cbstep_top_fuel (M.set f (CTag l W (CVfun f ρ xs e)) ρ) k c r ->
-    cbstep_top ρ (CEfun f l xs W e k) c r
+    cbstep_top_fuel (M.set f (CTag l0 W (CVfun f ρ xs e)) ρ) k c r ->
+    cbstep_top ρ (CEfun f xs W e k) c r
 
 | Cbstep_letapp_top_Res :
   forall {W' x f f' l' w xs k ρ' xs' e vs ρ'' c c' v r},
@@ -2346,14 +2344,12 @@ Proof.
   apply G_top_mono with (S i); eauto; lia.
 Qed.
 
-(* TODO: at the top level, labeling pass should link with the trivial label *)
-
-Lemma web_map_sound_top_preserves_linking W1 W2 f w l1 l2 x e1 e2 :
-  W1 ! l1 = Some w ->
+Lemma web_map_sound_top_preserves_linking W1 W2 f w x e1 e2 :
+  W1 ! AS.l0 = Some w ->
   Ensembles.In web Exposed w ->
   web_map_sound_top e1 (CEexp W1 e1) ->
   web_map_sound_top e2 (CEexp W2 e2) ->
-  web_map_sound_top (AS.link f x l1 e1 l2 e2) (link f x l1 W1 e1 W2 e2).
+  web_map_sound_top (AS.link f x e1 e2) (link f x W1 e1 W2 e2).
 Proof.
   unfold link.
   intros HW Hw H1 H2.
@@ -2452,16 +2448,16 @@ Proof.
     eapply Cbstep_letapp_top_OOT; eauto using M.gss; simpl; auto.
 Qed.
 
-Lemma occurs_free_top_link f x l1 W1 e1 W2 e2 l2 :
-  occurs_free_top (link f x l1 W1 e1 W2 e2) <--> AS.occurs_free (AS.link f x l1 e1 l2 e2).
+Lemma occurs_free_top_link f x W1 e1 W2 e2 :
+  occurs_free_top (link f x W1 e1 W2 e2) <--> AS.occurs_free (AS.link f x e1 e2).
 Proof. split; unfold Ensembles.Included, Ensembles.In; fcrush. Qed.
 
-Lemma preserves_linking W1 W2 f w l1 l2 x e1 e2 :
-  W1 ! l1 = Some w ->
+Lemma preserves_linking W1 W2 f w x e1 e2 :
+  W1 ! AS.l0 = Some w ->
   (w \in Exposed) ->
   trans_correct_top e1 (CEexp W1 e1) ->
   trans_correct_top e2 (CEexp W2 e2) ->
-  trans_correct_top (AS.link f x l1 e1 l2 e2) (link f x l1 W1 e1 W2 e2).
+  trans_correct_top (AS.link f x e1 e2) (link f x W1 e1 W2 e2).
 Proof.
   unfold AS.link, link.
   intros HW Hwex Htr1 Htr2.
@@ -2471,8 +2467,8 @@ Proof.
   destruct Htr2c as [HFVe2 [Hwe2 Hk]].
   assert (Hweb_link :
            web_map_sound_top
-             (AS.Efun f l1 [] e1 (AS.Eletapp x f l2 [] e2))
-             (CEfun f l1 [] W1 e1 (CEletapp x f [] (CEexp W2 e2))))
+             (AS.Efun f AS.l0 [] e1 (AS.Eletapp x f AS.l0 [] e2))
+             (CEfun f [] W1 e1 (CEletapp x f [] (CEexp W2 e2))))
     by (eapply web_map_sound_top_preserves_linking; eauto).
 
   unfold trans_correct_top.
@@ -2512,27 +2508,27 @@ Proof.
     | [ Hk' : AS.bstep_fuel _ e2 _ _ |- _ ] => rename Hk' into Hcont
     end.
     assert (HVfun :
-             V_top i (AS.Tag w' (AS.Vfun f' ρ' [] e))
-                      (CTag w' W1 (CVfun f' ρ2 [] e))).
+             V_top i (AS.Tag AS.l0 (AS.Vfun f' ρ' [] e))
+                      (CTag AS.l0 W1 (CVfun f' ρ2 [] e))).
     { eapply Vfun_V_top with
         (xs := [])
         (Γ1 := AS.occurs_free
-                 (AS.Efun f' w' [] e (AS.Eletapp x f' l2 [] e2)))
+                 (AS.Efun f' AS.l0 [] e (AS.Eletapp x f' AS.l0 [] e2)))
         (Γ2 := (occurs_free_top
-            (CEfun f' w' [] W1 e (CEletapp x f' [] (CEexp W2 e2)))));
+            (CEfun f' [] W1 e (CEletapp x f' [] (CEexp W2 e2)))));
       eauto using AS.free_fun_e_subset. }
 
     assert (HGbody :
              G_top i (AS.occurs_free e)
-                    (M.set f' (AS.Tag w' (AS.Vfun f' ρ' [] e)) ρ')
+                    (M.set f' (AS.Tag AS.l0 (AS.Vfun f' ρ' [] e)) ρ')
                     (occurs_free_top (CEexp W1 e))
-                    (M.set f' (CTag w' W1 (CVfun f' ρ2 [] e)) ρ2)).
+                    (M.set f' (CTag AS.l0 W1 (CVfun f' ρ2 [] e)) ρ2)).
     { eapply G_top_subset with
         (Γ1 := f' |: AS.occurs_free
-                       (AS.Efun f' w' [] e
-                         (AS.Eletapp x f' l2 [] e2)))
+                       (AS.Efun f' AS.l0 [] e
+                         (AS.Eletapp x f' AS.l0 [] e2)))
         (Γ2 := f' |: occurs_free_top
-                       (CEfun f' w' [] W1 e
+                       (CEfun f' [] W1 e
                          (CEletapp x f' [] (CEexp W2 e2)))).
       - eapply G_top_set; eauto.
       - eapply Included_trans.
@@ -2551,16 +2547,16 @@ Proof.
     assert (HGcont :
              G_top (i - c) (AS.occurs_free e2)
                (M.set x v
-                 (M.set f' (AS.Tag w' (AS.Vfun f' ρ' [] e)) ρ'))
+                 (M.set f' (AS.Tag AS.l0 (AS.Vfun f' ρ' [] e)) ρ'))
                (occurs_free_top (CEexp W2 e2))
                (M.set x vt
-                 (M.set f' (CTag w' W1 (CVfun f' ρ2 [] e)) ρ2))).
+                 (M.set f' (CTag AS.l0 W1 (CVfun f' ρ2 [] e)) ρ2))).
     { eapply G_top_subset with
         (Γ1 := x |: (f' |: AS.occurs_free
-                            (AS.Efun f' w' [] e
-                              (AS.Eletapp x f' l2 [] e2))))
+                            (AS.Efun f' AS.l0 [] e
+                              (AS.Eletapp x f' AS.l0 [] e2))))
         (Γ2 := x |: (f' |: occurs_free_top
-                            (CEfun f' w' [] W1 e
+                            (CEfun f' [] W1 e
                               (CEletapp x f' [] (CEexp W2 e2))))).
       - eapply G_top_set.
         + eapply G_top_set.
@@ -2587,33 +2583,33 @@ Proof.
       apply M.gss; simpl; auto.
       simpl; auto.
     + eapply R_top_mono; [ exact HRk | lia ].
-  - (* BStep_letapp_OOT; vars from inversion: f', w', ρ', e, c *)
+  - (* BStep_letapp_OOT; vars from inversion: f', w, ρ', e, c *)
     match goal with
     | [ Hb : AS.bstep_fuel _ _ _ AS.OOT |- _ ] => rename Hb into Hbody
     end.
     assert (HVfun :
-             V_top i (AS.Tag w' (AS.Vfun f' ρ' [] e))
-                      (CTag w' W1 (CVfun f' ρ2 [] e))).
+             V_top i (AS.Tag AS.l0 (AS.Vfun f' ρ' [] e))
+                      (CTag AS.l0 W1 (CVfun f' ρ2 [] e))).
     { eapply Vfun_V_top with
         (xs := [])
         (Γ1 := AS.occurs_free
-                 (AS.Efun f' w' [] e (AS.Eletapp x f' l2 [] e2)))
+                 (AS.Efun f' AS.l0 [] e (AS.Eletapp x f' AS.l0 [] e2)))
         (Γ2 := (occurs_free_top
-                  (CEfun f' w' [] W1 e (CEletapp x f' [] (CEexp W2 e2)))));
+                  (CEfun f' [] W1 e (CEletapp x f' [] (CEexp W2 e2)))));
       eauto using AS.free_fun_e_subset. }
     assert (HGbody :
              G_top i (AS.occurs_free e)
-                     (M.set f' (AS.Tag w' (AS.Vfun f' ρ' [] e)) ρ')
+                     (M.set f' (AS.Tag AS.l0 (AS.Vfun f' ρ' [] e)) ρ')
                      (occurs_free_top (CEexp W1 e))
-                     (M.set f' (CTag w' W1 (CVfun f' ρ2 [] e)) ρ2)).
+                     (M.set f' (CTag AS.l0 W1 (CVfun f' ρ2 [] e)) ρ2)).
     { eapply G_top_subset with
         (Γ1 := (FromList [] :|:
                   (f' |: AS.occurs_free
-                       (AS.Efun f' w' [] e
-                          (AS.Eletapp x f' l2 [] e2)))))
+                       (AS.Efun f' AS.l0 [] e
+                          (AS.Eletapp x f' AS.l0 [] e2)))))
       (Γ2 := (FromList [] :|:
                   (f' |: occurs_free_top
-                       (CEfun f' w' [] W1 e
+                       (CEfun f' [] W1 e
                          (CEletapp x f' [] (CEexp W2 e2)))))).
       - eapply G_top_set_lists; eauto.
         eapply G_top_set; eauto.

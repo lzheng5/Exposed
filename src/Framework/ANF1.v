@@ -657,9 +657,14 @@ Proof.
 Qed.
 
 (* Linking *)
-Definition link f x l1 e1 l2 e2 : exp :=
-  Efun f l1 [] e1
-    (Eletapp x f l2 [] e2).
+
+(* A dedicated label for linking purposes *)
+(* Note it doesn't matter whether this label occurs inside a program body. *)
+Parameter l0 : label.
+
+Definition link f x e1 e2 : exp :=
+  Efun f l0 [] e1
+    (Eletapp x f l0 [] e2).
 
 (* Labels *)
 Inductive has_label : exp -> labels :=
