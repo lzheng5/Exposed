@@ -1399,12 +1399,12 @@ Proof.
            eapply bstep_fuel_exposed_inv; eauto.
 Qed.
 
-Lemma preserves_linking f w W1 W2 x e1 e2 e1' e2' :
+Lemma preserves_linking f w W1 x e1 e2 e1' e2' :
   W1 ! AS.l0 = Some w ->
   (w \in Exposed) ->
   trans_correct_top (AC.CEexp W1 e1) e1' ->
-  trans_correct_top (AC.CEexp W2 e2) e2' ->
-  trans_correct_top (AC.link f x W1 e1 W2 e2) (AT.link f w x e1' e2').
+  trans_correct_top e2 e2' ->
+  trans_correct_top (AC.link f x W1 e1 e2) (AT.link f w x e1' e2').
 Proof.
   unfold AC.link, AT.link.
   intros.
