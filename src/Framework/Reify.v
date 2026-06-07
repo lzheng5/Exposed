@@ -211,6 +211,11 @@ Lemma R_res_inv_l i v1 r2 :
   exists v2, r2 = AT.Res v2 /\ V i v1 v2.
 Proof. intros. fcrush. Qed.
 
+Lemma R_res_inv_l_V v1 r2 :
+  (forall k, R k (CRes v1) r2) ->
+  exists v2, r2 = AT.Res v2 /\ (forall k, V k v1 v2).
+Proof. intros. hauto. Qed.
+
 (* Exposed Lemmas *)
 Lemma V_exposed v1 {i v2} :
   V i v1 v2 ->
@@ -941,6 +946,11 @@ Proof.
   destruct r2; simpl in *; try contradiction.
   eexists; split; eauto.
 Qed.
+
+Lemma R_top_res_inv_l_V v1 r2 :
+  (forall k, R_top k (CRes v1) r2) ->
+  exists v2, r2 = AT.Res v2 /\ (forall k, V_top k v1 v2).
+Proof. intros. hauto. Qed.
 
 Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
   wf_cenv ρ1 /\

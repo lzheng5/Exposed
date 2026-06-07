@@ -4,6 +4,7 @@ From CertiCoq.LambdaANF Require Import Ensembles_util map_util set_util List_uti
 From CertiCoq.Libraries Require Import maps_util.
 Import ListNotations.
 Require Import Lia.
+From Hammer Require Import Hammer Tactics Reflect.
 
 From Framework Require Import Base Util ANF0 ANF1.
 
@@ -567,6 +568,11 @@ Proof.
   destruct r2; simpl in *; try contradiction.
   eexists; split; eauto.
 Qed.
+
+Lemma R_res_inv_l_V v1 r2 :
+  (forall k, R k (A0.Res v1) r2) ->
+  exists v2, r2 = A1.Res v2 /\ (forall k, V k v1 v2).
+Proof. intros. hauto. Qed.
 
 (* Environment Relation *)
 Definition G i Γ ρ1 ρ2 :=
