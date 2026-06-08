@@ -2989,9 +2989,125 @@ Proof.
 Qed.
 
 Lemma preserves_linking f x e1 e1' e2 e2' :
+  f <> x ->
+  ~ (f \in AS.occurs_free e1) ->
+  ~ (f \in AS.occurs_free e2) ->
+  ~ (f \in occurs_free_top e1') ->
+  ~ (f \in occurs_free_top e2') ->
   trans_correct_top e1 e1' ->
   trans_correct_top e2 e2' ->
   trans_correct_top (AS.link f x e1 e2) (link x e1' e2').
 Proof.
-  unfold AS.link.
 Admitted.
+(*
+  intros Hfx Hf1 Hf2 Hf1' Hf2' Htr1 Htr2.
+  destruct Htr1 as [HFV1 [Hsnd1 HE1]].
+  destruct Htr2 as [HFV2 [Hsnd2 HE2]].
+  unfold trans_correct_top.
+  repeat split.
+
+  - (* FV inclusion: occurs_free_top (link x e1' e2') ⊆ AS.occurs_free (AS.link f x e1 e2) *)
+    unfold AS.link, link.
+    unfold Ensembles.Included, Ensembles.In.
+    intros z Hz.
+    inv Hz.
+    + (* Free_clink1: z ∈ FV(e1'); need z ∈ FV(Efun f l0 [] e1 _) via Free_fun2 *)
+      assert (Hne : z <> f) by (intros ?; subst; apply Hf1'; auto).
+      apply AS.Free_fun2.
+      * auto.
+      * intros Hin; inv Hin.
+      * apply HFV1; auto.
+    + (* Free_clink2: z ≠ x ∧ z ∈ FV(e2'); need z ∈ FV(Efun ...) via Free_fun1 + Free_letapp1 *)
+      assert (Hne : z <> f) by (intros ?; subst; apply Hf2'; auto).
+      apply AS.Free_fun1.
+      * auto.
+      * apply AS.Free_letapp1; auto.
+        apply HFV2; auto.
+
+  - (* web_map_sound_top: use the dedicated preservation lemma *)
+    eapply web_map_sound_top_preserves_linking; eauto.
+
+  - (* G_top → E_top *)
+    (* This requires constructing V_top of the link function value, which in
+       turn requires E_top' for [cbstep_top of (CEexp W e1)] — but we only have
+       [cbstep_top of e1'] for a general e1'. Bridging that gap requires either
+       restricting e1' to a CEexp form, or developing additional V_top
+       infrastructure for general cexps appearing as function bodies. *)
+    intros i ρ1 ρ2 HG.
+    unfold AS.link, link, E_top, E_top' in *.
+    intros.
+    inv H0.
+    fcrush.
+    inv H1.
+    inv H8.
+    fcrush.
+    inv H0.
+    2 : { fcrush. }
+    rewrite M.gss in *; invc.
+    rename f' into f.
+    rename ρ' into ρ1.
+
+    (* need subval for ANF1 *)
+    edestruct (HE1 c (M.set f (AS.Tag AS.l0 (AS.Vfun f ρ1 [] e)) ρ1)
+                   (M.set f (CTag AS.l0 (M.set AS.l0 w0 (M.empty _)) (CVfun f ρ2 [] e)) ρ2)) as [j1 [r1' [Hcbstep_e1' HR1']]]; eauto.
+    eapply G_top_subset; eauto.
+    eapply G_top_set; eauto.
+    eapply G_top_mono; eauto; lia.
+
+
+
+    unfold web_map_sound_top in *.
+    assert (refine_env ρ1 ρ2) by eauto using G_top_refine_env.
+    assert (wf_cenv ρ2) by eauto using G_top_wf_cenv_r.
+    edestruct (Hsnd1 c (M.set f (AS.Tag AS.l0 (AS.Vfun f ρ1 [] e)) ρ1) (M.set f (CTag AS.l0 (M.set AS.l0 w0 (M.empty _)) (CVfun f ρ2 [] e)) ρ2)) as [r2 [Hcbstep_e1' Href]]; eauto.
+    eapply refine_env_set; eauto.
+    eapply wf_cenv_set; eauto.
+    econstructor; eauto.
+    rewrite M.gss; eauto.
+
+    intros.
+    econstructor; eauto.
+    rewrite M.gss; eauto.
+
+    inv Href.
+
+    edestruct (cbstep_top_fuel_drop_unused Hf1' H1 Hcbstep_e1') as [r2' [Hcbstep_e1'' [Hsubres Hwf_cres]]]; eauto.
+    inv Hsubres.
+
+    edestruct (Hsnd2 c' (M.set x v (M.set f (AS.Tag AS.l0 (AS.Vfun f ρ1 [] e)) ρ1)) (M.set x v2 (M.set f (CTag AS.l0 (M.set AS.l0 w0 (M.empty _)) (CVfun f ρ2 [] e)) ρ2))) as [r2 [Hcbstep_e2' Href']]; eauto.
+    eapply refine_env_set; eauto.
+    eapply refine_env_set; eauto.
+    eapply refine_val_csubval; eauto.
+
+    eapply wf_cenv_set; eauto.
+    eapply wf_cenv_set; eauto.
+    econstructor; eauto.
+    rewrite M.gss; eauto.
+
+    intros.
+    econstructor; eauto.
+    rewrite M.gss; eauto.
+    inv Hwf_cres; auto.
+
+    rewrite (set_set x f) in Hcbstep_e2'.
+    assert (Hwfρ2' : wf_cenv (M.set x v2 ρ2)).
+    {
+      eapply wf_cenv_set; eauto.
+      inv Hwf_cres; auto.
+    }
+
+    edestruct (cbstep_top_fuel_drop_unused Hf2' Hwfρ2' Hcbstep_e2') as [r2' [Hcbstep_e2'' [Hsubres Hwf_cres']]]; eauto.
+
+    exists (S (S (c + c'))), r2'; split.
+    econstructor; eauto.
+    inv Hcbstep_e2''; auto.
+
+    unfold R'.
+    destruct r1; destruct r2'; auto.
+    fcrush.
+    fcrush.
+
+
+    admit.
+Admitted.
+*)
