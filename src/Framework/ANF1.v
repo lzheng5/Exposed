@@ -867,10 +867,6 @@ Scheme unique_label_mut := Induction for unique_label Sort Prop
 with unique_label_case_mut := Induction for unique_label_case Sort Prop.
 
 (* Well-formed Value and Environment *)
-(* In ANF1.v's labeled semantics there is no exposed-web constraint, so
-   well-formedness is purely structural: every captured env is well-formed,
-   recursively. Used to enable [subval_refl] (and hence drop-unused style
-   lemmas) via the mutual induction principle [wf_val_mut]. *)
 Inductive wf_val : wval -> Prop :=
 | WF_TAG :
   forall w v,
@@ -1259,9 +1255,6 @@ Proof.
   inv s; eauto.
 Qed.
 
-(* Reflexivity of [subval] under well-formedness. The recursive case for
-   [Vfun f ρ xs e] needs to recurse into the captured env [ρ], which is what
-   the [wf_val_mut] induction principle provides. *)
 Lemma subval_refl v :
   wf_val v ->
   subval v v.
@@ -1306,6 +1299,71 @@ Proof.
   constructor; intros y Hy v Hgv.
   exists v; split; auto.
   apply subval_refl. eapply wf_env_get; eauto.
+Qed.
+
+Lemma subval_trans v1 v2 v3 :
+  subval v1 v2 ->
+  subval v2 v3 ->
+  subval v1 v3
+with subval'_trans v1 v2 v3 :
+  subval' v1 v2 ->
+  subval' v2 v3 ->
+  subval' v1 v3
+with subenv_trans Γ1 Γ2 ρ1 ρ2 ρ3 :
+  subenv Γ1 ρ1 ρ2 ->
+  subenv Γ2 ρ2 ρ3 ->
+  subenv (Γ1 :&: Γ2) ρ1 ρ3.
+Proof.
+  - (* subval_trans *)
+    intros H1 H2.
+    inv H1. inv H2. constructor. eapply subval'_trans; eauto.
+
+  - (* subval'_trans *)
+    intros H1 H2.
+    inv H1.
+    + (* Sub_fun *)
+      inversion H2 as [Γb fb xsb eb ρb1 ρb2 HFVb Hsubb | |]; subst.
+      eapply Sub_fun with (Γ := Γ :&: Γb).
+      * (* FV inclusion *)
+        unfold Ensembles.Included, Ensembles.In in *.
+        intros z Hz.
+        pose proof (H _ Hz) as Hza.
+        pose proof (HFVb _ Hz) as Hzb.
+        inv Hza; [left; auto|].
+        inv Hzb; [left; auto|].
+        rename H1 into Hzfa. rename H3 into Hzfb.
+        right.
+        inv Hzfa; [left; auto|].
+        inv Hzfb; [left; auto|].
+        right. constructor; auto.
+      * eapply subenv_trans; eauto.
+    + (* Sub_constr_nil *)
+      inv H2. constructor.
+    + (* Sub_constr_cons *)
+      inv H2. constructor.
+      * eapply subval_trans; eauto.
+      * eapply subval'_trans; eauto.
+
+  - (* subenv_trans *)
+    intros H1 H2.
+    constructor; intros y Hy v_y Hgy.
+    inversion Hy as [a Hy_Γ Hy_Γ' Ha]; subst.
+    inv H1.
+    edestruct (H y Hy_Γ v_y Hgy) as [v_mid [Hg_mid Hsub_mid]].
+    inv H2.
+    edestruct (H0 y Hy_Γ' v_mid Hg_mid) as [v3 [Hg3 Hsub3]].
+    exists v3; split; auto.
+    eapply subval_trans; eauto.
+Qed.
+
+Lemma subres_trans r1 r2 r3 :
+  subres r1 r2 ->
+  subres r2 r3 ->
+  subres r1 r3.
+Proof.
+  intros H1 H2.
+  inv H1; inv H2; constructor.
+  eapply subval_trans; eauto.
 Qed.
 
 (* Semantic Weakening Lemmas *)

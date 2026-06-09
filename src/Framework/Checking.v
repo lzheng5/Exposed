@@ -3040,6 +3040,7 @@ Proof.
     econstructor; eauto.
     inv Hcbstep_e2'; auto.
 
+    assert (Hsubres : AS.subres r1 r2'') by eauto using AS.subres_trans.
     (* need a lemma for refine_res and subres *)
     admit.
 Admitted.
@@ -3148,8 +3149,62 @@ Proof.
     econstructor; eauto.
     eapply cbstep_top_fuel_exposed_inv; eauto.
 
+    assert (Hsubres : AS.subres r1 r2'') by eauto using AS.subres_trans.
+
     (* need a lemma for V_top and subval *)
     (* eapply R_top_mono; eauto. *)
 
     admit.
+Admitted.
+
+Lemma V_top_subval_Forall :
+  forall i,
+    (forall m : nat,
+        m < S i ->
+        forall v1 v2 v3,
+          AS.subval v1 v2 ->
+          V_top m v1 v3 <-> V_top m v2 v3) ->
+    forall j vs1 vs2 vs3,
+      j <= i ->
+      Forall2 AS.subval vs1 vs2 ->
+      Forall2 (V_top j) vs1 vs3 <-> Forall2 (V_top j) vs2 vs3.
+Proof.
+  intros.
+  revert vs3 j H0.
+  induction H1; simpl; intros.
+  - split; intros; inv H1; auto.
+  - split; intros; inv H3; constructor; auto.
+    eapply H with (v1 := x) (v2 := y); eauto; try lia.
+    eapply IHForall2; eauto.
+    eapply H with (v1 := x) (v2 := y); eauto; try lia.
+    eapply IHForall2; eauto.
+Qed.
+
+Lemma V_top_subval :
+  forall i v1 v2 v3,
+    AS.subval v1 v2 ->
+    V_top i v1 v3 <-> V_top i v2 v3.
+Proof.
+  intro i.
+  induction i using lt_wf_rec; intros v1 v2 v3 Hsub.
+  (* The proof follows V_V_top's structure: strong induction on i, then
+     destruct i (= 0 vs S i'), destructure values, recurse via IH for
+     subterms.
+
+     Key obstacles (not trivially closeable):
+
+     1. [refine_val] (a conjunct of V_top) does not compose with [subval]
+        in general. For Vfun, refine_val (Tag w (Vfun f ρ1 xs e)) v3 is
+        [refine_env ρ1 ρ_c]; under subval' (Vfun f ρ1 xs e) (Vfun f ρ2 xs e)
+        (via [subenv Γ ρ1 ρ2]) we cannot conclude [refine_env ρ2 ρ_c]
+        because Dom(ρ2) may extend beyond Γ where ρ_c offers no coverage.
+
+     2. The Vfun behavioral conjunct (E_top' relation under set_lists) needs
+        the AS-side bstep behavior to transfer between ρ_a- and ρ_b-based
+        envs. [bstep_subenv] supplies this but threading it requires
+        composing with V_top_subval at smaller indices.
+
+     A fully honest fix is to parameterize refine_val/refine_env by a domain
+     (analogous to csubenv's Γ) so refine_val ↔ subval composition holds in
+     both directions. Left admitted as a focused gap. *)
 Admitted.
