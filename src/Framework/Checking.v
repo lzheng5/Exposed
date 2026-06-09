@@ -1062,11 +1062,10 @@ with refine_env : vars -> AS.env -> cenv -> Prop :=
   forall Γ ρ ρ',
     (forall x,
         (x \in Γ) ->
-        forall v1,
-          M.get x ρ = Some v1 ->
-          exists v2,
-            M.get x ρ' = Some v2 /\
-              refine_val v1 v2) ->
+        exists v1 v2,
+          M.get x ρ = Some v1 /\
+          M.get x ρ' = Some v2 /\
+          refine_val v1 v2) ->
     refine_env Γ ρ ρ'.
 
 Hint Constructors refine_val : core.
@@ -1094,7 +1093,10 @@ Lemma refine_env_get x v {Γ ρ1 ρ2} :
   x \in Γ ->
   ρ1 ! x = Some v ->
   exists v', ρ2 ! x = Some v' /\ refine_val v v'.
-Proof. intros Henv Hget. inv Henv; eauto. Qed.
+Proof.
+  intros Henv Hget Hr1. inv Henv.
+  edestruct H as [v1 [v2 [Heqv1 [Heqv2 Href]]]]; eauto; invc; eauto.
+Qed.
 
 Lemma refine_env_subset Γ1 {Γ2 ρ1 ρ2} :
   refine_env Γ1 ρ1 ρ2 ->
@@ -1104,7 +1106,7 @@ Proof.
   unfold Ensembles.Included, Ensembles.In.
   intros.
   constructor; intros.
-  eapply refine_env_get; eauto.
+  inv H; fcrush.
 Qed.
 
 Lemma refine_env_get_list xs {Γ ρ1 ρ2 vs} :
@@ -1133,16 +1135,15 @@ Lemma refine_env_set x v v' {Γ ρ1 ρ2} :
   refine_val v v' ->
   refine_env (x |: Γ) (M.set x v ρ1) (M.set x v' ρ2).
 Proof.
-  intros Henv Hrv. constructor. intros y Hy w Hw.
+  intros Henv Hrv. constructor. intros y Hy.
   destruct (M.elt_eq x y) as [<-|Hne].
-  - rewrite M.gss in *; invc.
+  - repeat (rewrite M.gss in *); invc.
     fcrush.
-  - rewrite M.gso in Hw by auto.
+  - repeat (rewrite M.gso in * by auto).
     inv Henv.
     edestruct H as [w' [Hw' Hrw]]; eauto.
     unfold Ensembles.Included, Ensembles.In in *.
     fcrush.
-    exists w'. rewrite M.gso by auto. auto.
 Qed.
 
 Lemma refine_env_set_lists xs vs vs' {Γ ρ1 ρ2 ρ1' ρ2'} :
@@ -1215,7 +1216,7 @@ Lemma refine_val_Vconstr {l W t vs vs'} :
   refine_val (AS.Tag l (AS.Vconstr t vs)) (CTag l W (CVconstr t vs')).
 Proof. intros Hr. constructor. apply refine_val'_Vconstr; auto. Qed.
 
-(* Composition: refining can be propagated along [csubval] *)
+(* [refine_val] commutes with [subval] *)
 Lemma refine_val_csubval v0 v v' :
   refine_val v0 v ->
   csubval v v' ->
@@ -1262,13 +1263,13 @@ Proof.
 
   - (* refine_env_csubenv *)
     intros Href Hsub.
-    constructor; intros y Hy va Hgva.
+    constructor; intros y Hy.
     inversion Hy as [a Hy_Γ Hy_Γ' Ha]; subst.
     inv Href.
-    edestruct (H y Hy_Γ va Hgva) as [vc [Hgvc Hrvc]].
+    edestruct (H y Hy_Γ) as [va [vc [Hgva [Hgvc Hrvc]]]]; eauto; invc.
     inv Hsub.
     edestruct (H0 y Hy_Γ' vc Hgvc) as [vc' [Hgvc' Hsvc]].
-    exists vc'; split; auto.
+    exists va, vc'; repeat (split; auto).
     eapply refine_val_csubval; eauto.
 Qed.
 
@@ -1280,6 +1281,72 @@ Proof.
   intros Hr Hs.
   inv Hr; inv Hs; auto.
   constructor. eapply refine_val_csubval; eauto.
+Qed.
+
+Lemma refine_val_subval v0 v0' v :
+  refine_val v0 v ->
+  AS.subval v0 v0' ->
+  refine_val v0' v
+with refine_val'_subval' v0 v0' v :
+  refine_val' v0 v ->
+  AS.subval' v0 v0' ->
+  refine_val' v0' v
+with refine_env_subenv Γ Γ' ρa ρa' ρc :
+  refine_env Γ ρa ρc ->
+  AS.subenv Γ' ρa ρa' ->
+  refine_env (Γ :&: Γ') ρa' ρc.
+Proof.
+  - (* refine_val_subval *)
+    intros Hr Hs. inv Hr. inv Hs. constructor.
+    eapply refine_val'_subval'; eauto.
+
+  - (* refine_val'_subval' *)
+    intros Hr Hs.
+    inv Hr.
+    + (* Refine_fun *)
+      inversion Hs as [Γb fb xsb eb ρab1 ρab2 HFVb Hsubenv | |]; subst.
+      eapply Refine_fun with (Γ := Γ :&: Γb).
+      * (* FV inclusion: same reasoning as subval_trans *)
+        unfold Ensembles.Included, Ensembles.In in *.
+        intros z Hz.
+        assert (Hz0 := H _ Hz).
+        assert (Hz1 := HFVb _ Hz).
+        inv Hz0; [left; auto|].
+        inv Hz1; [left; auto|].
+        rename H1 into Hzfa. rename H2 into Hzfb.
+        right. inv Hzfa; [left; auto|]. inv Hzfb; [left; auto|].
+        right. constructor; auto.
+      * eapply refine_env_subenv; eauto.
+    + (* Refine_constr_nil *)
+      inv Hs. constructor.
+    + (* Refine_constr *)
+      inv Hs. constructor.
+      * eapply refine_val_subval; eauto.
+      * eapply refine_val'_subval'; eauto.
+
+  - (* refine_env_subenv *)
+    intros Hr Hs.
+    constructor; intros y Hy.
+    inversion Hy as [a Hy_Γ Hy_Γ' Ha]; subst.
+    (* From refine_env Γ ρa ρc: ρa(y) = v_a, ρc(y) = v_c *)
+    inv Hr.
+    edestruct (H y Hy_Γ) as [va [vc [Hgva [Hgvc Hrf]]]].
+    (* From subenv Γ' ρa ρa': ρa(y) = v_a → ρa'(y) = v_a' with subval *)
+    inv Hs.
+    edestruct (H0 y Hy_Γ' va Hgva) as [va' [Hgva' Hsubval]].
+    exists va', vc. repeat split; auto.
+    eapply refine_val_subval; eauto.
+Qed.
+
+Lemma refine_res_subres r0 r0' r :
+  refine_res r0 r ->
+  AS.subres r0 r0' ->
+  refine_res r0' r.
+Proof.
+  intros Hr Hs.
+  inv Hr; inv Hs; auto.
+  constructor.
+  eapply refine_val_subval; eauto.
 Qed.
 
 (* Correlation lemmas:
