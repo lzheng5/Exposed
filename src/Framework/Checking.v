@@ -1343,9 +1343,65 @@ Lemma refine_res_subres r0 r0' r :
 Proof.
   intros Hr Hs.
   inv Hr; inv Hs; auto.
-  constructor.
-  eapply refine_val_subval; eauto.
+  constructor; eauto using refine_val_subval.
 Qed.
+
+Lemma refine_val_subval_r v0 v0' v :
+  refine_val v0' v ->
+  subval v0 v0' ->
+  refine_val v0 v
+with refine_val'_subval'_r v0 v0' v :
+  refine_val' v0' v ->
+  subval' v0 v0' ->
+  refine_val' v0 v
+with refine_env_subenv_r Γ Γ' ρa ρa' ρc :
+  refine_env Γ ρa' ρc ->
+  subenv Γ' ρa ρa' ->
+  refine_env (Γ :&: Γ') ρa ρc.
+Proof.
+  - (* refine_val_subval *)
+    intros Hr Hs. inv Hr. inv Hs. constructor.
+    eapply refine_val'_subval'_r; eauto.
+
+  - (* refine_val'_subval' *)
+    intros Hr Hs.
+    inv Hr.
+    + (* Refine_fun *)
+      inversion Hs as [Γb fb xsb eb ρab1 ρab2 HFVb Hsubenv | |]; subst.
+      eapply Refine_fun with (Γ := Γ :&: Γb).
+      * (* FV inclusion: same reasoning as subval_trans *)
+        unfold Ensembles.Included, Ensembles.In in *.
+        intros z Hz.
+        assert (Hz0 := H _ Hz).
+        assert (Hz1 := HFVb _ Hz).
+        inv Hz0; [left; auto|].
+        inv Hz1; [left; auto|].
+        rename H1 into Hzfa. rename H2 into Hzfb.
+        right. inv Hzfa; [left; auto|]. inv Hzfb; [left; auto|].
+        right. auto.
+      * eapply refine_env_subenv_r; eauto.
+    + (* Refine_constr_nil *)
+      inv Hs. constructor.
+    + (* Refine_constr *)
+      inv Hs. constructor.
+      * eapply refine_val_subval_r; eauto.
+      * eapply refine_val'_subval'_r; eauto.
+
+  - (* refine_env_subenv *)
+    intros Hr Hs.
+    constructor; intros y Hy.
+    inversion Hy as [a Hy_Γ Hy_Γ' Ha]; subst.
+    (* From refine_env Γ ρa ρc: ρa(y) = v_a, ρc(y) = v_c *)
+    inv Hr.
+    edestruct (H y Hy_Γ) as [va [vc [Hgva [Hgvc Hrf]]]].
+    (* From subenv Γ' ρa ρa': ρa(y) = v_a → ρa'(y) = v_a' with subval *)
+    inv Hs.
+    (* !!! stuck here *)
+    (*
+    edestruct (H0 y Hy_Γ' va Hgva) as [va' [Hgva' Hsubval]].
+    exists va', vc. repeat split; auto.
+    eapply refine_val_subval; eauto. *)
+Admitted.
 
 (* Correlation lemmas: bstep and cbstep that both terminate on the same expression agree on fuel and value. *)
 Lemma bstep_cbstep_aux v1 v2 {W ex ρ1 ρ2 e c1 r1 c2 r2} :
@@ -3381,8 +3437,12 @@ Proof.
     inv Hcbstep_e2'; auto.
 
     assert (Hsubres : subres r1 r2'') by eauto using subres_trans.
-    (* need a lemma for refine_res and subres *)
-    admit.
+
+  (* eapply refine_res_subres_r; eauto. *)
+(*
+  - (* BStep_letapp_OOT *)
+    eexists; split; eauto.
+    inv H12; eauto. *)
 Admitted.
 
 Lemma preserves_linking f x e1 e1' e2 e2' :
