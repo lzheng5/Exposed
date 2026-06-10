@@ -1109,7 +1109,7 @@ Proof.
   inv H; fcrush.
 Qed.
 
-Lemma refine_env_get_list xs {Γ ρ1 ρ2 vs} :
+Lemma refine_env_get_list xs vs {Γ ρ1 ρ2} :
   refine_env Γ ρ1 ρ2 ->
   FromList xs \subset Γ ->
   get_list xs ρ1 = Some vs ->
@@ -1349,64 +1349,60 @@ Proof.
   eapply refine_val_subval; eauto.
 Qed.
 
-(* Correlation lemmas:
-     bstep and cbstep that both terminate on the same expression agree on fuel and value. *)
-Lemma bstep_cbstep_aux v1 v2 {W Γ ex ρ1 ρ2 e c1 r1 c2 r2} :
+(* Correlation lemmas: bstep and cbstep that both terminate on the same expression agree on fuel and value. *)
+Lemma bstep_cbstep_aux v1 v2 {W ex ρ1 ρ2 e c1 r1 c2 r2} :
   AS.bstep ρ1 e c1 r1 ->
-  (AS.occurs_free e) \subset Γ ->
-  refine_env Γ ρ1 ρ2 ->
+  refine_env (AS.occurs_free e) ρ1 ρ2 ->
   cbstep W ex ρ2 e c2 r2 ->
   r1 = AS.Res v1 ->
   r2 = CRes v2 ->
   c1 = c2 /\ refine_val v1 v2.
 Proof.
   intros Hb.
-  revert v1 v2 ρ2 W Γ ex c2 r2.
+  revert v1 v2 ρ2 W ex c2 r2.
   induction Hb using AS.bstep_ind'
     with (P := fun ρ1 e c1 r1 =>
-                 forall v1 v2 ρ2 W Γ ex c2 r2,
-                   (AS.occurs_free e) \subset Γ ->
-                   refine_env Γ ρ1 ρ2 ->
+                 forall v1 v2 ρ2 W ex c2 r2,
+                   refine_env (AS.occurs_free e) ρ1 ρ2 ->
                    cbstep W ex ρ2 e c2 r2 ->
                    r1 = AS.Res v1 -> r2 = CRes v2 ->
                    c1 = c2 /\ refine_val v1 v2)
          (P0 := fun ρ1 e c1 r1 =>
-                  forall v1 v2 ρ2 W Γ ex c2 r2,
-                    (AS.occurs_free e) \subset Γ ->
-                    refine_env Γ ρ1 ρ2 ->
+                  forall v1 v2 ρ2 W ex c2 r2,
+                    refine_env (AS.occurs_free e) ρ1 ρ2 ->
                     cbstep_fuel W ex ρ2 e c2 r2 ->
                     r1 = AS.Res v1 -> r2 = CRes v2 ->
                     c1 = c2 /\ refine_val v1 v2);
-    intros v1 v2 ρ2 W0 Γ ex c2 r2 HFV Henv Hc Heq1 Heq2; subst.
-  - (* BStep_ret *)
+    intros v1 v2 ρ2 W0 ex c2 r2 Henv Hc Heq1 Heq2; subst.
+
+  - (* BStep_ret: FV(Eret x) = {x} *)
     inv Heq1. inv Hc.
-    assert (Hx_Γ : x \in Γ) by (apply HFV; constructor).
-    edestruct (refine_env_get x v1 Henv Hx_Γ H) as [v' [Hv' Hrv]].
+    edestruct (refine_env_get x v1 Henv (ltac:(constructor)) H) as [v' [Hv' Hrv]].
     invc; fcrush.
-  - (* BStep_fun *)
+
+  - (* BStep_fun: FV(Efun f l xs e_body k) *)
     inv Hc.
     assert (Href_clos : refine_val (AS.Tag w (AS.Vfun f ρ xs e))
                           (CTag w W0 (CVfun f ρ2 xs e))).
     { constructor. econstructor.
-      - eapply AS.free_fun_e_inv; eauto.
+      - eapply AS.free_fun_e_inv. apply Included_refl.
       - exact Henv. }
     eapply IHHb.
-    + eapply AS.free_fun_k_inv; eauto.
-    + eapply refine_env_set; eauto.
-    + eauto.
-    + eauto.
-    + eauto.
+    + (* FV(k) ⊆ f |: FV(Efun) via free_fun_k_subset; refine_env_set + subset *)
+      eapply refine_env_subset.
+      * eapply refine_env_set; eauto.
+      * apply AS.free_fun_k_subset.
+    + eauto. + eauto. + eauto.
 
-  - (* BStep_app *)
+  - (* BStep_app: FV(Eapp f l xs) = {f} ∪ xs *)
     inv Hc.
-    assert (Hf_Γ : f \in Γ) by (apply HFV; constructor).
-    edestruct (refine_env_get f (AS.Tag w' (AS.Vfun f' ρ' xs' e)) Henv Hf_Γ H) as [vf [Hvf Hrf]].
+    edestruct (refine_env_get f (AS.Tag w' (AS.Vfun f' ρ' xs' e)) Henv (ltac:(constructor)) H) as [vf [Hvf Hrf]].
     invc.
     destruct (refine_val_Vfun_inv Hrf) as [W'' [ρ_2' [Γ_c [Heq [HFVe Hre]]]]].
     inv Heq.
-    assert (Hxs_Γ : FromList xs \subset Γ).
-    { eapply Included_trans; [apply AS.free_app_xs_subset | exact HFV]. }
-    edestruct (refine_env_get_list xs Henv Hxs_Γ H0) as [vs2 [Hvs2 Hrvs]].
+    edestruct (refine_env_get_list xs _ Henv
+                 (ltac:(unfold Ensembles.Included, Ensembles.In; intros z Hz; constructor; auto))
+                 H0) as [vs2 [Hvs2 Hrvs]].
     invc.
     assert (Href_f : refine_val (AS.Tag w' (AS.Vfun f' ρ' xs' e))
                        (CTag w' W'' (CVfun f' ρ_2' xs' e))).
@@ -1417,107 +1413,92 @@ Proof.
     { apply refine_env_set; eauto. }
     pose proof (refine_env_set_lists xs' vs vs2 Hrvs Hrenv H1 H8) as Hre''.
     eapply IHHb; eauto.
+    eapply refine_env_subset; eauto.
 
   - (* BStep_letapp_Res *)
     inv Hc.
     + (* Cbstep_letapp_Res *)
-      assert (Hf_Γ : f \in Γ) by (apply HFV; constructor).
-      edestruct (refine_env_get f (AS.Tag w' (AS.Vfun f' ρ' xs' e)) Henv Hf_Γ H) as [vf [Hvf Hrf]].
+      edestruct (refine_env_get f (AS.Tag w' (AS.Vfun f' ρ' xs' e)) Henv (ltac:(apply AS.Free_letapp2)) H) as [vf [Hvf Hrf]].
       invc.
       destruct (refine_val_Vfun_inv Hrf) as [W'' [ρ_2' [Γ_c [Heq [HFVe Hre]]]]].
       inv Heq.
-      assert (Hxs_Γ : FromList xs \subset Γ).
-      { eapply Included_trans; [apply AS.free_letapp_xs_subset | exact HFV]. }
-      edestruct (refine_env_get_list xs Henv Hxs_Γ H0) as [vs2 [Hvs2 Hrvs]].
+      assert (Hxs_in : FromList xs \subset AS.occurs_free (AS.Eletapp x f w xs k))
+        by (apply AS.free_letapp_xs_subset).
+      edestruct (refine_env_get_list xs _ Henv Hxs_in H0) as [vs2 [Hvs2 Hrvs]].
       invc.
       assert (Href_f : refine_val (AS.Tag w' (AS.Vfun f' ρ' xs' e))
-                         (CTag w' W'' (CVfun f' ρ_2' xs' e))).
-      { constructor. econstructor; eauto. }
-      assert (Hrenv : refine_env (f' |: Γ_c)
-                        (M.set f' (AS.Tag w' (AS.Vfun f' ρ' xs' e)) ρ')
-                        (M.set f' (CTag w' W'' (CVfun f' ρ_2' xs' e)) ρ_2')).
-      { apply refine_env_set; eauto. }
-      pose proof (refine_env_set_lists xs' vs vs2 Hrvs Hrenv H1 H11) as Hre''.
-      edestruct (IHHb v v0) as [Hc0 Hrv0]; eauto.
-      edestruct (IHHb0 v1 v2) as [Hc0' Hrv2]; eauto.
-      { eapply AS.free_letapp_k_inv; eauto. }
-      { apply refine_env_set; eauto. }
+                           (CTag w' W'' (CVfun f' ρ_2' xs' e))).
+        { constructor. econstructor; eauto. }
+        assert (Hrenv : refine_env (f' |: Γ_c)
+                          (M.set f' (AS.Tag w' (AS.Vfun f' ρ' xs' e)) ρ')
+                          (M.set f' (CTag w' W'' (CVfun f' ρ_2' xs' e)) ρ_2')).
+        { apply refine_env_set; eauto. }
+        pose proof (refine_env_set_lists xs' vs vs2 Hrvs Hrenv H1 H11) as Hre''.
+        edestruct (IHHb v v0) as [Hc0 Hrv0]; eauto.
+        { eapply refine_env_subset; eauto. }
+        edestruct (IHHb0 v1 v2) as [Hc0' Hrv2]; eauto.
+        { eapply refine_env_subset.
+          - apply refine_env_set; eauto.
+          - apply AS.free_letapp_k_subset. }
 
   - fcrush.
 
-  - (* BStep_constr *)
+  - (* BStep_constr: FV(Econstr x l t xs e) *)
     inv Hc.
-    assert (Hxs_Γ : FromList xs \subset Γ).
-    { eapply Included_trans; [apply AS.free_constr_xs_subset | exact HFV]. }
-    edestruct (refine_env_get_list xs Henv Hxs_Γ H) as [vs2 [Hvs2 Hrvs]].
+    edestruct (refine_env_get_list xs _ Henv
+                 (ltac:(unfold Ensembles.Included, Ensembles.In; intros z Hz; constructor; auto))
+                 H) as [vs2 [Hvs2 Hrvs]].
     invc.
     eapply IHHb; eauto.
-    + eapply AS.free_constr_k_inv; eauto.
-    + apply refine_env_set; auto.
-      apply refine_val_Vconstr; auto.
+    eapply refine_env_subset.
+    + apply refine_env_set; [exact Henv | apply refine_val_Vconstr; auto].
+    + apply AS.free_constr_k_subset.
 
-  - (* BStep_proj *)
+  - (* BStep_proj: FV(Eproj x l i y e) *)
     inv Hc.
-    assert (Hy_Γ : y \in Γ) by (apply HFV; constructor).
-    edestruct (refine_env_get y (AS.Tag w' (AS.Vconstr t vs)) Henv Hy_Γ H) as [vc [Hvc Hrc]].
+    edestruct (refine_env_get y (AS.Tag w' (AS.Vconstr t vs)) Henv (ltac:(constructor)) H) as [vc [Hvc Hrc]].
     invc.
-    destruct (refine_val_Vconstr_inv Hrc) as [W'' [vs' [Heq Hrvs]]].
-    inv Heq.
-    edestruct (Forall2_nth_error H0 Hrvs) as [v' [Hnv' Hrv']]; eauto.
-    unfold clval in *; invc.
-    eapply IHHb; eauto.
-    + eapply AS.free_proj_k_inv; eauto.
-    + apply refine_env_set; auto.
+      destruct (refine_val_Vconstr_inv Hrc) as [W'' [vs' [Heq Hrvs]]].
+      inv Heq.
+      edestruct (Forall2_nth_error H0 Hrvs) as [v' [Hnv' Hrv']]; eauto.
+      unfold clval in *; invc.
+      eapply IHHb; eauto.
+      eapply refine_env_subset.
+      * apply refine_env_set; [exact Henv | exact Hrv'].
+      * apply AS.free_proj_k_subset.
 
   - (* BStep_case *)
     inv Hc.
-    assert (Hx_Γ : x \in Γ) by (apply HFV; constructor).
-    edestruct (refine_env_get x (AS.Tag w' (AS.Vconstr t vs)) Henv Hx_Γ H) as [vc [Hvc Hrc]].
+    edestruct (refine_env_get x (AS.Tag w' (AS.Vconstr t vs)) Henv (ltac:(constructor)) H) as [vc [Hvc Hrc]].
     invc.
-    destruct (refine_val_Vconstr_inv Hrc) as [W'' [vs' [Heq _]]].
-    inv Heq.
-    destruct (find_tag_deterministic H0 H6); subst.
-    eapply IHHb; eauto.
-    eapply AS.free_case_e_inv; eauto.
+      destruct (refine_val_Vconstr_inv Hrc) as [W'' [vs' [Heq _]]].
+      inv Heq.
+      destruct (find_tag_deterministic H0 H6); subst.
+      eapply IHHb; eauto.
+      eapply refine_env_subset; [exact Henv |].
+      eapply AS.free_case_e_inv; eauto. apply Included_refl.
 
-  - (* BStepF_OOT — r1 = OOT contradicts Heq1 *)
-    discriminate.
+  - discriminate.
 
-  - (* BStepF_Step *)
-    inv Hc.
-    edestruct IHHb as [Hc0 Hrv0]; eauto.
+  - inv Hc. edestruct IHHb as [Hc0 Hrv0]; eauto.
 Qed.
 
-Lemma bstep_cbstep_refine W ex Γ ρ1 ρ2 e c1 c2 v1 v2 :
+Lemma bstep_cbstep_refine W ex ρ1 ρ2 e c1 c2 v1 v2 :
   AS.bstep ρ1 e c1 (AS.Res v1) ->
-  (AS.occurs_free e) \subset Γ ->
-  refine_env Γ ρ1 ρ2 ->
+  refine_env (AS.occurs_free e) ρ1 ρ2 ->
   cbstep W ex ρ2 e c2 (CRes v2) ->
   c1 = c2 /\ refine_val v1 v2.
 Proof. intros; eapply bstep_cbstep_aux; eauto. Qed.
 
-Lemma bstep_fuel_cbstep_fuel_refine W ex {Γ} ρ1 ρ2 e c1 c2 v1 v2 :
+Lemma bstep_fuel_cbstep_fuel_refine W ex ρ1 ρ2 e c1 c2 v1 v2 :
   AS.bstep_fuel ρ1 e c1 (AS.Res v1) ->
-  (AS.occurs_free e) \subset Γ ->
-  refine_env Γ ρ1 ρ2 ->
+  refine_env (AS.occurs_free e) ρ1 ρ2 ->
   cbstep_fuel W ex ρ2 e c2 (CRes v2) ->
   c1 = c2 /\ refine_val v1 v2.
 Proof.
-  intros Hb HFV Henv Hc.
-  inv Hb. inv Hc.
-  edestruct (bstep_cbstep_refine W ex Γ ρ1 ρ2 e) as [Hceq Hrv]; eauto.
+  intros Hb Henv Hc. inv Hb. inv Hc.
+  edestruct bstep_cbstep_refine as [Heq Hrv]; eauto.
 Qed.
-
-(* The following lemma requires refine_env to be bidirectional *)
-Lemma cbstep_bstep_aux {W Γ ex ρ1 ρ2 e c r2} :
-  cbstep W ex ρ2 e c r2 ->
-  (AS.occurs_free e) \subset Γ ->
-  refine_env Γ ρ1 ρ2 ->
-  exists r1,
-    AS.bstep ρ1 e c r1 ->
-    refine_res r1 r2.
-Proof.
-Abort.
 
 (* Valid web_map Specification *)
 (* This essentially says `has_label e` ⊆ Dom_map W *)
