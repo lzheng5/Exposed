@@ -2112,15 +2112,14 @@ Lemma fun_compat W Γ e k f l w xs :
 Proof.
   unfold well_annotated, E, E'.
   intros HWl [HSe He] [HSk Hk].
-  split.
+  split; intros.
   {
     unfold Ensembles.Included, Ensembles.In in *.
     intros.
     inv H; fcrush.
   }
-  intros.
-  pose proof H2 as Hbstep.
 
+  pose proof H2 as Hbstep.
   inv H2.
   - exists 0, COOT; split; simpl; eauto.
   - destruct r1.
@@ -2157,13 +2156,19 @@ Proof.
   unfold well_annotated, E, E'.
   intros HW Hf Hxs.
   intros; simpl.
-  pose proof H2 as Hbstep.
+  split; intros.
+  {
+    unfold FromList, Ensembles.Included, Ensembles.In in *.
+    intros.
+    inv H; fcrush.
+  }
 
+  pose proof H2 as Hbstep.
   inv H2.
   - exists 0, COOT; split; simpl; auto.
   - destruct r1.
     fcrush.
-    assert (Hrefρ : refine_env ρ1 ρ2) by eauto using G_refine_env.
+    assert (Hrefρ : refine_env _ ρ1 ρ2) by eauto using G_refine_env.
     edestruct (H (S c) (Res w0)) as [cv [Hcbstep Href]]; eauto.
     inv Hcbstep; inv H3; inv Href.
     inv H4; invc.
@@ -2173,10 +2178,9 @@ Proof.
     rename w0 into v.
     destruct fv2; simpl in HV; invc;
       rename w into W';
-      destruct HV as [Hwf [Hrefv [Heql [w2 [HW' [Hex [Heqf [Heqxs [Heqe HV]]]]]]]]]; subst; invc.
+      destruct HV as [Hwf1 [Hwf2 [Hrefv [Heql [w2 [HW' [Hex [Heqf [Heqxs [Heqe HV]]]]]]]]]]; subst; invc.
 
     edestruct (G_get_list H0 xs vs) as [vs2 [Heqvs2 Vvs]]; eauto; invc.
-    eapply free_app_xs_subset; eauto.
 
     destruct (set_lists_length3 (M.set f'0 (CTag l0 W' (CVfun f'0 ρ'0 xs'0 e0)) ρ'0) xs'0 vs2) as [ρ4 Heqρ4].
     unfold clval in *.
@@ -2224,9 +2228,16 @@ Lemma letapp_compat W Γ k xs x f l w :
   well_annotated W Γ (Eletapp x f l xs k).
 Proof.
   unfold well_annotated, web_map_sound, E, E'.
-  intros HWl Hf Hxs Hk.
+  intros HWl Hf Hxs [HSk Hk].
+  split; intros.
+  {
+    unfold FromList, Ensembles.Included, Ensembles.In in *.
+    intros.
+    inv H; fcrush.
+  }
+
   intros; simpl.
-  assert (Hrefρ : refine_env ρ1 ρ2) by eauto using G_refine_env.
+  assert (Hrefρ : refine_env _ ρ1 ρ2) by eauto using G_refine_env.
   pose proof H2 as Hbstep.
 
   inv H2.
@@ -2242,10 +2253,9 @@ Proof.
     destruct i. inv H1.
     destruct fv2; simpl in HV; invc;
       rename w into W';
-      destruct HV as [Hv1 [Href [Hl' [w2 [HW' [Hex [Heqf [Heqxs [Heqe HV]]]]]]]]]; invc.
+      destruct HV as [Hv1 [Hv2 [Href [Hl' [w2 [HW' [Hex [Heqf [Heqxs [Heqe HV]]]]]]]]]]; invc.
 
     edestruct (G_get_list H0 xs vs) as [vs2 [Heqvs2 Vvs]]; eauto; invc.
-    eapply free_letapp_xs_subset; eauto.
 
     destruct (set_lists_length3 (M.set f'0 (CTag l0 W' (CVfun f'0 ρ'0 xs'0 e0)) ρ'0) xs'0 vs2) as [ρ4 Heqρ4].
     {
@@ -2258,13 +2268,15 @@ Proof.
     {
       eapply bstep_fuel_cbstep_fuel_refine; eauto.
       assert (HVs : Forall2 refine_val vs vs2) by eauto using V_refine_val_Forall.
-      assert (Hrefenv : refine_env (M.set f'0 (Tag l0 (Vfun f'0 ρ' xs'0 e0)) ρ') (M.set f'0 (CTag l0 W' (CVfun f'0 ρ'0 xs'0 e0)) ρ'0)).
+      inv Href.
+      inv H3.
+
+      eapply refine_env_subset; eauto.
+      assert (Hrefenv : refine_env (f'0 |: Γ0) (M.set f'0 (Tag l0 (Vfun f'0 ρ' xs'0 e0)) ρ') (M.set f'0 (CTag l0 W' (CVfun f'0 ρ'0 xs'0 e0)) ρ'0)).
       {
         eapply refine_env_set; eauto.
-        inv Href.
-        inv H3; auto.
       }
-      eapply (refine_env_set_lists HVs Hrefenv H13 H18); eauto.
+      eapply refine_env_set_lists; eauto.
     }
     assert (Hc' : c'0 = c') by lia.
     inv Hc.
@@ -2333,11 +2345,10 @@ Proof.
       * inv Href2.
         eapply cbstep_fuel_lt_Res_not_OOT with (c0 := (c + i0)) in Hap; eauto; try lia.
         contradiction.
-    + eapply G_subset with (Γ2 := (x |: (occurs_free (Eletapp x f l xs k)))).
+    + eapply G_subset.
       ++ eapply G_set; eauto.
          eapply G_mono with (S i); eauto; lia.
       ++ apply Included_refl.
-      ++ apply free_letapp_k_subset.
     + exists (S (c + j2)), r2; split.
       ++ constructor; auto.
          ** econstructor; eauto.
@@ -2355,7 +2366,12 @@ Lemma case_nil_compat W Γ x l w :
 Proof.
   unfold well_annotated, E, E'.
   intros HWl Hx.
-  intros; simpl.
+  split; intros.
+  {
+    unfold FromList, Ensembles.Included, Ensembles.In in *.
+    intros.
+    inv H; fcrush.
+  }
   inv H2; fcrush.
 Qed.
 
