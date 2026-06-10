@@ -2401,7 +2401,7 @@ Inductive cexp : Type :=
 Hint Constructors cexp : core.
 
 (* Linking *)
-Definition link x e1 e2 : cexp := CElink x e1 e2.
+Definition clink x e1 e2 : cexp := CElink x e1 e2.
 
 Inductive occurs_free_top : cexp -> vars :=
 | Free_cexp :
@@ -2609,6 +2609,7 @@ Definition E_top' (P : nat -> wval -> clval -> Prop) (i : nat) (ρ1 : env) (e1 :
       R' P (i - j1) r1 r2.
 
 Fixpoint V_top (i : nat) (wv : wval) (cv : clval) {struct i} : Prop :=
+  wf_val wv /\
   wf_cval cv /\
     refine_val wv cv /\
     to_exposed cv /\
@@ -2637,7 +2638,7 @@ Fixpoint V_top (i : nat) (wv : wval) (cv : clval) {struct i} : Prop :=
                       Forall2 (V_top (i0 - (i0 - j))) vs1 vs2 ->
                       set_lists xs1 vs1 (M.set f1 (Tag l1 (Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
                       set_lists xs2 vs2 (M.set f2 (CTag l2 W (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
-                      web_map_sound W true ρ3 ρ4 e1 ->
+                      web_map_sound W (occurs_free e1) true ρ3 ρ4 e1 ->
                       E_top' V_top (i0 - (i0 - j)) ρ3 e1 ρ4 (CEexp W e1)
                 end
 
@@ -2680,7 +2681,7 @@ Proof.
     + destruct v1; destruct v2.
       destruct v; destruct c; try firstorder;
         rename w into W.
-      * destruct H1 as [Hwf [Href [Heql [w [HW [Hex [Heqv [Heqxs [Heqw HV]]]]]]]]]; subst.
+      * destruct H1 as [Hwf1 [Hwf2 [Href [Heql [w [HW [Hex [Heqv [Heqxs [Heqw HV]]]]]]]]]]; subst.
         repeat (split; eauto); intros.
 
         assert (HEV : E' V W (exposedb w) (i - (i - j)) ρ3 ρ4 e0).
@@ -2703,7 +2704,7 @@ Proof.
         eapply cbstep_fuel_exposed_inv in Hstep; eauto; fcrush.
       * eapply V_V_top_Forall; fcrush.
   - destruct i; simpl in *;
-      destruct H1 as [Hwf [Href [Hex HV]]].
+      destruct H1 as [Hwf1 [Hwf2 [Href [Hex HV]]]].
     + destruct v1; destruct v2.
       destruct v; destruct c; try firstorder; subst; invc.
       * inv Hex.
@@ -2781,17 +2782,44 @@ Proof.
     eapply cbstep_top_fuel_exposed_inv; eauto.
 Qed.
 
-Lemma V_top_wf_cval_r {i v1 v2}:
+Lemma V_top_refine_val {i v1 v2}:
   V_top i v1 v2 ->
-  wf_cval v2.
+  refine_val v1 v2.
 Proof.
   intros HV.
   destruct i; simpl in *; fcrush.
 Qed.
 
-Lemma V_top_refine_val {i v1 v2}:
+Lemma V_top_wf_val_l {i v1 v2}:
   V_top i v1 v2 ->
-  refine_val v1 v2.
+  wf_val v1.
+Proof.
+  intros HV.
+  destruct i; simpl in *; fcrush.
+Qed.
+
+Lemma V_top_wf_val_Forall_l {i vs1 vs2} :
+  Forall2 (V_top i) vs1 vs2 ->
+  Forall wf_val vs1.
+Proof.
+  intros.
+  induction H; auto.
+  constructor; auto.
+  eapply V_top_wf_val_l; eauto.
+Qed.
+
+Lemma V_top_wf_res_l {i v1 v2}:
+  V_top i v1 v2 ->
+  wf_res (Res v1).
+Proof.
+  intros HV.
+  constructor.
+  eapply V_top_wf_val_l; eauto.
+Qed.
+
+Lemma V_top_wf_cval_r {i v1 v2}:
+  V_top i v1 v2 ->
+  wf_cval v2.
 Proof.
   intros HV.
   destruct i; simpl in *; fcrush.
@@ -2862,8 +2890,9 @@ Lemma R_top_res_inv_l_V v1 r2 :
 Proof. intros. hauto. Qed.
 
 Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
+  wf_env ρ1 /\
   wf_cenv ρ2 /\
-    refine_env ρ1 ρ2 /\
+    refine_env Γ1 ρ1 ρ2 /\
     Γ2 \subset Γ1 /\
     forall x,
       (x \in Γ1) ->
@@ -2873,6 +2902,11 @@ Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
           to_exposed v2 /\
           V_top i v1 v2.
 
+Lemma G_top_wf_env_l i Γ1 ρ1 Γ2 ρ2 :
+  G_top i Γ1 ρ1 Γ2 ρ2 ->
+  wf_env ρ1.
+Proof. unfold G_top. intros; tauto. Qed.
+
 Lemma G_top_wf_cenv_r i Γ1 ρ1 Γ2 ρ2 :
   G_top i Γ1 ρ1 Γ2 ρ2 ->
   wf_cenv ρ2.
@@ -2880,7 +2914,7 @@ Proof. unfold G_top. intros; tauto. Qed.
 
 Lemma G_top_refine_env i Γ1 ρ1 Γ2 ρ2 :
   G_top i Γ1 ρ1 Γ2 ρ2 ->
-  refine_env ρ1 ρ2.
+  refine_env Γ1 ρ1 ρ2.
 Proof. unfold G_top. intros; tauto. Qed.
 
 Lemma G_top_subset_inv i Γ1 ρ1 Γ2 ρ2 :
@@ -2896,8 +2930,10 @@ Lemma G_top_subset i Γ1 ρ1 Γ2 ρ2 Γ3 Γ4 :
 Proof.
   unfold G_top.
   intros.
-  destruct H as [Hwf [Href [Hs HG]]].
-  repeat (split; auto).
+  destruct H as [Hwf1 [Hwf2 [Href [Hs HG]]]].
+  repeat (split; auto); intros.
+  edestruct HG as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; eauto; invc.
+  fcrush.
 Qed.
 
 (* Top-level Environment Lemmas *)
@@ -2909,7 +2945,12 @@ Lemma G_top_get {Γ1 Γ2 i ρ1 ρ2}:
       M.get x ρ1 = Some v1 /\
         M.get x ρ2 = Some v2 /\
         V_top i v1 v2.
-Proof. unfold G. fcrush. Qed.
+Proof.
+  unfold G_top.
+  intros.
+  destruct H as [Hwf1 [Hwf2 [Href [Hs HG]]]].
+  edestruct HG as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; eauto.
+Qed.
 
 Lemma G_top_get_list {i Γ1 ρ1 Γ2 ρ2} :
   G_top i Γ1 ρ1 Γ2 ρ2 ->
@@ -2946,6 +2987,11 @@ Lemma G_top_set {i Γ1 ρ1 Γ2 ρ2}:
 Proof.
   intros.
   unfold G_top; intros.
+
+  split.
+  eapply wf_env_set; eauto.
+  eapply G_top_wf_env_l; eauto.
+  eapply V_top_wf_val_l; eauto.
 
   split.
   eapply wf_cenv_set; eauto.
@@ -3012,20 +3058,20 @@ Qed.
 Lemma G_top_G :
   forall {i Γ1 ρ1 Γ2 ρ2},
     G_top i Γ1 ρ1 Γ2 ρ2 ->
-    G i Γ1 ρ1 Γ2 ρ2.
+    G i Γ1 ρ1 ρ2.
 Proof.
   unfold G_top, G.
   intros.
-  destruct H as [Hwf [Href [Hs HG]]].
+  destruct H as [Hwf1 [Hwf2 [Href [Hs HG]]]].
   unfold Ensembles.Included, Ensembles.In, Dom_map in *.
   repeat (split; auto); intros.
   edestruct HG as [v1' [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; eauto; invc.
-  eexists; split; eauto.
+  eexists; eexists; repeat (split; eauto).
   eapply V_V_top; eauto.
 Qed.
 
 Lemma G_G_top i Γ1 ρ1 Γ2 ρ2 :
-  G i Γ1 ρ1 Γ2 ρ2 ->
+  G i Γ1 ρ1 ρ2 ->
   Γ2 \subset Γ1 ->
   G_top i Γ1 ρ1 Γ2 ρ2.
 Proof.
@@ -3093,18 +3139,52 @@ Lemma G_top_mono {Γ1 Γ2 ρ1 ρ2} i j:
 Proof.
   unfold G_top.
   intros.
-  destruct H as [Hwf [Href [HS HG]]].
+  destruct H as [Hwf1 [Hwf2 [Href [HS HG]]]].
   repeat (split; eauto); intros.
   edestruct HG as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; eauto.
   eexists; eexists; repeat (split; eauto).
   apply V_top_mono with i; eauto.
 Qed.
 
+(* V_top and subval *)
+Lemma V_top_subval_Forall :
+  forall i,
+    (forall m : nat,
+        m < S i ->
+        forall v1 v2 v3,
+          subval v1 v2 ->
+          V_top m v1 v3 <-> V_top m v2 v3) ->
+    forall j vs1 vs2 vs3,
+      j <= i ->
+      Forall2 subval vs1 vs2 ->
+      Forall2 (V_top j) vs1 vs3 <-> Forall2 (V_top j) vs2 vs3.
+Proof.
+  intros.
+  revert vs3 j H0.
+  induction H1; simpl; intros.
+  - split; intros; inv H1; auto.
+  - split; intros; inv H3; constructor; auto.
+    eapply H with (v1 := x) (v2 := y); eauto; try lia.
+    eapply IHForall2; eauto.
+    eapply H with (v1 := x) (v2 := y); eauto; try lia.
+    eapply IHForall2; eauto.
+Qed.
+
+Lemma V_top_subval :
+  forall i v1 v2 v3,
+    subval v1 v2 ->
+    V_top i v1 v3 <-> V_top i v2 v3.
+Proof.
+  intro i.
+  induction i using lt_wf_rec; intros v1 v2 v3 Hsub.
+Admitted.
+
 (* W is sound for *every* program trace of an open program e *)
 Definition web_map_sound_top e e' :=
   forall i ρ1 ρ2 r1,
     bstep_fuel ρ1 e i r1 ->
-    refine_env ρ1 ρ2 ->
+    refine_env (occurs_free e) ρ1 ρ2 ->
+    wf_env ρ1 ->
     wf_cenv ρ2 ->
     exists r2,
       cbstep_top_fuel ρ2 e' i r2 /\
@@ -3113,8 +3193,9 @@ Definition web_map_sound_top e e' :=
 Lemma web_map_sound_top_web_map_sound W e :
   web_map_sound_top e (CEexp W e) ->
   forall ρ1 ρ2,
+    wf_env ρ1 ->
     wf_cenv ρ2 ->
-    web_map_sound W true ρ1 ρ2 e.
+    web_map_sound W (occurs_free e) true ρ1 ρ2 e.
 Proof.
   unfold web_map_sound_top, web_map_sound.
   intros.
@@ -3125,8 +3206,9 @@ Qed.
 
 Lemma web_map_sound_web_map_sound_top W e :
   (forall ρ1 ρ2,
+      wf_env ρ1 ->
       wf_cenv ρ2 ->
-      web_map_sound W true ρ1 ρ2 e) ->
+      web_map_sound W (occurs_free e) true ρ1 ρ2 e) ->
   web_map_sound_top e (CEexp W e).
 Proof.
   unfold web_map_sound_top, web_map_sound.
@@ -3161,9 +3243,9 @@ Proof.
   eapply E_E_top; eauto.
   eapply fundamental_property; eauto.
   eapply web_map_sound_top_web_map_sound; eauto.
+  eapply G_top_wf_env_l; eauto.
   eapply G_top_wf_cenv_r; eauto.
   eapply G_top_G; eauto.
-  eapply G_top_subset; eauto using Included_refl, occurs_free_top_cexp.
 Qed.
 
 Theorem top W etop:
@@ -3193,12 +3275,12 @@ Lemma web_map_sound_top_preserves_linking f x e1 e1' e2 e2' :
   ~ (f \in occurs_free_top e2') ->
   web_map_sound_top e1 e1' ->
   web_map_sound_top e2 e2' ->
-  web_map_sound_top (link f x e1 e2) (link x e1' e2').
+  web_map_sound_top (link f x e1 e2) (clink x e1' e2').
 Proof.
   intros Hfx Hf1 Hf2 Hf1' Hf2' H1 H2.
   unfold link, link.
   unfold web_map_sound_top in *.
-  intros i ρ1 ρ2 r1 Hbstep Href Hwfρ2.
+  intros i ρ1 ρ2 r1 Hbstep Href Hwfρ1 Hwfρ2.
   inv Hbstep.
   { exists COOT; split; eauto. }
   match goal with
@@ -3233,12 +3315,16 @@ Proof.
     rename f' into f.
     rename ρ' into ρ1.
     rename e into e1.
-    assert (Hwf1 : wf_env ρ1) by admit.
 
-    edestruct (bstep_fuel_drop_unused Hf1 Hwf1 Hbody) as [r1' [Hbstep_e1 Hsub']]; eauto.
+    edestruct (bstep_fuel_drop_unused Hf1 Hwfρ1 Hbody) as [r1' [Hbstep_e1 Hsub']]; eauto.
     inv Hsub'.
 
     edestruct H1 as [r2 [Hcbstep_e1' Href']]; eauto.
+    eapply refine_env_subset; eauto.
+    {
+      unfold Ensembles.Included, Ensembles.In in *.
+      fcrush.
+    }
     inv Href'.
 
     rewrite (set_set x f) in Hcont; auto.
@@ -3266,7 +3352,22 @@ Proof.
     fcrush.
 
     edestruct (H2 c' (M.set x v2 ρ1) (M.set x v' ρ2)) as [r2''' [Hcbstep_e2' Href'']]; eauto.
+    eapply refine_env_subset; eauto.
     eapply refine_env_set; eauto.
+    {
+      unfold Ensembles.Included, Ensembles.In in *.
+      intros.
+      destruct (M.elt_eq x x0); subst.
+      - fcrush.
+      - apply Union_intror.
+        fcrush.
+    }
+    eapply wf_env_set; eauto.
+    assert (Hwfv2 : wf_res (Res v2)).
+    {
+      eapply (bstep_fuel_wf_res ρ1); eauto.
+    }
+    inv Hwfv2; auto.
     eapply wf_cenv_set; eauto.
 
     assert (Hwfv' : wf_cres (CRes v')).
@@ -3394,36 +3495,4 @@ Proof.
     (* eapply R_top_mono; eauto. *)
 
     admit.
-Admitted.
-
-Lemma V_top_subval_Forall :
-  forall i,
-    (forall m : nat,
-        m < S i ->
-        forall v1 v2 v3,
-          AS.subval v1 v2 ->
-          V_top m v1 v3 <-> V_top m v2 v3) ->
-    forall j vs1 vs2 vs3,
-      j <= i ->
-      Forall2 AS.subval vs1 vs2 ->
-      Forall2 (V_top j) vs1 vs3 <-> Forall2 (V_top j) vs2 vs3.
-Proof.
-  intros.
-  revert vs3 j H0.
-  induction H1; simpl; intros.
-  - split; intros; inv H1; auto.
-  - split; intros; inv H3; constructor; auto.
-    eapply H with (v1 := x) (v2 := y); eauto; try lia.
-    eapply IHForall2; eauto.
-    eapply H with (v1 := x) (v2 := y); eauto; try lia.
-    eapply IHForall2; eauto.
-Qed.
-
-Lemma V_top_subval :
-  forall i v1 v2 v3,
-    AS.subval v1 v2 ->
-    V_top i v1 v3 <-> V_top i v2 v3.
-Proof.
-  intro i.
-  induction i using lt_wf_rec; intros v1 v2 v3 Hsub.
 Admitted.
