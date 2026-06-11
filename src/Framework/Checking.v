@@ -3239,22 +3239,75 @@ Lemma V_top_val_eqv_l :
     V_top i va v3 -> V_top i vb v3.
 Proof.
   intro i.
-  induction i as [i IH] using lt_wf_rec; intros va vb v3 Hwfa Hwfb Heqv HV.
+  induction i as [i IH] using lt_wf_rec.
+  intros va vb v3 Hwfa Hwfb Heqv HV.
   destruct va as [wa va']; destruct vb as [wb vb']; destruct v3 as [l3 Wm vv3].
-  inv Heqv.
-  rename H1 into Hsub'.
+  inv Heqv. rename H1 into Hsub'.
+  (* Case-split on value shapes; ANF-side mismatches are eliminated by [inv Hsub']. *)
   destruct va' as [ca vsa | fa ρa xsa ea];
     destruct vb' as [cb vsb | fb ρb xsb eb];
     destruct vv3 as [cc vsc | fc ρc xsc ec];
     try (inv Hsub'; fail).
+  (* Four cases remain: matched ANF shapes × (matched | mismatched) CL shape.
+     Now split the fuel index so V_top's recursive obligation simplifies. *)
+  all: destruct i as [|i0]; simpl in HV |- *;
+       destruct HV as [_ [Hwfcv [Href [Hex Hstr]]]];
+       try (destruct Hstr as [_ []]).
 
-  - (* Vfun / Vfun / CVfun *)
+  - (* i = 0, Vconstr / Vconstr / CVconstr *)
+    destruct Hstr as [Hleq [Hceq [Hleneq _]]]; subst l3 cc.
+    assert (Hfaeqv : Forall2 val_eqv vsa vsb).
+    { destruct (val_eqv_Vconstr_inv_l (v2 := Tag wb (Vconstr cb vsb)))
+        as [vsb' [Heqvb Hfaeqv]].
+      - constructor; auto.
+      - inv Heqvb. auto. }
+    assert (Hcab : ca = cb).
+    { inv Hsub'; auto. inv Hfaeqv. reflexivity. }
+    subst cb.
+    repeat (split; eauto).
+    + eapply refine_val_val_eqv_l
+        with (v0 := Tag wb (Vconstr ca vsa)); eauto.
+    + erewrite <- (Forall2_length _ vsa vsb); eauto.
+
+  - (* i = S i0, Vconstr / Vconstr / CVconstr *)
+    destruct Hstr as [Hleq [Hceq [Hleneq Hcrest]]]; subst l3 cc.
+    assert (Hfaeqv : Forall2 val_eqv vsa vsb).
+    { destruct (val_eqv_Vconstr_inv_l (v2 := Tag wb (Vconstr cb vsb)))
+        as [vsb' [Heqvb Hfaeqv]].
+      - constructor; auto.
+      - inv Heqvb. auto. }
+    assert (Hwfvsa : Forall wf_val vsa)
+      by (eapply wf_val_Vconstr_inv; eauto).
+    assert (Hwfvsb : Forall wf_val vsb)
+      by (eapply wf_val_Vconstr_inv; eauto).
+    assert (Hcab : ca = cb).
+    { inv Hsub'; auto. inv Hfaeqv. reflexivity. }
+    subst cb.
+    repeat (split; eauto).
+    + eapply refine_val_val_eqv_l
+        with (v0 := Tag wb (Vconstr ca vsa)); eauto.
+    + erewrite <- (Forall2_length _ vsa vsb); eauto.
+    + eapply V_top_val_eqv_Forall
+        with (i := i0) (vs1 := vsa) (vs2 := vsb); eauto.
+      intros m Hm va1 va2 vb' Hwfa1 Hwfa2 Hsub''.
+      split; intros HV0.
+      * eapply IH with (va := va1); eauto. lia.
+      * eapply IH with (va := va2); eauto.
+        -- lia.
+        -- apply val_eqv_sym; auto.
+
+  - (* i = 0, Vfun / Vfun / CVfun *)
+    destruct Hstr as [Hleq [Hfeq [Hxseq [Heeq _]]]]; subst l3 fc xsc ec.
     inv Hsub'.
-    rename H3 into HFV. rename H4 into Henvee.
+    repeat (split; eauto).
+    eapply refine_val_val_eqv_l
+      with (v0 := Tag wb (Vfun fb ρa xsb eb)); eauto.
+
+  - (* i = S i0, Vfun / Vfun / CVfun *)
+    destruct Hstr as [Hleq [Hfeq [Hxseq [Heeq Hfun]]]]; subst l3 fc xsc ec.
+    inv Hsub'.
+    rename H2 into HFV. rename H3 into Henvee.
     rename Γ into Γe.
-    destruct HV as [_ [Hwfcv [Href [Hex Hstr]]]].
-    destruct Hstr as [Hleq [Hfeq [Hxseq [Heeq Hfun]]]].
-    subst l3 fc xsc ec.
     inversion Hwfa as [wa_ va_inner Hwfa' Heqva]. subst.
     inversion Hwfa' as [fa' ρa' xsa' ea' Γwa Hwfρa HFVa Heqfa | |].
     subst fa' ρa' xsa' ea'.
@@ -3266,7 +3319,6 @@ Proof.
         with (v0 := Tag wb (Vfun fb ρa xsb eb)); eauto. }
 
     (* Function relation *)
-    destruct i as [|i0]; auto.
     intros j vs1 vs2 ρ3b ρ4 Hj Hexvs HVs Hset3b Hset4 HW.
 
     assert (Hlen : length xsb = length vs1)
@@ -3341,40 +3393,6 @@ Proof.
       eapply IH with (m := i0 - (i0 - j) - j1)
                      (va := r1'v) (vb := r1v); eauto.
       lia.
-
-  - (* Vconstr / Vconstr / CVconstr *)
-    destruct HV as [_ [Hwfcv [Href [Hex Hstr]]]].
-    destruct Hstr as [Hleq [Hceq [Hleneq Hcrest]]].
-    subst l3 cc.
-
-    assert (Hfaeqv : Forall2 val_eqv vsa vsb).
-    { destruct (val_eqv_Vconstr_inv_l (v2 := Tag wb (Vconstr cb vsb)))
-        as [vsb' [Heqvb Hfaeqv]].
-      - constructor; auto.
-      - inv Heqvb. auto. }
-
-    assert (Hwfvsa : Forall wf_val vsa).
-    { eapply wf_val_Vconstr_inv; eauto. }
-    assert (Hwfvsb : Forall wf_val vsb).
-    { eapply wf_val_Vconstr_inv; eauto. }
-
-    assert (Hcab : ca = cb).
-    { inv Hsub'; auto. inv Hfaeqv. reflexivity. }
-    subst cb.
-
-    repeat (split; eauto).
-    + eapply refine_val_val_eqv_l
-        with (v0 := Tag wb (Vconstr ca vsa)); eauto.
-    + erewrite <- (Forall2_length _ vsa vsb); eauto.
-    + destruct i as [|i0]; auto.
-      eapply V_top_val_eqv_Forall
-        with (i := i0) (vs1 := vsa) (vs2 := vsb); eauto.
-      intros m Hm va1 va2 vb' Hwfa1 Hwfa2 Hsub'.
-      split; intros HV0.
-      * eapply IH with (va := va1); eauto. lia.
-      * eapply IH with (va := va2); eauto.
-        -- lia.
-        -- apply val_eqv_sym; auto.
 Qed.
 
 Lemma V_top_val_eqv_r :
