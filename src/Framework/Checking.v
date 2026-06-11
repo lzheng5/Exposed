@@ -3210,26 +3210,25 @@ Lemma V_top_val_eqv_Forall :
     (forall m : nat,
         m < S i ->
         forall v1 v2 v3,
-          wf_val v1 -> 
-          wf_val v2 -> 
+          wf_val v1 ->
+          wf_val v2 ->
           val_eqv v1 v2 ->
-          V_top m v1 v3 <-> V_top m v2 v3) ->
+          V_top m v1 v3 -> V_top m v2 v3) ->
     forall j vs1 vs2 vs3,
       j <= i ->
-      Forall wf_val vs1 -> 
+      Forall wf_val vs1 ->
       Forall wf_val vs2 ->
       Forall2 val_eqv vs1 vs2 ->
-      Forall2 (V_top j) vs1 vs3 <-> Forall2 (V_top j) vs2 vs3.
+      Forall2 (V_top j) vs1 vs3 ->
+      Forall2 (V_top j) vs2 vs3.
 Proof.
   intros.
-  revert vs3 j H0.
-  induction H1; simpl; intros.
-  - split; intros; inv H1; auto.
-  - split; intros; inv H3; constructor; auto.
-    eapply H with (v1 := x) (v2 := y); eauto; try lia.
-    eapply IHForall2; eauto.
-    eapply H with (v1 := x) (v2 := y); eauto; try lia.
-    eapply IHForall2; eauto.
+  revert vs3 j H0 H4.
+  induction H3; simpl; intros.
+  - inv H4; auto.
+  - inv H1; inv H2; inv H5.
+    econstructor; eauto.
+    eapply H with (v1 := x); eauto; try lia.
 Qed.
 
 Lemma V_top_val_eqv_l :
@@ -3242,157 +3241,148 @@ Proof.
   induction i as [i IH] using lt_wf_rec.
   intros va vb v3 Hwfa Hwfb Heqv HV.
   destruct va as [wa va']; destruct vb as [wb vb']; destruct v3 as [l3 Wm vv3].
-  inv Heqv. rename H1 into Hsub'.
-  (* Case-split on value shapes; ANF-side mismatches are eliminated by [inv Hsub']. *)
-  destruct va' as [ca vsa | fa ρa xsa ea];
-    destruct vb' as [cb vsb | fb ρb xsb eb];
-    destruct vv3 as [cc vsc | fc ρc xsc ec];
-    try (inv Hsub'; fail).
-  (* Four cases remain: matched ANF shapes × (matched | mismatched) CL shape.
-     Now split the fuel index so V_top's recursive obligation simplifies. *)
-  all: destruct i as [|i0]; simpl in HV |- *;
-       destruct HV as [_ [Hwfcv [Href [Hex Hstr]]]];
-       try (destruct Hstr as [_ []]).
+  pose proof Heqv as Heqv0.
+  inv Heqv. rename H0 into Hsub'.
 
-  - (* i = 0, Vconstr / Vconstr / CVconstr *)
-    destruct Hstr as [Hleq [Hceq [Hleneq _]]]; subst l3 cc.
-    assert (Hfaeqv : Forall2 val_eqv vsa vsb).
-    { destruct (val_eqv_Vconstr_inv_l (v2 := Tag wb (Vconstr cb vsb)))
-        as [vsb' [Heqvb Hfaeqv]].
-      - constructor; auto.
-      - inv Heqvb. auto. }
-    assert (Hcab : ca = cb).
-    { inv Hsub'; auto. inv Hfaeqv. reflexivity. }
-    subst cb.
-    repeat (split; eauto).
-    + eapply refine_val_val_eqv_l
-        with (v0 := Tag wb (Vconstr ca vsa)); eauto.
-    + erewrite <- (Forall2_length _ vsa vsb); eauto.
+  destruct i as [|i0]; simpl in *;
+    destruct HV as [_ [Hwfcv [Href [Hex Hstr]]]].
 
-  - (* i = S i0, Vconstr / Vconstr / CVconstr *)
-    destruct Hstr as [Hleq [Hceq [Hleneq Hcrest]]]; subst l3 cc.
-    assert (Hfaeqv : Forall2 val_eqv vsa vsb).
-    { destruct (val_eqv_Vconstr_inv_l (v2 := Tag wb (Vconstr cb vsb)))
-        as [vsb' [Heqvb Hfaeqv]].
-      - constructor; auto.
-      - inv Heqvb. auto. }
-    assert (Hwfvsa : Forall wf_val vsa)
-      by (eapply wf_val_Vconstr_inv; eauto).
-    assert (Hwfvsb : Forall wf_val vsb)
-      by (eapply wf_val_Vconstr_inv; eauto).
-    assert (Hcab : ca = cb).
-    { inv Hsub'; auto. inv Hfaeqv. reflexivity. }
-    subst cb.
-    repeat (split; eauto).
-    + eapply refine_val_val_eqv_l
-        with (v0 := Tag wb (Vconstr ca vsa)); eauto.
-    + erewrite <- (Forall2_length _ vsa vsb); eauto.
-    + eapply V_top_val_eqv_Forall
-        with (i := i0) (vs1 := vsa) (vs2 := vsb); eauto.
-      intros m Hm va1 va2 vb' Hwfa1 Hwfa2 Hsub''.
-      split; intros HV0.
-      * eapply IH with (va := va1); eauto. lia.
-      * eapply IH with (va := va2); eauto.
-        -- lia.
-        -- apply val_eqv_sym; auto.
+  - destruct va'; destruct vv3.
+    2 : { firstorder. }
+    2 : { firstorder. }
 
-  - (* i = 0, Vfun / Vfun / CVfun *)
-    destruct Hstr as [Hleq [Hfeq [Hxseq [Heeq _]]]]; subst l3 fc xsc ec.
-    inv Hsub'.
-    repeat (split; eauto).
-    eapply refine_val_val_eqv_l
-      with (v0 := Tag wb (Vfun fb ρa xsb eb)); eauto.
-
-  - (* i = S i0, Vfun / Vfun / CVfun *)
-    destruct Hstr as [Hleq [Hfeq [Hxseq [Heeq Hfun]]]]; subst l3 fc xsc ec.
-    inv Hsub'.
-    rename H2 into HFV. rename H3 into Henvee.
-    rename Γ into Γe.
-    inversion Hwfa as [wa_ va_inner Hwfa' Heqva]. subst.
-    inversion Hwfa' as [fa' ρa' xsa' ea' Γwa Hwfρa HFVa Heqfa | |].
-    subst fa' ρa' xsa' ea'.
-    inversion Hwfb as [wb_ vb_inner Hwfb' Heqvb]. subst.
-    inversion Hwfb' as [fb' ρb' xsb' eb' Γwb Hwfρb HFVb Heqfb | |].
-    subst fb' ρb' xsb' eb'.
-    repeat (split; eauto).
-    { eapply refine_val_val_eqv_l
-        with (v0 := Tag wb (Vfun fb ρa xsb eb)); eauto. }
-
-    (* Function relation *)
-    intros j vs1 vs2 ρ3b ρ4 Hj Hexvs HVs Hset3b Hset4 HW.
-
-    assert (Hlen : length xsb = length vs1)
-      by (eapply set_lists_length_eq; eauto).
-    destruct (set_lists_length3
-                (M.set fb (Tag wb (Vfun fb ρa xsb eb)) ρa)
-                xsb vs1 Hlen) as [ρ3a Hset3a].
-
-    assert (Hwfvs1 : Forall wf_val vs1)
-      by (eapply V_top_wf_val_Forall_l; eauto).
-
-    assert (Hwfa_vfun : wf_val (Tag wb (Vfun fb ρa xsb eb)))
-      by (econstructor; eapply WF_Vfun with (Γ := Γwa); eauto).
-    assert (Hwfb_vfun : wf_val (Tag wb (Vfun fb ρb xsb eb)))
-      by (econstructor; eapply WF_Vfun with (Γ := Γwb); eauto).
-    assert (Hwf_ρ3a : wf_env (FromList xsb :|: (fb |: Γwa)) ρ3a).
-    { eapply wf_env_set_lists; eauto.
-      eapply wf_env_set; eauto. }
-    assert (Hwf_ρ3b : wf_env (FromList xsb :|: (fb |: Γwb)) ρ3b).
-    { eapply wf_env_set_lists; eauto.
-      eapply wf_env_set; eauto. }
-
-    assert (Henv_top : env_eqv (fb |: Γe)
-                               (M.set fb (Tag wb (Vfun fb ρa xsb eb)) ρa)
-                               (M.set fb (Tag wb (Vfun fb ρb xsb eb)) ρb)).
-    { eapply env_eqv_set; eauto. }
-    assert (Henv3 : env_eqv (FromList xsb :|: (fb |: Γe)) ρ3a ρ3b).
-    { eapply env_eqv_set_lists; eauto.
-      apply val_eqv_refl_Forall; auto. }
-
-    (* web_map_sound for ρ3a, transported from HW (on ρ3b) *)
-    assert (HWa : web_map_sound Wm (occurs_free eb) true ρ3a ρ4 eb).
-    {
-      unfold web_map_sound. intros i1 r1 Hbstep_a Href_a.
-      edestruct (@bstep_fuel_env_eqv_l
-                   (FromList xsb :|: (fb |: Γe)) ρ3a ρ3b eb)
-        as [r1' [Hbstep_b Hreseqv]]; eauto.
-      assert (Href_b : refine_env (occurs_free eb) ρ3b ρ4).
+    + destruct Hstr as [Heql [Heqv [Heqxs [Heqe _]]]]; subst.
+      inv Hsub'.
+      assert (refine_val (TAG val l3 (Vfun v0 ρ2 l0 e0)) (CTAG cval l3 Wm (CVfun v0 t0 l0 e0))).
       {
-        eapply refine_env_subset
-          with (Γ1 := occurs_free eb :&: (FromList xsb :|: (fb |: Γe))).
-        - eapply refine_env_env_eqv_l; eauto.
-        - unfold Ensembles.Included, Ensembles.In; intros z Hz.
-          constructor; auto.
+        eapply refine_val_val_eqv; eauto.
+        eapply val_eqv_sym; eauto.
       }
-      edestruct (HW i1 r1') as [r2 [Hcbstep Href_r]]; eauto.
-      exists r2; split; auto.
-      eapply refine_res_res_eqv; [apply res_eqv_sym; eauto|]; auto.
-    }
+      repeat (split; eauto).
+    + destruct Hstr as [Hleq [Hfeq [Hxseq _]]]; subst.
+      edestruct (@val_eqv_Vconstr_inv_l l3) as [vsb' [Heqvb Hfaeqv]]; eauto; invc.
 
-    assert (HEV_a : E_top' V_top (i0 - (i0 - j)) ρ3a eb ρ4 (CEexp Wm eb)).
-    { eapply Hfun; eauto. }
+      assert (refine_val (TAG val l3 (Vconstr c0 vsb')) (CTAG cval l3 Wm (CVconstr c0 l0))).
+      {
+        eapply refine_val_val_eqv; eauto.
+        eapply val_eqv_sym; eauto.
+      }
 
-    unfold E_top'. intros j1 r1 Hj1 Hbstep_b.
-    edestruct (@bstep_fuel_env_eqv_r
-                 (FromList xsb :|: (fb |: Γe)) ρ3a ρ3b eb)
-      as [r1' [Hbstep_a Hreseqv]]; eauto.
-    edestruct HEV_a as [j2 [r2_target [Hcbstep_top HR]]]; eauto.
-    exists j2, r2_target. split; auto.
+      repeat (split; eauto).
+      rewrite <- Hxseq.
+      symmetry.
+      eapply Forall2_length; eauto.
 
-    unfold R' in *.
-    destruct r1 as [|r1v]; destruct r2_target as [|r2v]; auto.
-    + destruct r1' as [|r1'v]; try contradiction; auto.
-    + destruct r1' as [|r1'v]; try contradiction.
-      inv Hreseqv.
-      assert (Hwfr1 : wf_val r1v).
-      { eapply (@bstep_fuel_wf_res _ ρ3b eb) in Hbstep_b; eauto.
+  - destruct va'; destruct vv3.
+    2 : { firstorder. }
+    2 : { firstorder. }
+
+    + destruct Hstr as [Heql [Heqv [Heqxs [Heqe HV]]]]; subst.
+      inv Hsub'.
+      assert (refine_val (TAG val l3 (Vfun v0 ρ2 l0 e0)) (CTAG cval l3 Wm (CVfun v0 t0 l0 e0))).
+      {
+        eapply refine_val_val_eqv; eauto.
+        eapply val_eqv_sym; eauto.
+      }
+      repeat (split; eauto).
+
+      intros j vs1 vs2 ρ3b ρ4 Hj Hexvs HVs Hset3b Hset4 HW.
+
+      assert (Hlen : length l0 = length vs1)
+        by (eapply set_lists_length_eq; eauto).
+      rename t into ρ1.
+
+      destruct (set_lists_length3
+                  (M.set v0 (Tag l3 (Vfun v0 ρ1 l0 e0)) ρ1)
+                  l0 vs1 Hlen) as [ρ3a Hset3a].
+
+      assert (Hwfvs1 : Forall wf_val vs1)
+        by (eapply V_top_wf_val_Forall_l; eauto).
+
+      assert (Hwfa_vfun : wf_val (Tag l3 (Vfun v0 ρ1 l0 e0))) by eauto.
+      assert (Hwfb_vfun : wf_val (Tag l3 (Vfun v0 ρ2 l0 e0))) by eauto.
+
+      inv Hwfa_vfun; inv Hwfb_vfun.
+      inv H1; inv H2.
+
+      assert (Hwf_ρ3a : wf_env (FromList l0 :|: (v0 |: Γ0)) ρ3a).
+      { eapply wf_env_set_lists; eauto.
+        eapply wf_env_set; eauto. }
+      assert (Hwf_ρ3b : wf_env (FromList l0 :|: (v0 |: Γ1)) ρ3b).
+      { eapply wf_env_set_lists; eauto.
+        eapply wf_env_set; eauto. }
+
+      assert (Henv_top : env_eqv (v0 |: Γ)
+                               (M.set v0 (Tag l3 (Vfun v0 ρ1 l0 e0)) ρ1)
+                               (M.set v0 (Tag l3 (Vfun v0 ρ2 l0 e0)) ρ2)).
+      { eapply env_eqv_set; eauto. }
+
+      assert (Henv3 : env_eqv (FromList l0 :|: (v0 |: Γ)) ρ3a ρ3b).
+      { eapply @env_eqv_set_lists with (vs1 := vs1) (vs2 := vs1); eauto.
+        eapply val_eqv_refl_Forall; eauto. }
+
+      (* web_map_sound for ρ3a, transported from HW (on ρ3b) *)
+      assert (HWa : web_map_sound Wm (occurs_free e0) true ρ3a ρ4 e0).
+      {
+        unfold web_map_sound. intros i1 r1 Hbstep_a Href_a.
+        edestruct (@bstep_fuel_env_eqv_l
+                     (FromList l0 :|: (v0 |: Γ)) ρ3a ρ3b e0)
+          as [r1' [Hbstep_b Hreseqv]]; eauto.
+        assert (Href_b : refine_env (occurs_free e0) ρ3b ρ4).
+        {
+          eapply refine_env_subset
+            with (Γ1 := occurs_free e0 :&: (FromList l0 :|: (v0 |: Γ))).
+          - eapply refine_env_env_eqv_l; eauto.
+          - unfold Ensembles.Included, Ensembles.In; intros z Hz.
+            constructor; auto.
+        }
+        edestruct (HW i1 r1') as [r2 [Hcbstep Href_r]]; eauto.
+        exists r2; split; auto.
+        eapply refine_res_res_eqv; eauto.
+      }
+
+      assert (HEV_a : E_top' V_top (i0 - (i0 - j)) ρ3a e0 ρ4 (CEexp Wm e0)).
+      { eapply HV; eauto. }
+
+      unfold E_top'. intros j1 r1 Hj1 Hbstep_b.
+      edestruct (@bstep_fuel_env_eqv_r
+                   (FromList l0 :|: (v0 |: Γ)) ρ3a ρ3b e0)
+        as [r1' [Hbstep_a Hreseqv]]; eauto.
+      edestruct HEV_a as [j2 [r2_target [Hcbstep_top HR]]]; eauto.
+      exists j2, r2_target. split; auto.
+
+      unfold R' in *.
+      destruct r1'; destruct r2_target; try firstorder.
+      destruct r1; fcrush.
+      destruct r1; eauto.
+      fcrush.
+
+      assert (Hwfr1 : wf_val w0).
+      { eapply (@bstep_fuel_wf_res _ ρ3b e0) in Hbstep_b; eauto.
         inv Hbstep_b; auto. }
-      assert (Hwfr1' : wf_val r1'v).
-      { eapply (@bstep_fuel_wf_res _ ρ3a eb) in Hbstep_a; eauto.
-        inv Hbstep_a; auto. }
-      eapply IH with (m := i0 - (i0 - j) - j1)
-                     (va := r1'v) (vb := r1v); eauto.
-      lia.
+      assert (Hwfr1' : wf_val w).
+      { eapply (@bstep_fuel_wf_res _ ρ3a e0) in Hbstep_a; eauto.
+      inv Hbstep_a; auto. }
+
+      inv Hreseqv.
+      eapply IH with (va := w); eauto; try lia.
+
+    + destruct Hstr as [Hleq [Hceq [Hleneq Hcrest]]]; subst.
+      edestruct (val_eqv_Vconstr_inv_l Heqv0) as [vsb' [Heqvb Hfaeqv]]; eauto; invc.
+
+      assert (refine_val (TAG val l3 (Vconstr c0 vsb')) (CTAG cval l3 Wm (CVconstr c0 l0))).
+      {
+        eapply refine_val_val_eqv; eauto.
+        eapply val_eqv_sym; eauto.
+      }
+
+      repeat (split; eauto).
+      rewrite <- Hleneq.
+      symmetry.
+      eapply Forall2_length; eauto.
+      eapply V_top_val_eqv_Forall with (vs1 := l); eauto.
+      eapply V_top_wf_val_Forall_l; eauto.
+      eapply wf_val_Vconstr_inv; eauto.
 Qed.
 
 Lemma V_top_val_eqv_r :
@@ -3408,20 +3398,20 @@ Qed.
 
 Lemma V_top_val_eqv :
   forall i v1 v2 v3,
-    wf_val v1 -> 
+    wf_val v1 ->
     wf_val v2 ->
     val_eqv v1 v2 ->
     V_top i v1 v3 <-> V_top i v2 v3.
 Proof.
   intros i v1 v2 v3 Hwf1 Hwf2 Hsub.
   split; intros HV.
-  - eapply V_top_val_eqv_l; eauto.
-  - eapply V_top_val_eqv_r; eauto.
+  - eapply V_top_val_eqv_l with (va := v1); eauto.
+  - eapply V_top_val_eqv_r with (vb := v2); eauto.
 Qed.
 
 Lemma R_top_res_eqv :
   forall i r1 r2 r3,
-    wf_res r1 -> 
+    wf_res r1 ->
     wf_res r2 ->
     res_eqv r1 r2 ->
     R_top i r1 r3 <-> R_top i r2 r3.
