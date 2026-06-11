@@ -1281,30 +1281,30 @@ Proof.
   constructor. eapply refine_val_csubval; eauto.
 Qed.
 
-Lemma refine_val_subval v0 v0' v :
+Lemma refine_val_val_eqv v0 v0' v :
   refine_val v0 v ->
-  subval v0 v0' ->
+  val_eqv v0 v0' ->
   refine_val v0' v
-with refine_val'_subval' v0 v0' v :
+with refine_val'_val_eqv' v0 v0' v :
   refine_val' v0 v ->
-  subval' v0 v0' ->
+  val_eqv' v0 v0' ->
   refine_val' v0' v
-with refine_env_subenv Γ Γ' ρa ρa' ρc :
+with refine_env_env_eqv Γ Γ' ρa ρa' ρc :
   refine_env Γ ρa ρc ->
-  subenv Γ' ρa ρa' ->
+  env_eqv Γ' ρa ρa' ->
   refine_env (Γ :&: Γ') ρa' ρc.
 Proof.
-  - (* refine_val_subval *)
+  - (* refine_val_val_eqv *)
     intros Hr Hs. inv Hr. inv Hs. constructor.
-    eapply refine_val'_subval'; eauto.
+    eapply refine_val'_val_eqv'; eauto.
 
-  - (* refine_val'_subval' *)
+  - (* refine_val'_val_eqv' *)
     intros Hr Hs.
     inv Hr.
     + (* Refine_fun *)
-      inversion Hs as [Γb fb xsb eb ρab1 ρab2 HFVb Hsubenv | |]; subst.
+      inversion Hs as [Γb fb xsb eb ρab1 ρab2 HFVb Henv_eqv | |]; subst.
       eapply Refine_fun with (Γ := Γ :&: Γb).
-      * (* FV inclusion: same reasoning as subval_trans *)
+      * (* FV inclusion: same reasoning as val_eqv_trans *)
         unfold Ensembles.Included, Ensembles.In in *.
         intros z Hz.
         assert (Hz0 := H _ Hz).
@@ -1314,62 +1314,62 @@ Proof.
         rename H1 into Hzfa. rename H2 into Hzfb.
         right. inv Hzfa; [left; auto|]. inv Hzfb; [left; auto|].
         right. constructor; auto.
-      * eapply refine_env_subenv; eauto.
+      * eapply refine_env_env_eqv; eauto.
     + (* Refine_constr_nil *)
       inv Hs. constructor.
     + (* Refine_constr *)
       inv Hs. constructor.
-      * eapply refine_val_subval; eauto.
-      * eapply refine_val'_subval'; eauto.
+      * eapply refine_val_val_eqv; eauto.
+      * eapply refine_val'_val_eqv'; eauto.
 
-  - (* refine_env_subenv *)
+  - (* refine_env_env_eqv *)
     intros Hr Hs.
     constructor; intros y Hy.
     inversion Hy as [a Hy_Γ Hy_Γ' Ha]; subst.
     (* From refine_env Γ ρa ρc: ρa(y) = v_a, ρc(y) = v_c *)
     inv Hr.
     edestruct (H y Hy_Γ) as [va [vc [Hgva [Hgvc Hrf]]]].
-    (* From subenv Γ' ρa ρa': ρa(y) = v_a → ρa'(y) = v_a' with subval *)
+    (* From env_eqv Γ' ρa ρa': ρa(y) = v_a → ρa'(y) = v_a' with val_eqv *)
     inv Hs.
-    edestruct (H0 y Hy_Γ' va Hgva) as [va' [Hgva' Hsubval]].
-    exists va', vc. repeat split; auto.
-    eapply refine_val_subval; eauto.
+    edestruct (H0 y Hy_Γ') as [va' [va'' [Hgva' [Heqva'' Hval_eqv]]]]; eauto; invc.
+    exists va'', vc. repeat split; auto.
+    eapply refine_val_val_eqv; eauto.
 Qed.
 
-Lemma refine_res_subres r0 r0' r :
+Lemma refine_res_res_eqv r0 r0' r :
   refine_res r0 r ->
-  subres r0 r0' ->
+  res_eqv r0 r0' ->
   refine_res r0' r.
 Proof.
   intros Hr Hs.
   inv Hr; inv Hs; auto.
-  constructor; eauto using refine_val_subval.
+  constructor; eauto using refine_val_val_eqv.
 Qed.
 
-Lemma refine_val_subval_r v0 v0' v :
+Lemma refine_val_val_eqv_r v0 v0' v :
   refine_val v0' v ->
-  subval v0 v0' ->
+  val_eqv v0 v0' ->
   refine_val v0 v
-with refine_val'_subval'_r v0 v0' v :
+with refine_val'_val_eqv'_r v0 v0' v :
   refine_val' v0' v ->
-  subval' v0 v0' ->
+  val_eqv' v0 v0' ->
   refine_val' v0 v
-with refine_env_subenv_r Γ Γ' ρa ρa' ρc :
+with refine_env_env_eqv_r Γ Γ' ρa ρa' ρc :
   refine_env Γ ρa' ρc ->
-  subenv Γ' ρa ρa' ->
+  env_eqv Γ' ρa ρa' ->
   refine_env (Γ :&: Γ') ρa ρc.
 Proof.
-  - (* refine_val_subval *)
+  - (* refine_val_val_eqv *)
     intros Hr Hs. inv Hr. inv Hs. constructor.
-    eapply refine_val'_subval'_r; eauto.
+    eapply refine_val'_val_eqv'_r; eauto.
 
-  - (* refine_val'_subval' *)
+  - (* refine_val'_val_eqv' *)
     intros Hr Hs.
     inv Hr.
     + (* Refine_fun *)
-      inversion Hs as [Γb fb xsb eb ρab1 ρab2 HFVb Hsubenv | |]; subst.
+      inversion Hs as [Γb fb xsb eb ρab1 ρab2 HFVb Henv_eqv | |]; subst.
       eapply Refine_fun with (Γ := Γ :&: Γb).
-      * (* FV inclusion: same reasoning as subval_trans *)
+      * (* FV inclusion: same reasoning as val_eqv_trans *)
         unfold Ensembles.Included, Ensembles.In in *.
         intros z Hz.
         assert (Hz0 := H _ Hz).
@@ -1379,28 +1379,28 @@ Proof.
         rename H1 into Hzfa. rename H2 into Hzfb.
         right. inv Hzfa; [left; auto|]. inv Hzfb; [left; auto|].
         right. auto.
-      * eapply refine_env_subenv_r; eauto.
+      * eapply refine_env_env_eqv_r; eauto.
     + (* Refine_constr_nil *)
       inv Hs. constructor.
     + (* Refine_constr *)
       inv Hs. constructor.
-      * eapply refine_val_subval_r; eauto.
-      * eapply refine_val'_subval'_r; eauto.
+      * eapply refine_val_val_eqv_r; eauto.
+      * eapply refine_val'_val_eqv'_r; eauto.
 
-  - (* refine_env_subenv *)
+  - (* refine_env_env_eqv *)
     intros Hr Hs.
     constructor; intros y Hy.
     inversion Hy as [a Hy_Γ Hy_Γ' Ha]; subst.
     (* From refine_env Γ ρa ρc: ρa(y) = v_a, ρc(y) = v_c *)
     inv Hr.
     edestruct (H y Hy_Γ) as [va [vc [Hgva [Hgvc Hrf]]]].
-    (* From subenv Γ' ρa ρa': ρa(y) = v_a → ρa'(y) = v_a' with subval *)
+    (* From env_eqv Γ' ρa ρa': ρa(y) = v_a → ρa'(y) = v_a' with val_eqv *)
     inv Hs.
     (* !!! stuck here *)
     (*
-    edestruct (H0 y Hy_Γ' va Hgva) as [va' [Hgva' Hsubval]].
+    edestruct (H0 y Hy_Γ' va Hgva) as [va' [Hgva' Hval_eqv]].
     exists va', vc. repeat split; auto.
-    eapply refine_val_subval; eauto. *)
+    eapply refine_val_val_eqv; eauto. *)
 Admitted.
 
 (* Correlation lemmas: bstep and cbstep that both terminate on the same expression agree on fuel and value. *)
@@ -1838,7 +1838,7 @@ Proof. intros. hauto. Qed.
 
 (* Environment Relation *)
 Definition G i Γ1 ρ1 ρ2 :=
-  wf_env ρ1 /\
+  wf_env Γ1 ρ1 /\
   wf_cenv ρ2 /\
     refine_env Γ1 ρ1 ρ2 /\
     forall x,
@@ -1857,7 +1857,7 @@ Proof. unfold G. fcrush. Qed.
 
 Lemma G_wf_env_l {i Γ1 ρ1 ρ2}:
   G i Γ1 ρ1 ρ2 ->
-  wf_env ρ1.
+  wf_env Γ1 ρ1.
 Proof. unfold G. fcrush. Qed.
 
 Lemma G_wf_cenv_r {i Γ1 ρ1 ρ2}:
@@ -2180,7 +2180,7 @@ Proof.
   - exists 0, COOT; split; simpl; eauto.
   - destruct r1.
     fcrush.
-    assert (Hwfρ1 : wf_env ρ1) by eauto using G_wf_env_l.
+    assert (Hwfρ1 : wf_env Γ ρ1) by eauto using G_wf_env_l.
     assert (Hwfρ2 : wf_cenv ρ2) by eauto using G_wf_cenv_r.
     assert (Hrefρ : refine_env Γ ρ1 ρ2) by eauto using G_refine_env.
     edestruct (H (S c) (Res w0)) as [cv [Hcbstep Href]]; eauto.
@@ -2571,16 +2571,16 @@ Proof.
 Qed.
 
 (* Semantic Weakening for the Top-level Checking Semantics.
-   Mirrors [cbstep_subenv]: closures may differ in captured envs as long as
+   Mirrors [cbstep_env_eqv]: closures may differ in captured envs as long as
    they agree on the body's free vars. The proof is a mutual induction on
-   cbstep_top / cbstep_top_fuel; the CEexp case delegates to [cbstep_subenv]. *)
+   cbstep_top / cbstep_top_fuel; the CEexp case delegates to [cbstep_env_eqv]. *)
 Lemma cbstep_top_subenv {Γ ρ1 ρ2 e c r1}:
   wf_cenv ρ2 ->
   (occurs_free_top e) \subset Γ ->
   csubenv Γ ρ1 ρ2 ->
   cbstep_top ρ1 e c r1 ->
   (exists r2, cbstep_top ρ2 e c r2 /\ csubres r1 r2 /\ wf_cres r2)
-with cbstep_top_fuel_subenv {Γ ρ1 ρ2 e c r1}:
+with cbstep_top_fuel_env_eqv {Γ ρ1 ρ2 e c r1}:
   wf_cenv ρ2 ->
   (occurs_free_top e) \subset Γ ->
   csubenv Γ ρ1 ρ2 ->
@@ -2602,7 +2602,7 @@ Proof.
       assert (HFVe : occurs_free_top e0 \subset Γ).
       { unfold Ensembles.Included, Ensembles.In in *. intros z Hz.
         apply HFV. econstructor; eauto. }
-      edestruct (cbstep_top_fuel_subenv _ _ _ _ _ _ Hρ2 HFVe Hsub H)
+      edestruct (cbstep_top_fuel_env_eqv _ _ _ _ _ _ Hρ2 HFVe Hsub H)
         as [re1 [Hre1 [Hsre1 Hwfre1]]].
       inv Hsre1.
       assert (HFVk : occurs_free_top k \subset (x |: Γ)).
@@ -2614,7 +2614,7 @@ Proof.
         by (eapply wf_cenv_set; eauto; inv Hwfre1; auto).
       assert (Hsubx : csubenv (x |: Γ) (M.set x v ρ1) (M.set x v2 ρ2))
         by (eapply csubenv_set; eauto).
-      edestruct (cbstep_top_fuel_subenv _ _ _ _ _ _ Hwfρ2x HFVk Hsubx H0)
+      edestruct (cbstep_top_fuel_env_eqv _ _ _ _ _ _ Hwfρ2x HFVk Hsubx H0)
         as [re2 [Hre2 [Hsre2 Hwfre2]]].
       exists re2; repeat split; auto.
       econstructor; eauto.
@@ -2622,12 +2622,12 @@ Proof.
       assert (HFVe : occurs_free_top e0 \subset Γ).
       { unfold Ensembles.Included, Ensembles.In in *. intros z Hz.
         apply HFV. econstructor; eauto. }
-      edestruct (cbstep_top_fuel_subenv _ _ _ _ _ _ Hρ2 HFVe Hsub H)
+      edestruct (cbstep_top_fuel_env_eqv _ _ _ _ _ _ Hρ2 HFVe Hsub H)
         as [re1 [Hre1 [Hsre1 Hwfre1]]].
       inv Hsre1.
       exists COOT; repeat split; auto.
 
-  - (* cbstep_top_fuel_subenv *)
+  - (* cbstep_top_fuel_env_eqv *)
     intros Hρ2 HFV Hsub Hcb.
     inv Hcb.
     + exists COOT; repeat split; auto.
@@ -2645,7 +2645,7 @@ Lemma cbstep_top_fuel_drop_unused {f val ρ e c r}:
   exists r', cbstep_top_fuel ρ e c r' /\ csubres r r' /\ wf_cres r'.
 Proof.
   intros Hf Hwf Hcb.
-  eapply @cbstep_top_fuel_subenv with (Γ := occurs_free_top e); eauto.
+  eapply @cbstep_top_fuel_env_eqv with (Γ := occurs_free_top e); eauto.
   - apply Included_refl.
   - constructor; intros z Hz w Hgw.
     destruct (M.elt_eq z f) as [<-|Hne]; [contradiction|].
@@ -2946,7 +2946,7 @@ Lemma R_top_res_inv_l_V v1 r2 :
 Proof. intros. hauto. Qed.
 
 Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
-  wf_env ρ1 /\
+  wf_env Γ1 ρ1 /\
   wf_cenv ρ2 /\
     refine_env Γ1 ρ1 ρ2 /\
     Γ2 \subset Γ1 /\
@@ -2960,7 +2960,7 @@ Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
 
 Lemma G_top_wf_env_l i Γ1 ρ1 Γ2 ρ2 :
   G_top i Γ1 ρ1 Γ2 ρ2 ->
-  wf_env ρ1.
+  wf_env Γ1 ρ1.
 Proof. unfold G_top. intros; tauto. Qed.
 
 Lemma G_top_wf_cenv_r i Γ1 ρ1 Γ2 ρ2 :
@@ -2987,6 +2987,8 @@ Proof.
   unfold G_top.
   intros.
   destruct H as [Hwf1 [Hwf2 [Href [Hs HG]]]].
+  split.
+  eapply wf_env_subset; eauto.
   repeat (split; auto); intros.
   edestruct HG as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; eauto; invc.
   fcrush.
@@ -3202,17 +3204,17 @@ Proof.
   apply V_top_mono with i; eauto.
 Qed.
 
-(* V_top and subval *)
-Lemma V_top_subval_Forall :
+(* V_top and val_eqv *)
+Lemma V_top_val_eqv_Forall :
   forall i,
     (forall m : nat,
         m < S i ->
         forall v1 v2 v3,
-          subval v1 v2 ->
+          val_eqv v1 v2 ->
           V_top m v1 v3 <-> V_top m v2 v3) ->
     forall j vs1 vs2 vs3,
       j <= i ->
-      Forall2 subval vs1 vs2 ->
+      Forall2 val_eqv vs1 vs2 ->
       Forall2 (V_top j) vs1 vs3 <-> Forall2 (V_top j) vs2 vs3.
 Proof.
   intros.
@@ -3226,9 +3228,9 @@ Proof.
     eapply IHForall2; eauto.
 Qed.
 
-Lemma V_top_subval :
+Lemma V_top_val_eqv :
   forall i v1 v2 v3,
-    subval v1 v2 ->
+    val_eqv v1 v2 ->
     V_top i v1 v3 <-> V_top i v2 v3.
 Proof.
   intro i.
@@ -3240,7 +3242,7 @@ Definition web_map_sound_top e e' :=
   forall i ρ1 ρ2 r1,
     bstep_fuel ρ1 e i r1 ->
     refine_env (occurs_free e) ρ1 ρ2 ->
-    wf_env ρ1 ->
+    wf_env (occurs_free e) ρ1 ->
     wf_cenv ρ2 ->
     exists r2,
       cbstep_top_fuel ρ2 e' i r2 /\
@@ -3249,7 +3251,7 @@ Definition web_map_sound_top e e' :=
 Lemma web_map_sound_top_web_map_sound W e :
   web_map_sound_top e (CEexp W e) ->
   forall ρ1 ρ2,
-    wf_env ρ1 ->
+    wf_env (occurs_free e) ρ1 ->
     wf_cenv ρ2 ->
     web_map_sound W (occurs_free e) true ρ1 ρ2 e.
 Proof.
@@ -3262,7 +3264,7 @@ Qed.
 
 Lemma web_map_sound_web_map_sound_top W e :
   (forall ρ1 ρ2,
-      wf_env ρ1 ->
+      wf_env (occurs_free e) ρ1 ->
       wf_cenv ρ2 ->
       web_map_sound W (occurs_free e) true ρ1 ρ2 e) ->
   web_map_sound_top e (CEexp W e).
@@ -3398,13 +3400,13 @@ Proof.
 
     edestruct (bstep_fuel_drop_unused Hf2 Hwf2 Hcont) as [r2' [Hbstep_e2 Hsub2']]; eauto.
 
-    assert (Hsub3 : subenv (x |: occurs_free e2) (M.set x v ρ1) (M.set x v2 ρ1)).
+    assert (Hsub3 : env_eqv (x |: occurs_free e2) (M.set x v ρ1) (M.set x v2 ρ1)).
     {
-      eapply subenv_set; eauto.
-      eapply subenv_refl; eauto.
+      eapply env_eqv_set; eauto.
+      eapply env_eqv_refl; eauto.
     }
 
-    edestruct @bstep_fuel_subenv with (Γ := (x |: occurs_free e2)) as [r2'' [Hbstep_e2' Hsub2'']]; eauto.
+    edestruct @bstep_fuel_env_eqv with (Γ := (x |: occurs_free e2)) as [r2'' [Hbstep_e2' Hsub2'']]; eauto.
     fcrush.
 
     edestruct (H2 c' (M.set x v2 ρ1) (M.set x v' ρ2)) as [r2''' [Hcbstep_e2' Href'']]; eauto.
@@ -3436,9 +3438,9 @@ Proof.
     econstructor; eauto.
     inv Hcbstep_e2'; auto.
 
-    assert (Hsubres : subres r1 r2'') by eauto using subres_trans.
+    assert (Hres_eqv : res_eqv r1 r2'') by eauto using res_eqv_trans.
 
-  (* eapply refine_res_subres_r; eauto. *)
+  (* eapply refine_res_res_eqv_r; eauto. *)
 (*
   - (* BStep_letapp_OOT *)
     eexists; split; eauto.
@@ -3521,13 +3523,13 @@ Proof.
 
     edestruct (bstep_fuel_drop_unused Hf2 Hwf2 H12) as [r2' [Hbstep_e2 Hsub']]; eauto.
 
-    assert (Hsub3 : subenv (x |: occurs_free e2) (M.set x v ρ1) (M.set x v2 ρ1)).
+    assert (Hsub3 : env_eqv (x |: occurs_free e2) (M.set x v ρ1) (M.set x v2 ρ1)).
     {
-      eapply subenv_set; eauto.
-      eapply subenv_refl; eauto.
+      eapply env_eqv_set; eauto.
+      eapply env_eqv_refl; eauto.
     }
 
-    edestruct @bstep_fuel_subenv with (Γ := (x |: occurs_free e2)) as [r2'' [Hbstep_e2' Hsub2'']]; eauto.
+    edestruct @bstep_fuel_env_eqv with (Γ := (x |: occurs_free e2)) as [r2'' [Hbstep_e2' Hsub2'']]; eauto.
     fcrush.
 
     edestruct (HE2 (i - c) (M.set x v2 ρ1) (M.set x v2' ρ2)) with (j1 := c') as [j2'' [r2''' [Hcbstep_e2' Href'']]]; eauto; try lia.
@@ -3549,9 +3551,9 @@ Proof.
     econstructor; eauto.
     eapply cbstep_top_fuel_exposed_inv; eauto.
 
-    assert (Hsubres : subres r1 r2'') by eauto using subres_trans.
+    assert (Hres_eqv : res_eqv r1 r2'') by eauto using res_eqv_trans.
 
-    (* need a lemma for V_top and subval *)
+    (* need a lemma for V_top and val_eqv *)
     (* eapply R_top_mono; eauto. *)
 
     admit.

@@ -931,8 +931,6 @@ Lemma wf_env_get_total {Γ ρ} :
 Proof.
   intros H x Hx. inv H.
   edestruct H1 as [v Hg]; eauto.
-  exists v; split; auto.
-  eapply H0; eauto.
 Qed.
 
 Lemma wf_env_subset {Γ1 Γ2 ρ} :
@@ -991,14 +989,18 @@ Proof.
   induction vs; simpl; intros xs ρ' Hwfvs Hset.
   - destruct xs; try discriminate.
     inv Hset.
-    rewrite FromList_nil, Union_Empty_set_neut_l. auto.
+    eapply wf_env_subset; eauto.
+    rewrite FromList_nil, Union_Empty_set_neut_l.
+    fcrush.
   - destruct xs; try discriminate.
     simpl in Hset.
     destruct (set_lists xs vs ρ) eqn:Heq1; try discriminate.
     inv Hset.
     inv Hwfvs.
-    rewrite FromList_cons, <- Union_assoc.
+    eapply wf_env_subset; eauto.
     eapply wf_env_set; eauto.
+    rewrite FromList_cons, <- Union_assoc.
+    fcrush.
 Qed.
 
 Lemma wf_val_Vconstr c w vs :
@@ -1064,12 +1066,11 @@ Proof.
     inversion HwfFun as [w0 v0 Hwfv0]; subst; clear HwfFun.
     inversion Hwfv0 as [f0 ρ0 xs0 e0 Γclo Hwfρclo HFVe | | ]; subst; clear Hwfv0.
     assert (Hwfvs : Forall wf_val vs).
-    { eapply wf_env_get_list; eauto. }
+    { eapply (wf_env_get_list Hw); eauto. }
     eapply IHHb with (Γ := FromList xs' :|: (f' |: Γclo)).
     + eapply wf_env_set_lists; eauto.
       eapply wf_env_set; eauto.
-      apply WF_TAG. eapply WF_Vfun; eauto.
-    + apply Included_refl.
+    + auto.
 
   - (* BStep_letapp_Res *)
     assert (HwfFun : wf_val (Tag w' (Vfun f' ρ' xs' e))).
@@ -1077,14 +1078,13 @@ Proof.
     inversion HwfFun as [w0 v0 Hwfv0]; subst; clear HwfFun.
     inversion Hwfv0 as [f0 ρ0 xs0 e0 Γclo Hwfρclo HFVe | | ]; subst; clear Hwfv0.
     assert (Hwfvs : Forall wf_val vs).
-    { eapply wf_env_get_list; eauto. }
+    { eapply (wf_env_get_list Hw); eauto. }
     assert (Hwfρ'' : wf_env (FromList xs' :|: (f' |: Γclo)) ρ'').
     { eapply wf_env_set_lists; eauto.
-      eapply wf_env_set; eauto.
-      apply WF_TAG. eapply WF_Vfun; eauto. }
+      eapply wf_env_set; eauto. }
+
     assert (Hwfres : wf_res (Res v)).
-    { eapply IHHb with (Γ := FromList xs' :|: (f' |: Γclo)); auto.
-      apply Included_refl. }
+    { eapply IHHb with (Γ := FromList xs' :|: (f' |: Γclo)); auto. }
     inv Hwfres.
     eapply IHHb0 with (Γ := x |: Γ).
     + eapply wf_env_set; eauto.
@@ -1242,7 +1242,7 @@ Proof.
   - inv H0; inv H1.
     constructor; intros.
     eapply env_eqv_get; eauto.
-    inv H0; auto. inv H2.
+    inv H0; auto. inv H1.
   - destruct (set_lists xs vs1 ρ1) eqn:Heq1;
       destruct (set_lists xs vs2 ρ2) eqn:Heq2;
       try discriminate.
@@ -1319,18 +1319,12 @@ Proof.
   intros H.
   induction H using wf_val_mut with
     (P0 := fun v wf => val_eqv' v v)
-    (P1 := fun Γ ρ wf => env_eqv Γ ρ ρ).
-  - (* WF_TAG *) intros w v0 Hv' IHv'. constructor; auto.
+    (P1 := fun Γ ρ wf => env_eqv Γ ρ ρ); auto.
   - (* WF_Vfun *)
-    intros f ρ0 xs e Γ Hwfρ IHρ HFV.
     eapply (Eqv_fun Γ); eauto.
-  - (* WF_Vconstr_nil *) intros c. constructor.
-  - (* WF_Vconstr *)
-    intros c v0 vs Hv IHv Hvs IHvs. econstructor; eauto.
   - (* WF_env *)
-    intros Γ ρ0 Hwf IHwf Htot.
     constructor; intros y Hy.
-    edestruct Htot as [v0 Hg]; eauto.
+    edestruct e as [v0 Hg]; eauto.
     exists v0, v0. repeat split; eauto.
 Qed.
 
@@ -1455,7 +1449,6 @@ Proof.
     constructor; intros y Hy.
     edestruct Hget as [v1' [v2' [Hg1 [Hg2 Hv]]]]; eauto.
     exists v2', v1'; repeat split; auto.
-    apply val_eqv_sym; assumption.
 Qed.
 
 Lemma res_eqv_sym r1 r2 :
@@ -1530,7 +1523,7 @@ Proof.
 
   - (* BStep_letapp_Res *)
     edestruct (env_eqv_get Hρ f) as [vf1 [vf2 [Hgf1 [Hgf2 Hvf]]]].
-    { apply HF. constructor. }
+    { apply HF. fcrush. }
     rewrite H in Hgf1; inv Hgf1.
     inversion Hvf as [v1a v2a w0 Hvf']; subst; clear Hvf.
     inversion Hvf' as [Γclo fclo xsclo eclo ρclo1 ρclo2 HFVe Hρcloeq | | ]; subst; clear Hvf'.
@@ -1556,7 +1549,7 @@ Proof.
 
   - (* BStep_letapp_OOT *)
     edestruct (env_eqv_get Hρ f) as [vf1 [vf2 [Hgf1 [Hgf2 Hvf]]]].
-    { apply HF. constructor. }
+    { apply HF. fcrush.  }
     rewrite H in Hgf1; inv Hgf1.
     inversion Hvf as [v1a v2a w0 Hvf']; subst; clear Hvf.
     inversion Hvf' as [Γclo fclo xsclo eclo ρclo1 ρclo2 HFVe Hρcloeq | | ]; subst; clear Hvf'.
@@ -1660,7 +1653,7 @@ Proof.
   edestruct (bstep_env_eqv_l HF Hρ Hb) as [r1 [Hr1 Hs]].
   exists r1; split; auto.
   apply res_eqv_sym; assumption.
-Qed. 
+Qed.
 
 Lemma bstep_fuel_env_eqv_r {Γ ρ1 ρ2 e c r2}:
   (occurs_free e) \subset Γ ->
