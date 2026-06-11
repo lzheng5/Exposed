@@ -867,6 +867,10 @@ Scheme unique_label_mut := Induction for unique_label Sort Prop
 with unique_label_case_mut := Induction for unique_label_case Sort Prop.
 
 (* Well-formed Value and Environment *)
+(* [wf_env Γ ρ] is scoped on Γ: ρ is total on Γ, and every value stored in ρ
+   is well-formed. [WF_Vfun] additionally requires the closure's body's free
+   variables to be covered by the closure's argument list, the recursive name,
+   and the captured-environment scope Γ. *)
 Inductive wf_val : wval -> Prop :=
 | WF_TAG :
   forall w v,
@@ -875,8 +879,9 @@ Inductive wf_val : wval -> Prop :=
 
 with wf_val' : val -> Prop :=
 | WF_Vfun :
-  forall f ρ xs e,
-    wf_env ρ ->
+  forall f ρ xs e Γ,
+    wf_env Γ ρ ->
+    occurs_free e \subset FromList xs :|: (f |: Γ) ->
     wf_val' (Vfun f ρ xs e)
 
 | WF_Vconstr_nil :
@@ -889,11 +894,12 @@ with wf_val' : val -> Prop :=
     wf_val' (Vconstr c vs) ->
     wf_val' (Vconstr c (v :: vs))
 
-with wf_env : env -> Prop :=
+with wf_env : vars -> env -> Prop :=
 | WF_env :
-  forall ρ,
+  forall Γ ρ,
     (forall x v, ρ ! x = Some v -> wf_val v) ->
-    wf_env ρ.
+    (forall x, x \in Γ -> exists v, ρ ! x = Some v) ->
+    wf_env Γ ρ.
 
 Hint Constructors wf_val : core.
 Hint Constructors wf_val' : core.
@@ -910,15 +916,36 @@ Inductive wf_res : res -> Prop :=
 
 Hint Constructors wf_res : core.
 
-Lemma wf_env_get ρ :
-  wf_env ρ ->
+Lemma wf_env_get {Γ ρ} :
+  wf_env Γ ρ ->
   forall x v,
     ρ ! x = Some v ->
     wf_val v.
 Proof. intros H; inv H; eauto. Qed.
 
-Lemma wf_env_get_list ρ :
-  wf_env ρ ->
+Lemma wf_env_get_total {Γ ρ} :
+  wf_env Γ ρ ->
+  forall x,
+    x \in Γ ->
+    exists v, ρ ! x = Some v /\ wf_val v.
+Proof.
+  intros H x Hx. inv H.
+  edestruct H1 as [v Hg]; eauto.
+  exists v; split; auto.
+  eapply H0; eauto.
+Qed.
+
+Lemma wf_env_subset {Γ1 Γ2 ρ} :
+  wf_env Γ1 ρ ->
+  Γ2 \subset Γ1 ->
+  wf_env Γ2 ρ.
+Proof.
+  intros Hw Hsub.
+  inv Hw. constructor; intros; eauto.
+Qed.
+
+Lemma wf_env_get_list {Γ ρ} :
+  wf_env Γ ρ ->
   forall xs vs,
     get_list xs ρ = Some vs ->
     Forall wf_val vs.
@@ -933,43 +960,45 @@ Proof.
     eapply wf_env_get; eauto.
 Qed.
 
-Lemma wf_env_set ρ x v :
-  wf_env ρ ->
+Lemma wf_env_set {Γ ρ} x v :
+  wf_env Γ ρ ->
   wf_val v ->
-  wf_env (M.set x v ρ).
+  wf_env (x |: Γ) (M.set x v ρ).
 Proof.
-  intros.
-  inv H.
+  intros Henv Hv.
+  inv Henv.
   constructor; intros.
-  destruct (M.elt_eq x x0); subst.
-  - rewrite M.gss in *; inv H; auto.
-  - rewrite M.gso in *; eauto.
+  - destruct (M.elt_eq x x0) as [<-|Hne].
+    + rewrite M.gss in H1; inv H1; auto.
+    + rewrite M.gso in H1 by auto; eauto.
+  - destruct (M.elt_eq x x0) as [<-|Hne].
+    + eexists. rewrite M.gss; reflexivity.
+    + inv H1.
+      * inv H2; contradiction.
+      * edestruct H0 as [w Hgw]; eauto.
+        eexists. rewrite M.gso by auto. eassumption.
 Qed.
 
 Lemma wf_env_set_lists :
-  forall ρ,
-    wf_env ρ ->
+  forall {Γ ρ},
+    wf_env Γ ρ ->
     forall vs xs ρ',
       Forall wf_val vs ->
       set_lists xs vs ρ = Some ρ' ->
-      wf_env ρ'.
+      wf_env (FromList xs :|: Γ) ρ'.
 Proof.
-  intros ρ Henv vs.
-  induction vs; simpl; intros.
-  - specialize (set_lists_length_eq _ _ _ _ H0); intros.
-    rewrite length_zero_iff_nil in H1; inv H1.
-    inv H0; auto.
-  - destruct xs; inv H0.
+  intros Γ ρ Henv vs.
+  induction vs; simpl; intros xs ρ' Hwfvs Hset.
+  - destruct xs; try discriminate.
+    inv Hset.
+    rewrite FromList_nil, Union_Empty_set_neut_l. auto.
+  - destruct xs; try discriminate.
+    simpl in Hset.
     destruct (set_lists xs vs ρ) eqn:Heq1; try discriminate.
-    inv H2. inv H.
-    rename e into x0.
-    constructor; intros.
-    destruct (M.elt_eq x0 x); subst.
-    + rewrite M.gss in *; inv H; auto.
-    + rewrite M.gso in *; auto.
-      rename t into ρ'.
-      assert (wf_env ρ') by (eapply IHvs; eauto).
-      eapply wf_env_get; eauto.
+    inv Hset.
+    inv Hwfvs.
+    rewrite FromList_cons, <- Union_assoc.
+    eapply wf_env_set; eauto.
 Qed.
 
 Lemma wf_val_Vconstr c w vs :
@@ -993,7 +1022,7 @@ Proof.
              forall (c : ctor_tag) (vs : list wval),
                v = Vconstr c vs ->
                Forall wf_val vs)
-    (P1 := fun ρ wf => True);
+    (P1 := fun Γ ρ wf => True);
     intros; eauto.
   - inv Heqv; eauto.
   - inv H.
@@ -1001,212 +1030,239 @@ Proof.
   - inv H0; constructor; eauto.
 Qed.
 
-Lemma bstep_wf_res ρ e c r :
-  wf_env ρ ->
+Lemma bstep_wf_res {Γ ρ e c r} :
+  wf_env Γ ρ ->
+  occurs_free e \subset Γ ->
   bstep ρ e c r ->
   wf_res r.
 Proof.
-  intros Hw H.
-  induction H using bstep_ind' with
-    (P0 := fun ρ e c r => wf_env ρ -> wf_res r);
-    intros; auto.
+  intros Hw HF Hb.
+  generalize dependent Γ.
+  induction Hb using bstep_ind' with
+    (P0 := fun ρ e c r =>
+             forall Γ,
+               wf_env Γ ρ ->
+               occurs_free e \subset Γ ->
+               wf_res r);
+    intros.
 
   - (* BStep_ret *)
     constructor.
     eapply wf_env_get; eauto.
 
   - (* BStep_fun *)
-    apply IHbstep.
-    eapply wf_env_set; eauto.
+    eapply IHHb with (Γ := f |: Γ).
+    + eapply wf_env_set; eauto.
+      apply WF_TAG.
+      eapply WF_Vfun with (Γ := Γ); eauto.
+      eapply free_fun_e_inv; eauto.
+    + eapply free_fun_k_inv; eauto.
 
   - (* BStep_app *)
-    assert (Hwfclo : wf_val (Tag w' (Vfun f' ρ' xs' e))).
+    assert (HwfFun : wf_val (Tag w' (Vfun f' ρ' xs' e))).
     { eapply wf_env_get; eauto. }
-    assert (Hwfρ' : wf_env ρ').
-    { inv Hwfclo.
-      match goal with [Hv : wf_val' _ |- _] => inv Hv end; auto. }
+    inversion HwfFun as [w0 v0 Hwfv0]; subst; clear HwfFun.
+    inversion Hwfv0 as [f0 ρ0 xs0 e0 Γclo Hwfρclo HFVe | | ]; subst; clear Hwfv0.
     assert (Hwfvs : Forall wf_val vs).
-    { eapply wf_env_get_list. apply Hw. eassumption. }
-    assert (Hwfρf : wf_env (M.set f' (Tag w' (Vfun f' ρ' xs' e)) ρ')).
-    { eapply wf_env_set; eauto. }
-    apply IHbstep.
-    eapply wf_env_set_lists with (ρ := M.set f' (Tag w' (Vfun f' ρ' xs' e)) ρ'); eauto.
+    { eapply wf_env_get_list; eauto. }
+    eapply IHHb with (Γ := FromList xs' :|: (f' |: Γclo)).
+    + eapply wf_env_set_lists; eauto.
+      eapply wf_env_set; eauto.
+      apply WF_TAG. eapply WF_Vfun; eauto.
+    + apply Included_refl.
 
   - (* BStep_letapp_Res *)
-    assert (Hwfclo : wf_val (Tag w' (Vfun f' ρ' xs' e))).
+    assert (HwfFun : wf_val (Tag w' (Vfun f' ρ' xs' e))).
     { eapply wf_env_get; eauto. }
-    assert (Hwfρ' : wf_env ρ').
-    { inv Hwfclo.
-      match goal with [Hv : wf_val' _ |- _] => inv Hv end; auto. }
+    inversion HwfFun as [w0 v0 Hwfv0]; subst; clear HwfFun.
+    inversion Hwfv0 as [f0 ρ0 xs0 e0 Γclo Hwfρclo HFVe | | ]; subst; clear Hwfv0.
     assert (Hwfvs : Forall wf_val vs).
-    { eapply wf_env_get_list. apply Hw. eassumption. }
-    assert (Hwfρf : wf_env (M.set f' (Tag w' (Vfun f' ρ' xs' e)) ρ')).
-    { eapply wf_env_set; eauto. }
-    assert (Hwfρ'' : wf_env ρ'').
-    { eapply wf_env_set_lists
-        with (ρ := M.set f' (Tag w' (Vfun f' ρ' xs' e)) ρ'); eauto. }
-    assert (Hwfres : wf_res (Res v)) by (apply IHbstep; auto).
+    { eapply wf_env_get_list; eauto. }
+    assert (Hwfρ'' : wf_env (FromList xs' :|: (f' |: Γclo)) ρ'').
+    { eapply wf_env_set_lists; eauto.
+      eapply wf_env_set; eauto.
+      apply WF_TAG. eapply WF_Vfun; eauto. }
+    assert (Hwfres : wf_res (Res v)).
+    { eapply IHHb with (Γ := FromList xs' :|: (f' |: Γclo)); auto.
+      apply Included_refl. }
     inv Hwfres.
-    apply IHbstep0.
-    eapply wf_env_set; eauto.
+    eapply IHHb0 with (Γ := x |: Γ).
+    + eapply wf_env_set; eauto.
+    + eapply free_letapp_k_inv; eauto.
+
+  - (* BStep_letapp_OOT *)
+    constructor.
 
   - (* BStep_constr *)
-    apply IHbstep.
-    eapply wf_env_set; eauto.
-    eapply wf_val_Vconstr; eauto.
-    eapply wf_env_get_list; eauto.
+    eapply IHHb with (Γ := x |: Γ).
+    + eapply wf_env_set; eauto.
+      eapply wf_val_Vconstr; eauto.
+      eapply wf_env_get_list; eauto.
+    + eapply free_constr_k_inv; eauto.
 
   - (* BStep_proj *)
-    apply IHbstep.
-    eapply wf_env_set; eauto.
-    assert (Hwfvc : wf_val (Tag w' (Vconstr t vs))) by (eapply wf_env_get; eauto).
-    apply wf_val_Vconstr_inv in Hwfvc.
-    eapply Forall_nth_error; eauto.
+    assert (Hwfvc : wf_val (Tag w' (Vconstr t vs))).
+    { eapply wf_env_get; eauto. }
+    eapply IHHb with (Γ := x |: Γ).
+    + eapply wf_env_set; eauto.
+      apply wf_val_Vconstr_inv in Hwfvc.
+      eapply Forall_nth_error; eauto.
+    + eapply free_proj_k_inv; eauto.
+
+  - (* BStep_case *)
+    eapply IHHb; eauto.
+    eapply free_case_e_inv; eauto.
+
+  - (* BStepF_OOT *)
+    constructor.
+
+  - (* BStepF_Step *)
+    eapply IHHb; eauto.
 Qed.
 
-Lemma bstep_fuel_wf_res ρ e c r :
-  wf_env ρ ->
+Lemma bstep_fuel_wf_res {Γ ρ e c r} :
+  wf_env Γ ρ ->
+  occurs_free e \subset Γ ->
   bstep_fuel ρ e c r ->
   wf_res r.
 Proof.
   intros.
-  inv H0; eauto using bstep_wf_res.
+  inv H1; eauto.
+  eapply bstep_wf_res; eauto.
 Qed.
 
-(* Sub Value and Environment for the Labeled Semantics *)
-(* Analogous to [subval]/[subenv] in [ANF.v], but for [ANF1.v]'s labeled
-   semantics: there is no exposed-web tracking, so the relations and weakening
-   lemma [bstep_subenv] are streamlined accordingly. Function closures may
-   capture different envs as long as the envs agree on the body's free vars. *)
-Inductive subval : wval -> wval -> Prop :=
-| Sub_wval :
+(* Value and Environment Equivalence for the Labeled Semantics *)
+(* The labeled semantics tracks no exposed-web information, so the value
+   relation reduces to a structural equivalence: tags must match, constructors
+   match componentwise, and closures may differ only in the captured
+   environment (modulo agreement on the body's free variables). [env_eqv Γ ρ1
+   ρ2] requires both environments to be defined on Γ and equivalent on it. *)
+Inductive val_eqv : wval -> wval -> Prop :=
+| Eqv_wval :
   forall v1 v2 w,
-    subval' v1 v2 ->
-    subval (Tag w v1) (Tag w v2)
+    val_eqv' v1 v2 ->
+    val_eqv (Tag w v1) (Tag w v2)
 
-with subval' : val -> val -> Prop :=
-| Sub_fun :
+with val_eqv' : val -> val -> Prop :=
+| Eqv_fun :
   forall Γ f xs e ρ1 ρ2,
     (occurs_free e) \subset (FromList xs :|: (f |: Γ)) ->
-    subenv Γ ρ1 ρ2 ->
-    subval' (Vfun f ρ1 xs e) (Vfun f ρ2 xs e)
+    env_eqv Γ ρ1 ρ2 ->
+    val_eqv' (Vfun f ρ1 xs e) (Vfun f ρ2 xs e)
 
-| Sub_constr_nil :
+| Eqv_constr_nil :
   forall c,
-    subval' (Vconstr c []) (Vconstr c [])
+    val_eqv' (Vconstr c []) (Vconstr c [])
 
-| Sub_constr_cons :
+| Eqv_constr_cons :
   forall c v1 v2 vs1 vs2,
-    subval v1 v2 ->
-    subval' (Vconstr c vs1) (Vconstr c vs2) ->
-    subval' (Vconstr c (v1 :: vs1)) (Vconstr c (v2 :: vs2))
+    val_eqv v1 v2 ->
+    val_eqv' (Vconstr c vs1) (Vconstr c vs2) ->
+    val_eqv' (Vconstr c (v1 :: vs1)) (Vconstr c (v2 :: vs2))
 
-with subenv : vars -> env -> env -> Prop :=
-| Sub_env :
+with env_eqv : vars -> env -> env -> Prop :=
+| Eqv_env :
   forall Γ ρ1 ρ2,
     (forall x,
         (x \in Γ) ->
-        forall v1,
-          M.get x ρ1 = Some v1 ->
-          exists v2,
-            M.get x ρ2 = Some v2 /\
-            subval v1 v2) ->
-    subenv Γ ρ1 ρ2.
+        exists v1 v2,
+          M.get x ρ1 = Some v1 /\
+          M.get x ρ2 = Some v2 /\
+          val_eqv v1 v2) ->
+    env_eqv Γ ρ1 ρ2.
 
-Hint Constructors subval' : core.
-Hint Constructors subval : core.
-Hint Constructors subenv : core.
+Hint Constructors val_eqv' : core.
+Hint Constructors val_eqv : core.
+Hint Constructors env_eqv : core.
 
-Scheme subval_mut := Induction for subval Sort Prop
-with subval'_mut := Induction for subval' Sort Prop
-with subenv_mut := Induction for subenv Sort Prop.
+Scheme val_eqv_mut := Induction for val_eqv Sort Prop
+with val_eqv'_mut := Induction for val_eqv' Sort Prop
+with env_eqv_mut := Induction for env_eqv Sort Prop.
 
-Inductive subres : res -> res -> Prop :=
-| Sub_OOT :
-  subres OOT OOT
+Inductive res_eqv : res -> res -> Prop :=
+| Eqv_OOT :
+  res_eqv OOT OOT
 
-| Sub_Res :
+| Eqv_Res :
   forall {v1 v2},
-    subval v1 v2 ->
-    subres (Res v1) (Res v2).
+    val_eqv v1 v2 ->
+    res_eqv (Res v1) (Res v2).
 
-Hint Constructors subres : core.
+Hint Constructors res_eqv : core.
 
-Lemma subenv_set {x v1 v2 Γ ρ1 ρ2}:
-  subval v1 v2 ->
-  subenv Γ ρ1 ρ2 ->
-  subenv (x |: Γ) (M.set x v1 ρ1) (M.set x v2 ρ2).
+Lemma env_eqv_set {x v1 v2 Γ ρ1 ρ2}:
+  val_eqv v1 v2 ->
+  env_eqv Γ ρ1 ρ2 ->
+  env_eqv (x |: Γ) (M.set x v1 ρ1) (M.set x v2 ρ2).
 Proof.
   intros Hv Hρ.
-  constructor; intros y Hy w1 Hgw.
+  constructor; intros y Hy.
   destruct (M.elt_eq x y) as [<-|Hne].
-  - rewrite M.gss in Hgw. inv Hgw.
-    exists v2. rewrite M.gss. split; auto.
-  - rewrite M.gso in Hgw by auto.
-    inv Hρ.
+  - exists v1, v2.
+    rewrite !M.gss. eauto.
+  - inv Hρ.
     assert (Hy' : y \in Γ).
     { inv Hy; auto. inv H0; contradiction. }
-    edestruct (H _ Hy' _ Hgw) as [w2 [Hgw2 Hwv]].
-    exists w2. rewrite M.gso by auto. auto.
+    edestruct (H _ Hy') as [w1 [w2 [Hgw1 [Hgw2 Hwv]]]].
+    exists w1, w2. rewrite !M.gso by auto. eauto.
 Qed.
 
-Lemma subenv_get {Γ ρ1 ρ2} :
-  subenv Γ ρ1 ρ2 ->
+Lemma env_eqv_get {Γ ρ1 ρ2} :
+  env_eqv Γ ρ1 ρ2 ->
   forall x,
     (x \in Γ) ->
-    forall {v1},
-      ρ1 ! x = Some v1 ->
-      exists v2,
-        ρ2 ! x = Some v2 /\
-        subval v1 v2.
+    exists v1 v2,
+      ρ1 ! x = Some v1 /\
+      ρ2 ! x = Some v2 /\
+      val_eqv v1 v2.
 Proof. intros; inv H; eauto. Qed.
 
-Lemma subenv_subset Γ1 {Γ2 ρ1 ρ2} :
-  subenv Γ1 ρ1 ρ2 ->
+Lemma env_eqv_subset Γ1 {Γ2 ρ1 ρ2} :
+  env_eqv Γ1 ρ1 ρ2 ->
   Γ2 \subset Γ1 ->
-  subenv Γ2 ρ1 ρ2.
+  env_eqv Γ2 ρ1 ρ2.
 Proof.
   unfold Ensembles.Included, Ensembles.In.
   intros.
   constructor; intros.
-  eapply subenv_get; eauto.
+  eapply env_eqv_get; eauto.
 Qed.
 
-Lemma subenv_set_lists Γ ρ1 ρ2:
-  subenv Γ ρ1 ρ2 ->
+Lemma env_eqv_set_lists Γ ρ1 ρ2:
+  env_eqv Γ ρ1 ρ2 ->
   forall {xs vs1 vs2 ρ3 ρ4},
-    Forall2 subval vs1 vs2 ->
+    Forall2 val_eqv vs1 vs2 ->
     set_lists xs vs1 ρ1 = Some ρ3 ->
     set_lists xs vs2 ρ2 = Some ρ4 ->
-    subenv (FromList xs :|: Γ) ρ3 ρ4.
+    env_eqv (FromList xs :|: Γ) ρ3 ρ4.
 Proof.
   intros Hs xs.
   induction xs; simpl; intros;
     destruct vs1; destruct vs2; try discriminate.
   - inv H0; inv H1.
     constructor; intros.
-    eapply subenv_get; eauto.
+    eapply env_eqv_get; eauto.
     inv H0; auto. inv H2.
   - destruct (set_lists xs vs1 ρ1) eqn:Heq1;
       destruct (set_lists xs vs2 ρ2) eqn:Heq2;
       try discriminate.
     inv H; inv H0; inv H1.
-    eapply (subenv_subset (a |: (FromList xs :|: Γ))).
-    eapply subenv_set; eauto.
+    eapply (env_eqv_subset (a |: (FromList xs :|: Γ))).
+    eapply env_eqv_set; eauto.
     rewrite FromList_cons; eauto.
     rewrite <- Union_assoc.
     eapply Included_refl.
 Qed.
 
-Lemma subenv_get_lists {Γ ρ1 ρ2}:
-  subenv Γ ρ1 ρ2 ->
+Lemma env_eqv_get_lists {Γ ρ1 ρ2}:
+  env_eqv Γ ρ1 ρ2 ->
   forall xs,
     (FromList xs \subset Γ) ->
     forall {vs1},
       get_list xs ρ1 = Some vs1 ->
       exists vs2,
         get_list xs ρ2 = Some vs2 /\
-        Forall2 subval vs1 vs2.
+        Forall2 val_eqv vs1 vs2.
 Proof.
   intros Hs xs.
   induction xs; simpl; intros.
@@ -1215,7 +1271,8 @@ Proof.
     destruct (get_list xs ρ1) eqn:Heq2; try discriminate.
     inv H0.
     rewrite FromList_cons in H.
-    edestruct (subenv_get Hs a) as [v2 [Heqv2 Hv2]]; eauto.
+    edestruct (env_eqv_get Hs a) as [v1' [v2 [Heqv1' [Heqv2 Hv2]]]]; eauto.
+    rewrite Heq1 in Heqv1'; inv Heqv1'.
     edestruct IHxs as [vs2 [Heqvs2 Hvs]]; eauto.
     apply Union_Included_r in H; auto.
     rewrite Heqv2.
@@ -1223,107 +1280,103 @@ Proof.
     eexists; split; eauto.
 Qed.
 
-Lemma subval_Vconstr c w vs1 vs2 :
-  Forall2 subval vs1 vs2 ->
-  subval (Tag w (Vconstr c vs1)) (Tag w (Vconstr c vs2)).
+Lemma val_eqv_Vconstr c w vs1 vs2 :
+  Forall2 val_eqv vs1 vs2 ->
+  val_eqv (Tag w (Vconstr c vs1)) (Tag w (Vconstr c vs2)).
 Proof.
   intros H.
   induction H; simpl; auto.
   inv IHForall2; auto.
 Qed.
 
-Lemma subval_Vconstr_inv_l {w c vs1 v2} :
-  subval (Tag w (Vconstr c vs1)) v2 ->
+Lemma val_eqv_Vconstr_inv_l {w c vs1 v2} :
+  val_eqv (Tag w (Vconstr c vs1)) v2 ->
   exists vs2,
     v2 = (Tag w (Vconstr c vs2)) /\
-    Forall2 subval vs1 vs2.
+    Forall2 val_eqv vs1 vs2.
 Proof.
   intros.
   remember (Tag w (Vconstr c vs1)) as v1.
   generalize dependent vs1.
-  induction H using subval_mut with
+  induction H using val_eqv_mut with
     (P0 := fun v1' v2' sub =>
              match v1', v2' with
              | Vfun _ _ _ _, Vfun _ _ _ _ => True
-             | Vconstr _ vs1, Vconstr _ vs2 => Forall2 subval vs1 vs2
+             | Vconstr _ vs1, Vconstr _ vs2 => Forall2 val_eqv vs1 vs2
              | _, _ => False
              end)
     (P1 := fun _ _ _ _ => True);
     intros; auto.
   inv Heqv1.
   destruct v2; try contradiction.
-  inv s; eauto.
+  match goal with [Hv' : val_eqv' _ _ |- _] => inv Hv'; eauto end.
 Qed.
 
-Lemma subval_refl v :
+Lemma val_eqv_refl v :
   wf_val v ->
-  subval v v.
+  val_eqv v v.
 Proof.
   intros H.
   induction H using wf_val_mut with
-    (P0 := fun v wf =>
-             match v with
-             | Vfun f ρ xs e => subenv (occurs_free e) ρ ρ
-             | Vconstr c vs => Forall2 subval vs vs
-             end)
-    (P1 := fun ρ wf => forall Γ, subenv Γ ρ ρ); intros.
-  - (* WF_TAG *)
-    destruct v.
-    + constructor; auto.
-      eapply (Sub_fun (occurs_free e)); eauto.
-      unfold Ensembles.Included, Ensembles.In, FromList.
-      intros. repeat apply Union_intror; auto.
-    + eapply subval_Vconstr; eauto.
-  - (* WF_Vfun *) auto.
-  - (* WF_Vconstr_nil *) constructor.
-  - (* WF_Vconstr *) constructor; auto.
+    (P0 := fun v wf => val_eqv' v v)
+    (P1 := fun Γ ρ wf => env_eqv Γ ρ ρ).
+  - (* WF_TAG *) intros w v0 Hv' IHv'. constructor; auto.
+  - (* WF_Vfun *)
+    intros f ρ0 xs e Γ Hwfρ IHρ HFV.
+    eapply (Eqv_fun Γ); eauto.
+  - (* WF_Vconstr_nil *) intros c. constructor.
+  - (* WF_Vconstr *)
+    intros c v0 vs Hv IHv Hvs IHvs. econstructor; eauto.
   - (* WF_env *)
-    constructor; intros y Hy v Hgv.
-    exists v; split; eauto.
+    intros Γ ρ0 Hwf IHwf Htot.
+    constructor; intros y Hy.
+    edestruct Htot as [v0 Hg]; eauto.
+    exists v0, v0. repeat split; eauto.
 Qed.
 
-Lemma subval_refl_Forall vs :
+Lemma val_eqv_refl_Forall vs :
   Forall wf_val vs ->
-  Forall2 subval vs vs.
+  Forall2 val_eqv vs vs.
 Proof.
   intros H.
   induction H; constructor; auto.
-  apply subval_refl; auto.
+  apply val_eqv_refl; auto.
 Qed.
 
-Lemma subenv_refl Γ ρ :
-  wf_env ρ ->
-  subenv Γ ρ ρ.
+Lemma env_eqv_refl Γ ρ :
+  wf_env Γ ρ ->
+  env_eqv Γ ρ ρ.
 Proof.
   intros Hwf.
-  constructor; intros y Hy v Hgv.
-  exists v; split; auto.
-  apply subval_refl. eapply wf_env_get; eauto.
+  constructor; intros y Hy.
+  inv Hwf. edestruct H0 as [v Hg]; eauto.
+  exists v, v. repeat split; auto.
+  apply val_eqv_refl. eapply H; eauto.
 Qed.
 
-Lemma subval_trans v1 v2 v3 :
-  subval v1 v2 ->
-  subval v2 v3 ->
-  subval v1 v3
-with subval'_trans v1 v2 v3 :
-  subval' v1 v2 ->
-  subval' v2 v3 ->
-  subval' v1 v3
-with subenv_trans Γ1 Γ2 ρ1 ρ2 ρ3 :
-  subenv Γ1 ρ1 ρ2 ->
-  subenv Γ2 ρ2 ρ3 ->
-  subenv (Γ1 :&: Γ2) ρ1 ρ3.
+Lemma val_eqv_trans v1 v2 v3 :
+  val_eqv v1 v2 ->
+  val_eqv v2 v3 ->
+  val_eqv v1 v3
+with val_eqv'_trans v1 v2 v3 :
+  val_eqv' v1 v2 ->
+  val_eqv' v2 v3 ->
+  val_eqv' v1 v3
+with env_eqv_trans Γ1 Γ2 ρ1 ρ2 ρ3 :
+  env_eqv Γ1 ρ1 ρ2 ->
+  env_eqv Γ2 ρ2 ρ3 ->
+  env_eqv (Γ1 :&: Γ2) ρ1 ρ3.
 Proof.
-  - (* subval_trans *)
+  - (* val_eqv_trans *)
     intros H1 H2.
-    inv H1. inv H2. constructor. eapply subval'_trans; eauto.
+    inv H1. inv H2. constructor. eapply val_eqv'_trans; eauto.
 
-  - (* subval'_trans *)
+  - (* val_eqv'_trans *)
     intros H1 H2.
     inv H1.
-    + (* Sub_fun *)
+    + (* Eqv_fun *)
       inversion H2 as [Γb fb xsb eb ρb1 ρb2 HFVb Hsubb | |]; subst.
-      eapply Sub_fun with (Γ := Γ :&: Γb).
+      eapply Eqv_fun with (Γ := Γ :&: Γb).
       * (* FV inclusion *)
         unfold Ensembles.Included, Ensembles.In in *.
         intros z Hz.
@@ -1336,63 +1389,112 @@ Proof.
         inv Hzfa; [left; auto|].
         inv Hzfb; [left; auto|].
         right. constructor; auto.
-      * eapply subenv_trans; eauto.
-    + (* Sub_constr_nil *)
+      * eapply env_eqv_trans; eauto.
+    + (* Eqv_constr_nil *)
       inv H2. constructor.
-    + (* Sub_constr_cons *)
+    + (* Eqv_constr_cons *)
       inv H2. constructor.
-      * eapply subval_trans; eauto.
-      * eapply subval'_trans; eauto.
+      * eapply val_eqv_trans; eauto.
+      * eapply val_eqv'_trans; eauto.
 
-  - (* subenv_trans *)
+  - (* env_eqv_trans *)
     intros H1 H2.
-    constructor; intros y Hy v_y Hgy.
+    constructor; intros y Hy.
     inversion Hy as [a Hy_Γ Hy_Γ' Ha]; subst.
     inv H1.
-    edestruct (H y Hy_Γ v_y Hgy) as [v_mid [Hg_mid Hsub_mid]].
+    edestruct (H y Hy_Γ) as [v1 [v_mid [Hg1 [Hg_mid Hsub_mid]]]].
     inv H2.
-    edestruct (H0 y Hy_Γ' v_mid Hg_mid) as [v3 [Hg3 Hsub3]].
-    exists v3; split; auto.
-    eapply subval_trans; eauto.
+    edestruct (H0 y Hy_Γ') as [v_mid' [v3 [Hg_mid' [Hg3 Hsub3]]]].
+    rewrite Hg_mid in Hg_mid'; inv Hg_mid'.
+    exists v1, v3; repeat split; auto.
+    eapply val_eqv_trans; eauto.
 Qed.
 
-Lemma subres_trans r1 r2 r3 :
-  subres r1 r2 ->
-  subres r2 r3 ->
-  subres r1 r3.
+Lemma res_eqv_trans r1 r2 r3 :
+  res_eqv r1 r2 ->
+  res_eqv r2 r3 ->
+  res_eqv r1 r3.
 Proof.
   intros H1 H2.
   inv H1; inv H2; constructor.
-  eapply subval_trans; eauto.
+  eapply val_eqv_trans; eauto.
 Qed.
 
-(* Semantic Weakening Lemmas *)
-Lemma bstep_subenv {Γ ρ1 ρ2 e c r1}:
-  (occurs_free e) \subset Γ ->
-  subenv Γ ρ1 ρ2 ->
-  bstep ρ1 e c r1 ->
-  (exists r2, bstep ρ2 e c r2 /\ subres r1 r2).
+(* Symmetry of value/environment/result equivalence. *)
+Lemma val_eqv_sym v1 v2 :
+  val_eqv v1 v2 ->
+  val_eqv v2 v1
+with val_eqv'_sym v1 v2 :
+  val_eqv' v1 v2 ->
+  val_eqv' v2 v1
+with env_eqv_sym Γ ρ1 ρ2 :
+  env_eqv Γ ρ1 ρ2 ->
+  env_eqv Γ ρ2 ρ1.
 Proof.
-  intros.
+  - (* val_eqv_sym *)
+    intros H.
+    inversion H as [v1' v2' w Hv']; subst; clear H.
+    constructor. apply val_eqv'_sym; assumption.
+  - (* val_eqv'_sym *)
+    intros H.
+    inversion H as [Γ0 f0 xs0 e0 ρa ρb HFV Hρ
+                   | c0
+                   | c0 va vb vsa vsb Hv Hvs]; subst; clear H.
+    + (* Eqv_fun *)
+      eapply Eqv_fun; [eassumption|].
+      apply env_eqv_sym; assumption.
+    + (* Eqv_constr_nil *)
+      constructor.
+    + (* Eqv_constr_cons *)
+      constructor.
+      * apply val_eqv_sym; assumption.
+      * apply val_eqv'_sym; assumption.
+  - (* env_eqv_sym *)
+    intros H.
+    inversion H as [Γ0 ρa ρb Hget]; subst; clear H.
+    constructor; intros y Hy.
+    edestruct Hget as [v1' [v2' [Hg1 [Hg2 Hv]]]]; eauto.
+    exists v2', v1'; repeat split; auto.
+    apply val_eqv_sym; assumption.
+Qed.
+
+Lemma res_eqv_sym r1 r2 :
+  res_eqv r1 r2 ->
+  res_eqv r2 r1.
+Proof.
+  intros H. inv H; constructor.
+  apply val_eqv_sym; assumption.
+Qed.
+
+Lemma bstep_env_eqv_l {Γ ρ1 ρ2 e c r1}:
+  (occurs_free e) \subset Γ ->
+  env_eqv Γ ρ1 ρ2 ->
+  bstep ρ1 e c r1 ->
+  (exists r2, bstep ρ2 e c r2 /\ res_eqv r1 r2).
+Proof.
+  intros HF Hρ Hb.
   generalize dependent ρ2.
   generalize dependent Γ.
-  induction H1 using bstep_ind' with
+  induction Hb using bstep_ind' with
     (P0 := fun ρ1 e c r =>
              forall Γ,
                occurs_free e \subset Γ ->
                forall ρ2,
-                 subenv Γ ρ1 ρ2 ->
-                 exists r2, bstep_fuel ρ2 e c r2 /\ subres r r2);
-    intros; subst.
+                 env_eqv Γ ρ1 ρ2 ->
+                 exists r2, bstep_fuel ρ2 e c r2 /\ res_eqv r r2);
+    intros Γ HF ρ2 Hρ.
 
   - (* BStep_ret *)
-    edestruct (subenv_get H1 x) as [v2' [Heqv2' Hv]]; eauto.
+    edestruct (env_eqv_get Hρ x) as [v1' [v2' [Hg1 [Hg2 Hv]]]].
+    { apply HF. constructor. }
+    rewrite H in Hg1; inv Hg1.
+    exists (Res v2'); split; eauto.
 
   - (* BStep_fun *)
     assert (HFk : occurs_free k \subset (f |: (occurs_free (Efun f w xs e k))))
       by apply free_fun_k_subset.
-    destruct (IHbstep _ HFk (M.set f (Tag w (Vfun f ρ2 xs e)) ρ2)) as [r2 [Hr2 Hs]].
-    + eapply subenv_set; eauto.
+    destruct (IHHb _ HFk (M.set f (Tag w (Vfun f ρ2 xs e)) ρ2)) as [r2 [Hr2 Hs]].
+    + eapply env_eqv_set; eauto.
       constructor.
       econstructor; eauto.
       * eapply Included_trans; eauto.
@@ -1401,137 +1503,174 @@ Proof.
         apply Included_refl.
         apply Included_Union_compat; eauto.
         apply Included_refl.
-      * eapply subenv_subset; eauto.
+      * eapply env_eqv_subset; eauto.
     + eexists; split; eauto.
 
   - (* BStep_app *)
-    edestruct (subenv_get H4 f) as [vf2 [Heqvf2 Hvf2]]; eauto.
-    inv Hvf2.
-    inv H8.
-    edestruct (subenv_get_lists H4 xs) as [vs2 [Heqvs2 Hvs2]]; eauto.
-    eapply Included_trans; eauto.
-    apply free_app_xs_subset.
+    edestruct (env_eqv_get Hρ f) as [vf1 [vf2 [Hgf1 [Hgf2 Hvf]]]].
+    { apply HF. constructor. }
+    rewrite H in Hgf1; inv Hgf1.
+    inversion Hvf as [v1a v2a w0 Hvf']; subst; clear Hvf.
+    inversion Hvf' as [Γclo fclo xsclo eclo ρclo1 ρclo2 HFVe Hρcloeq | | ]; subst; clear Hvf'.
+    edestruct (env_eqv_get_lists Hρ xs) as [vs2 [Hgvs2 Hvs2]]; eauto.
+    { eapply Included_trans; [|eassumption]. apply free_app_xs_subset. }
 
     assert (Hlen : length xs' = length vs2).
     { erewrite <- (Forall2_length _ _ _ Hvs2); eauto.
       rewrite <- (set_lists_length_eq _ _ _ _ H1); auto. }
     destruct (set_lists_length3
-                (M.set f' (Tag w' (Vfun f' ρ0 xs' e)) ρ0)
+                (M.set f' (Tag w' (Vfun f' ρclo2 xs' e)) ρclo2)
                 _ _ Hlen) as [ρ2' Heqρ2'].
 
-    edestruct (IHbstep _ H11 ρ2') as [r2 [Hr2 Hs]].
-    + eapply subenv_set_lists; eauto.
-      eapply subenv_set; eauto.
+    edestruct (IHHb _ HFVe ρ2') as [r2 [Hr2 Hs]].
+    + eapply env_eqv_set_lists; eauto.
+      eapply env_eqv_set; eauto.
     + exists r2; split; auto.
       eapply BStep_app; eauto.
 
   - (* BStep_letapp_Res *)
-    edestruct (subenv_get H5 f) as [vf2 [Heqvf2 Hvf2]]; eauto.
-    inv Hvf2.
-    inv H9.
-    edestruct (subenv_get_lists H5 xs) as [vs2 [Heqvs2 Hvs2]]; eauto.
-    eapply Included_trans; eauto.
-    apply free_letapp_xs_subset.
+    edestruct (env_eqv_get Hρ f) as [vf1 [vf2 [Hgf1 [Hgf2 Hvf]]]].
+    { apply HF. constructor. }
+    rewrite H in Hgf1; inv Hgf1.
+    inversion Hvf as [v1a v2a w0 Hvf']; subst; clear Hvf.
+    inversion Hvf' as [Γclo fclo xsclo eclo ρclo1 ρclo2 HFVe Hρcloeq | | ]; subst; clear Hvf'.
+    edestruct (env_eqv_get_lists Hρ xs) as [vs2 [Hgvs2 Hvs2]]; eauto.
+    { eapply Included_trans; [|eassumption]. apply free_letapp_xs_subset. }
 
     assert (Hlen : length xs' = length vs2).
     { erewrite <- (Forall2_length _ _ _ Hvs2); eauto.
       rewrite <- (set_lists_length_eq _ _ _ _ H1); auto. }
     destruct (set_lists_length3
-                (M.set f' (Tag w' (Vfun f' ρ0 xs' e)) ρ0)
+                (M.set f' (Tag w' (Vfun f' ρclo2 xs' e)) ρclo2)
                 _ _ Hlen) as [ρ2' Heqρ2'].
 
-    edestruct (IHbstep _ H12 ρ2') as [r2 [Hr2 Hs]].
-    + eapply subenv_set_lists; eauto.
-      eapply subenv_set; eauto.
+    edestruct (IHHb _ HFVe ρ2') as [r2 [Hr2 Hs]].
+    + eapply env_eqv_set_lists; eauto.
+      eapply env_eqv_set; eauto.
     + inv Hs.
       assert (HFk : occurs_free k \subset (x |: Γ)) by (eapply free_letapp_k_inv; eauto).
-      destruct (IHbstep0 _ HFk (M.set x v2 ρ2)) as [r3 [Hr3 Hs']].
-      * eapply subenv_set; eauto.
+      destruct (IHHb0 _ HFk (M.set x v2 ρ2)) as [r3 [Hr3 Hs']].
+      * eapply env_eqv_set; eauto.
       * exists r3; split; auto.
         econstructor; eauto.
 
   - (* BStep_letapp_OOT *)
-    edestruct (subenv_get H4 f) as [vf2 [Heqvf2 Hvf2]]; eauto.
-    inv Hvf2.
-    inv H8.
-    edestruct (subenv_get_lists H4 xs) as [vs2 [Heqvs2 Hvs2]]; eauto.
-    eapply Included_trans; eauto.
-    apply free_letapp_xs_subset.
+    edestruct (env_eqv_get Hρ f) as [vf1 [vf2 [Hgf1 [Hgf2 Hvf]]]].
+    { apply HF. constructor. }
+    rewrite H in Hgf1; inv Hgf1.
+    inversion Hvf as [v1a v2a w0 Hvf']; subst; clear Hvf.
+    inversion Hvf' as [Γclo fclo xsclo eclo ρclo1 ρclo2 HFVe Hρcloeq | | ]; subst; clear Hvf'.
+    edestruct (env_eqv_get_lists Hρ xs) as [vs2 [Hgvs2 Hvs2]]; eauto.
+    { eapply Included_trans; [|eassumption]. apply free_letapp_xs_subset. }
 
     assert (Hlen : length xs' = length vs2).
     { erewrite <- (Forall2_length _ _ _ Hvs2); eauto.
       rewrite <- (set_lists_length_eq _ _ _ _ H1); auto. }
     destruct (set_lists_length3
-                (M.set f' (Tag w' (Vfun f' ρ0 xs' e)) ρ0)
+                (M.set f' (Tag w' (Vfun f' ρclo2 xs' e)) ρclo2)
                 _ _ Hlen) as [ρ2' Heqρ2'].
 
-    edestruct (IHbstep _ H11 ρ2') as [r2 [Hr2 Hs]].
-    + eapply subenv_set_lists; eauto.
-      eapply subenv_set; eauto.
+    edestruct (IHHb _ HFVe ρ2') as [r2 [Hr2 Hs]].
+    + eapply env_eqv_set_lists; eauto.
+      eapply env_eqv_set; eauto.
     + inv Hs.
       exists OOT; split; auto.
       econstructor; eauto.
 
   - (* BStep_constr *)
-    edestruct (subenv_get_lists H2 xs) as [vs2 [Heqvs2 Hvs2]]; eauto.
-    eapply Included_trans; eauto.
-    apply free_constr_xs_subset.
+    edestruct (env_eqv_get_lists Hρ xs) as [vs2 [Hgvs2 Hvs2]]; eauto.
+    { eapply Included_trans; [|eassumption]. apply free_constr_xs_subset. }
 
     assert (HFk : occurs_free e \subset (x |: Γ)) by (eapply free_constr_k_inv; eauto).
-    destruct (IHbstep _ HFk (M.set x (Tag w (Vconstr t vs2)) ρ2)) as [r2 [Hr2 Hs]].
-    + eapply subenv_set; eauto.
-      eapply subval_Vconstr; eauto.
+    destruct (IHHb _ HFk (M.set x (Tag w (Vconstr t vs2)) ρ2)) as [r2 [Hr2 Hs]].
+    + eapply env_eqv_set; eauto.
+      eapply val_eqv_Vconstr; eauto.
     + exists r2; split; auto.
       econstructor; eauto.
 
   - (* BStep_proj *)
-    edestruct (subenv_get H3 y) as [vy2 [Heqvy2 Hvy2]]; eauto.
-    edestruct (subval_Vconstr_inv_l Hvy2) as [vs2 [Heqvs2 Hvs2]]; subst.
+    edestruct (env_eqv_get Hρ y) as [vy1 [vy2 [Hgy1 [Hgy2 Hvy]]]].
+    { apply HF. constructor. }
+    rewrite H in Hgy1; inv Hgy1.
+    edestruct (val_eqv_Vconstr_inv_l Hvy) as [vs2 [Heqvs2 Hvs2]]; subst.
     edestruct (Forall2_nth_error H0 Hvs2) as [v' [Heqv' Hv']].
     assert (HFk : occurs_free e \subset (x |: Γ)) by (eapply free_proj_k_inv; eauto).
-    destruct (IHbstep _ HFk (M.set x v' ρ2)) as [r2 [Hr2 Hs]].
-    + eapply subenv_set; eauto.
+    destruct (IHHb _ HFk (M.set x v' ρ2)) as [r2 [Hr2 Hs]].
+    + eapply env_eqv_set; eauto.
     + exists r2; split; auto.
       econstructor; eauto.
 
   - (* BStep_case *)
-    edestruct (subenv_get H3 x) as [vx2 [Heqvx2 Hvx2]]; eauto.
-    edestruct (subval_Vconstr_inv_l Hvx2) as [vs2 [Heqvs2 Hvs2]]; subst.
-    edestruct IHbstep as [r2 [Hr2 Hs]]; eauto.
-    + eapply free_case_e_inv; eauto.
+    edestruct (env_eqv_get Hρ x) as [vx1 [vx2 [Hgx1 [Hgx2 Hvx]]]].
+    { apply HF. constructor. }
+    rewrite H in Hgx1; inv Hgx1.
+    edestruct (val_eqv_Vconstr_inv_l Hvx) as [vs2 [Heqvs2 Hvs2]]; subst.
+    assert (HFe : occurs_free e \subset Γ) by (eapply free_case_e_inv; eauto).
+    destruct (IHHb _ HFe _ Hρ) as [r2 [Hr2 Hs]].
+    exists r2; split; auto.
+    eapply BStep_case; eauto.
 
   - (* BStepF_OOT *)
     exists OOT; split; auto.
 
   - (* BStepF_Step *)
-    edestruct IHbstep as [r2 [Hr2 Hs]]; eauto.
+    edestruct IHHb as [r2 [Hr2 Hs]]; eauto.
 Qed.
 
-Lemma bstep_fuel_subenv {Γ ρ1 ρ2 e c r1}:
+Lemma bstep_fuel_env_eqv_l {Γ ρ1 ρ2 e c r1}:
   (occurs_free e) \subset Γ ->
-  subenv Γ ρ1 ρ2 ->
+  env_eqv Γ ρ1 ρ2 ->
   bstep_fuel ρ1 e c r1 ->
-  (exists r2, bstep_fuel ρ2 e c r2 /\ subres r1 r2).
+  (exists r2, bstep_fuel ρ2 e c r2 /\ res_eqv r1 r2).
 Proof.
   intros.
   inv H1.
   - exists OOT; split; auto.
-  - destruct (bstep_subenv H H0 H2) as [r2 [Hr2 Hs]].
+  - destruct (bstep_env_eqv_l H H0 H2) as [r2 [Hr2 Hs]].
     exists r2; split; auto.
 Qed.
 
-Lemma bstep_fuel_drop_unused {f val ρ e c r}:
+Lemma bstep_fuel_drop_unused {Γ f val ρ e c r}:
   ~ (f \in occurs_free e) ->
-  wf_env ρ ->
+  occurs_free e \subset Γ ->
+  wf_env Γ ρ ->
   bstep_fuel (M.set f val ρ) e c r ->
-  exists r', bstep_fuel ρ e c r' /\ subres r r'.
+  exists r', bstep_fuel ρ e c r' /\ res_eqv r r'.
 Proof.
-  intros Hf Hwf Hcb.
-  eapply @bstep_fuel_subenv with (Γ := occurs_free e); eauto.
+  intros Hf HF Hwf Hcb.
+  eapply @bstep_fuel_env_eqv_l with (Γ := occurs_free e); eauto.
   - apply Included_refl.
-  - constructor; intros z Hz w Hgw.
+  - constructor; intros z Hz.
     destruct (M.elt_eq z f) as [<-|Hne]; [contradiction|].
-    rewrite M.gso in Hgw by auto.
-    exists w; split; auto.
-    apply subval_refl. eapply wf_env_get; eauto.
+    inv Hwf.
+    edestruct H0 as [w Hgw]; eauto.
+    exists w, w. repeat split; auto.
+    + rewrite M.gso by auto. assumption.
+    + apply val_eqv_refl. eapply H; eauto.
+Qed.
+
+Lemma bstep_env_eqv_r {Γ ρ1 ρ2 e c r2}:
+  (occurs_free e) \subset Γ ->
+  env_eqv Γ ρ1 ρ2 ->
+  bstep ρ2 e c r2 ->
+  (exists r1, bstep ρ1 e c r1 /\ res_eqv r1 r2).
+Proof.
+  intros HF Hρ Hb.
+  apply env_eqv_sym in Hρ.
+  edestruct (bstep_env_eqv_l HF Hρ Hb) as [r1 [Hr1 Hs]].
+  exists r1; split; auto.
+  apply res_eqv_sym; assumption.
+Qed. 
+
+Lemma bstep_fuel_env_eqv_r {Γ ρ1 ρ2 e c r2}:
+  (occurs_free e) \subset Γ ->
+  env_eqv Γ ρ1 ρ2 ->
+  bstep_fuel ρ2 e c r2 ->
+  (exists r1, bstep_fuel ρ1 e c r1 /\ res_eqv r1 r2).
+Proof.
+  intros.
+  inv H1.
+  - exists OOT; split; auto.
+  - destruct (bstep_env_eqv_r H H0 H2) as [r1 [Hr1 Hs]].
+    exists r1; split; auto.
 Qed.
