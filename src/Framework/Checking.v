@@ -1214,7 +1214,7 @@ Lemma refine_val_Vconstr {l W t vs vs'} :
   refine_val (Tag l (Vconstr t vs)) (CTag l W (CVconstr t vs')).
 Proof. intros Hr. constructor. apply refine_val'_Vconstr; auto. Qed.
 
-(* [refine_val] commutes with [subval] *)
+(* [refine_val] commutes with [csubval] *)
 Lemma refine_val_csubval v0 v v' :
   refine_val v0 v ->
   csubval v v' ->
@@ -1281,22 +1281,23 @@ Proof.
   constructor. eapply refine_val_csubval; eauto.
 Qed.
 
-Lemma refine_val_val_eqv v0 v0' v :
+(* [refine_val] commutes with [val_eqv] *)
+Lemma refine_val_val_eqv_l v0 v0' v :
   refine_val v0 v ->
   val_eqv v0 v0' ->
   refine_val v0' v
-with refine_val'_val_eqv' v0 v0' v :
+with refine_val'_val_eqv'_l v0 v0' v :
   refine_val' v0 v ->
   val_eqv' v0 v0' ->
   refine_val' v0' v
-with refine_env_env_eqv Γ Γ' ρa ρa' ρc :
+with refine_env_env_eqv_l Γ Γ' ρa ρa' ρc :
   refine_env Γ ρa ρc ->
   env_eqv Γ' ρa ρa' ->
   refine_env (Γ :&: Γ') ρa' ρc.
 Proof.
-  - (* refine_val_val_eqv *)
+  - (* refine_val_val_eqv_l *)
     intros Hr Hs. inv Hr. inv Hs. constructor.
-    eapply refine_val'_val_eqv'; eauto.
+    eapply refine_val'_val_eqv'_l; eauto.
 
   - (* refine_val'_val_eqv' *)
     intros Hr Hs.
@@ -1314,13 +1315,13 @@ Proof.
         rename H1 into Hzfa. rename H2 into Hzfb.
         right. inv Hzfa; [left; auto|]. inv Hzfb; [left; auto|].
         right. constructor; auto.
-      * eapply refine_env_env_eqv; eauto.
+      * eapply refine_env_env_eqv_l; eauto.
     + (* Refine_constr_nil *)
       inv Hs. constructor.
     + (* Refine_constr *)
       inv Hs. constructor.
-      * eapply refine_val_val_eqv; eauto.
-      * eapply refine_val'_val_eqv'; eauto.
+      * eapply refine_val_val_eqv_l; eauto.
+      * eapply refine_val'_val_eqv'_l; eauto.
 
   - (* refine_env_env_eqv *)
     intros Hr Hs.
@@ -1333,17 +1334,7 @@ Proof.
     inv Hs.
     edestruct (H0 y Hy_Γ') as [va' [va'' [Hgva' [Heqva'' Hval_eqv]]]]; eauto; invc.
     exists va'', vc. repeat split; auto.
-    eapply refine_val_val_eqv; eauto.
-Qed.
-
-Lemma refine_res_res_eqv r0 r0' r :
-  refine_res r0 r ->
-  res_eqv r0 r0' ->
-  refine_res r0' r.
-Proof.
-  intros Hr Hs.
-  inv Hr; inv Hs; auto.
-  constructor; eauto using refine_val_val_eqv.
+    eapply refine_val_val_eqv_l; eauto.
 Qed.
 
 Lemma refine_val_val_eqv_r v0 v0' v :
@@ -1359,12 +1350,10 @@ with refine_env_env_eqv_r Γ Γ' ρa ρa' ρc :
   env_eqv Γ' ρa ρa' ->
   refine_env (Γ :&: Γ') ρa ρc.
 Proof.
-  - (* refine_val_val_eqv *)
-    intros Hr Hs. inv Hr. inv Hs. constructor.
+  - intros Hr Hs. inv Hr. inv Hs. constructor.
     eapply refine_val'_val_eqv'_r; eauto.
 
-  - (* refine_val'_val_eqv' *)
-    intros Hr Hs.
+  - intros Hr Hs.
     inv Hr.
     + (* Refine_fun *)
       inversion Hs as [Γb fb xsb eb ρab1 ρab2 HFVb Henv_eqv | |]; subst.
@@ -1387,21 +1376,32 @@ Proof.
       * eapply refine_val_val_eqv_r; eauto.
       * eapply refine_val'_val_eqv'_r; eauto.
 
-  - (* refine_env_env_eqv *)
-    intros Hr Hs.
+  - intros Hr Hs.
     constructor; intros y Hy.
     inversion Hy as [a Hy_Γ Hy_Γ' Ha]; subst.
     (* From refine_env Γ ρa ρc: ρa(y) = v_a, ρc(y) = v_c *)
     inv Hr.
-    edestruct (H y Hy_Γ) as [va [vc [Hgva [Hgvc Hrf]]]].
+    edestruct (H y Hy_Γ) as [va [vc [Hgva [Hgvc Hrf]]]]; eauto; invc.
     (* From env_eqv Γ' ρa ρa': ρa(y) = v_a → ρa'(y) = v_a' with val_eqv *)
     inv Hs.
-    (* !!! stuck here *)
-    (*
-    edestruct (H0 y Hy_Γ' va Hgva) as [va' [Hgva' Hval_eqv]].
+    edestruct (H0 y Hy_Γ') as [va' [va'' [Hgva' [Heqva'' Hval_eqv]]]]; eauto; invc.
     exists va', vc. repeat split; auto.
-    eapply refine_val_val_eqv; eauto. *)
-Admitted.
+    eapply refine_val_val_eqv_r; eauto.
+Qed.
+
+Lemma refine_val_val_eqv v0 v0' v :
+  val_eqv v0 v0' ->
+  refine_val v0 v <-> refine_val v0' v.
+Proof. intros; split; eauto using refine_val_val_eqv_l, refine_val_val_eqv_r. Qed.
+
+Lemma refine_res_res_eqv r0 r0' r :
+  res_eqv r0 r0' ->
+  refine_res r0 r <-> refine_res r0' r.
+Proof.
+  intros Hr.
+  inv Hr; split; intros Hs; inv Hs; auto; constructor;
+      strivial use: refine_val_val_eqv.
+Qed.
 
 (* Correlation lemmas: bstep and cbstep that both terminate on the same expression agree on fuel and value. *)
 Lemma bstep_cbstep_aux v1 v2 {W ex ρ1 ρ2 e c1 r1 c2 r2} :
@@ -3374,56 +3374,77 @@ Proof.
     rename ρ' into ρ1.
     rename e into e1.
 
-    edestruct (bstep_fuel_drop_unused Hf1 Hwfρ1 Hbody) as [r1' [Hbstep_e1 Hsub']]; eauto.
+    assert (HSe1 : occurs_free e1 \subset occurs_free (Efun f l0 [] e1 (Eletapp x f l0 [] e2))).
+    {
+      unfold Ensembles.Included, Ensembles.In.
+      intros.
+      sauto lq: on drew: off.
+    }
+
+    edestruct (bstep_fuel_drop_unused Hf1 HSe1 Hwfρ1 Hbody) as [r1' [Hbstep_e1 Hsub']]; eauto.
     inv Hsub'.
 
     edestruct H1 as [r2 [Hcbstep_e1' Href']]; eauto.
     eapply refine_env_subset; eauto.
-    {
-      unfold Ensembles.Included, Ensembles.In in *.
-      fcrush.
-    }
+    eapply wf_env_subset; eauto.
+
     inv Href'.
 
     rewrite (set_set x f) in Hcont; auto.
 
     assert (Hwfv : wf_res (Res v)).
     {
-      eapply bstep_fuel_wf_res; eauto.
-    }
-
-    assert (Hwf2 : wf_env (M.set x v ρ1)).
-    {
+      eapply (@bstep_fuel_wf_res _ (M.set f (Tag l0 (Vfun f ρ1 [] e1)) ρ1)); eauto.
+      eapply wf_env_subset; eauto.
       eapply wf_env_set; eauto.
-      inv Hwfv; auto.
+      econstructor; eauto.
+      econstructor; eauto.
+      unfold Ensembles.Included, Ensembles.In.
+      intros.
+      fcrush.
+      fcrush.
     }
 
-    edestruct (bstep_fuel_drop_unused Hf2 Hwf2 Hcont) as [r2' [Hbstep_e2 Hsub2']]; eauto.
+    inv Hwfv.
 
-    assert (Hsub3 : env_eqv (x |: occurs_free e2) (M.set x v ρ1) (M.set x v2 ρ1)).
+    assert (HSe2 : occurs_free e2 \subset (x |: occurs_free (Efun f l0 [] e1 (Eletapp x f l0 [] e2)))).
     {
+      unfold Ensembles.Included, Ensembles.In.
+      intros.
+      destruct (M.elt_eq x x0); subst.
+      - fcrush.
+      - apply Union_intror.
+        unfold Ensembles.In.
+        sauto lq: on drew: off.
+    }
+
+    assert (Hwf2 : wf_env (x |: occurs_free (Efun f l0 [] e1 (Eletapp x f l0 [] e2))) (M.set x v ρ1)).
+    {
+      eapply wf_env_subset; eauto.
+      eapply wf_env_set; eauto.
+      fcrush.
+    }
+
+    edestruct (bstep_fuel_drop_unused Hf2 HSe2 Hwf2 Hcont) as [r2' [Hbstep_e2 Hsub2']]; eauto.
+
+    assert (Hsub3 : env_eqv (occurs_free e2) (M.set x v ρ1) (M.set x v2 ρ1)).
+    {
+      eapply env_eqv_subset; eauto.
       eapply env_eqv_set; eauto.
       eapply env_eqv_refl; eauto.
     }
 
-    edestruct @bstep_fuel_env_eqv with (Γ := (x |: occurs_free e2)) as [r2'' [Hbstep_e2' Hsub2'']]; eauto.
+    edestruct @bstep_fuel_env_eqv_l with (Γ := occurs_free e2) as [r2'' [Hbstep_e2' Hsub2'']]; eauto.
     fcrush.
 
     edestruct (H2 c' (M.set x v2 ρ1) (M.set x v' ρ2)) as [r2''' [Hcbstep_e2' Href'']]; eauto.
     eapply refine_env_subset; eauto.
     eapply refine_env_set; eauto.
-    {
-      unfold Ensembles.Included, Ensembles.In in *.
-      intros.
-      destruct (M.elt_eq x x0); subst.
-      - fcrush.
-      - apply Union_intror.
-        fcrush.
-    }
+    eapply wf_env_subset; eauto.
     eapply wf_env_set; eauto.
     assert (Hwfv2 : wf_res (Res v2)).
     {
-      eapply (bstep_fuel_wf_res ρ1); eauto.
+      eapply (@bstep_fuel_wf_res _ ρ1); eauto.
     }
     inv Hwfv2; auto.
     eapply wf_cenv_set; eauto.
@@ -3440,11 +3461,8 @@ Proof.
 
     assert (Hres_eqv : res_eqv r1 r2'') by eauto using res_eqv_trans.
 
-  (* eapply refine_res_res_eqv_r; eauto. *)
-(*
+    eapply refine_res_res_eqv; eauto.
   - (* BStep_letapp_OOT *)
-    eexists; split; eauto.
-    inv H12; eauto. *)
 Admitted.
 
 Lemma preserves_linking f x e1 e1' e2 e2' :
@@ -3455,7 +3473,7 @@ Lemma preserves_linking f x e1 e1' e2 e2' :
   ~ (f \in occurs_free_top e2') ->
   trans_correct_top e1 e1' ->
   trans_correct_top e2 e2' ->
-  trans_correct_top (link f x e1 e2) (link x e1' e2').
+  trans_correct_top (link f x e1 e2) (clink x e1' e2').
 Proof.
   intros Hfx Hf1 Hf2 Hf1' Hf2' Htr1 Htr2.
   destruct Htr1 as [HFV1 [Hsnd1 HE1]].
@@ -3464,7 +3482,7 @@ Proof.
   repeat split.
 
   - (* FV inclusion: occurs_free_top (link x e1' e2') ⊆ occurs_free (link f x e1 e2) *)
-    unfold link, link.
+    unfold link, clink.
     unfold Ensembles.Included, Ensembles.In.
     intros z Hz.
     inv Hz.
@@ -3497,7 +3515,7 @@ Proof.
     rename f' into f.
     rename ρ' into ρ1.
 
-    assert (Hwf1 : wf_env ρ1) by admit.
+    assert (Hwf1 : wf_env (occurs_free (Efun f l0 [] e (Eletapp x f l0 [] e2))) ρ1) by eauto using G_top_wf_env_l.
 
     edestruct (bstep_fuel_drop_unused Hf1 Hwf1 H11) as [r1' [Hbstep_e1 Hsub']]; eauto.
     inv Hsub'.
