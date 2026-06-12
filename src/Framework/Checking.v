@@ -3358,8 +3358,10 @@ Proof.
       fcrush.
 
       assert (Hwfr1 : wf_val w0).
-      { eapply (@bstep_fuel_wf_res _ ρ3b e0) in Hbstep_b; eauto.
-        inv Hbstep_b; auto. }
+      {
+        eapply (@bstep_fuel_wf_res _ ρ3b e0) in Hbstep_b; eauto.
+        inv Hbstep_b; auto.
+      }
       assert (Hwfr1' : wf_val w).
       { eapply (@bstep_fuel_wf_res _ ρ3a e0) in Hbstep_a; eauto.
       inv Hbstep_a; auto. }
@@ -3732,37 +3734,66 @@ Proof.
 
     assert (Hwf1 : wf_env (occurs_free (Efun f l0 [] e (Eletapp x f l0 [] e2))) ρ1) by eauto using G_top_wf_env_l.
 
-    edestruct (bstep_fuel_drop_unused Hf1 Hwf1 H11) as [r1' [Hbstep_e1 Hsub']]; eauto.
+    assert (HSe : occurs_free e \subset occurs_free (Efun f l0 [] e (Eletapp x f l0 [] e2))).
+    {
+      unfold Ensembles.Included, Ensembles.In.
+      intros.
+      destruct (M.elt_eq x x0); subst.
+      - fcrush.
+      - sauto lq: on drew: off.
+    }
+
+    assert (HSe2 : occurs_free e2 \subset (x |: occurs_free (Efun f l0 [] e (Eletapp x f l0 [] e2)))).
+    {
+      unfold Ensembles.Included, Ensembles.In.
+      intros.
+      destruct (M.elt_eq x x0); subst.
+      - fcrush.
+      - apply Union_intror.
+        unfold Ensembles.In.
+        sauto lq: on drew: off.
+    }
+
+    edestruct (bstep_fuel_drop_unused Hf1 HSe Hwf1 H11) as [r1' [Hbstep_e1 Hsub']]; eauto.
     inv Hsub'.
 
     edestruct (HE1 i ρ1 ρ2) with (j1 := c) as [j1 [r1' [Hcbstep_e1' HR1']]]; eauto; try lia.
     eapply G_top_subset; eauto.
-    {
-      unfold Ensembles.Included, Ensembles.In in *.
-      fcrush.
-    }
 
     edestruct R_top_res_inv_l as [v2' [Heqv2' HV]]; eauto; subst.
 
     rewrite (set_set x f) in H12; auto.
 
-    assert (Hwfv : wf_res (Res v)) by eauto using bstep_fuel_wf_res; eauto.
-
-    assert (Hwf2 : wf_env (M.set x v ρ1)).
+    assert (Hwfv : wf_res (Res v)).
     {
+      eapply @bstep_fuel_wf_res with (e := e) (ρ := (M.set f (Tag l0 (Vfun f ρ1 [] e)) ρ1)); eauto.
+      eapply wf_env_subset; eauto.
       eapply wf_env_set; eauto.
-      inv Hwfv; auto.
+      econstructor; eauto.
+      econstructor; eauto.
+      unfold Ensembles.Included, Ensembles.In.
+      fcrush.
+      fcrush.
     }
 
-    edestruct (bstep_fuel_drop_unused Hf2 Hwf2 H12) as [r2' [Hbstep_e2 Hsub']]; eauto.
-
-    assert (Hsub3 : env_eqv (x |: occurs_free e2) (M.set x v ρ1) (M.set x v2 ρ1)).
+    assert (Hwf2 : wf_env (x |: occurs_free (Efun f l0 [] e (Eletapp x f l0 [] e2))) (M.set x v ρ1)).
     {
+      eapply wf_env_subset; eauto.
+      eapply wf_env_set; eauto.
+      inv Hwfv; auto.
+      fcrush.
+    }
+
+    edestruct (bstep_fuel_drop_unused Hf2 HSe2 Hwf2 H12) as [r2' [Hbstep_e2 Hsub']]; eauto.
+
+    assert (Hsub3 : env_eqv (occurs_free e2) (M.set x v ρ1) (M.set x v2 ρ1)).
+    {
+      eapply env_eqv_subset; eauto.
       eapply env_eqv_set; eauto.
       eapply env_eqv_refl; eauto.
     }
 
-    edestruct @bstep_fuel_env_eqv with (Γ := (x |: occurs_free e2)) as [r2'' [Hbstep_e2' Hsub2'']]; eauto.
+    edestruct @bstep_fuel_env_eqv_l with (Γ := (occurs_free e2)) as [r2'' [Hbstep_e2' Hsub2'']]; eauto.
     fcrush.
 
     edestruct (HE2 (i - c) (M.set x v2 ρ1) (M.set x v2' ρ2)) with (j1 := c') as [j2'' [r2''' [Hcbstep_e2' Href'']]]; eauto; try lia.
@@ -3770,15 +3801,6 @@ Proof.
     eapply G_top_set; eauto.
     eapply G_top_mono; eauto; lia.
 
-    {
-      unfold Ensembles.Included, Ensembles.In in *.
-      intros.
-      destruct (M.elt_eq x x0); subst.
-      - fcrush.
-      - apply Union_intror.
-        unfold Ensembles.In.
-        fcrush.
-    }
 
     exists (S (S (j1 + j2''))), r2'''; split; eauto.
     econstructor; eauto.
@@ -3786,10 +3808,6 @@ Proof.
 
     assert (Hres_eqv : res_eqv r1 r2'') by eauto using res_eqv_trans.
 
-    (* Combine Hres_eqv : res_eqv r1 r2'' with Href'' : R_top _ r2'' r2'''
-       via R_top_res_eqv, then adjust the fuel index with R_top_mono. *)
-
-    (* wf_res r2'' follows from Href'' by V_top inversion. *)
     assert (Hwfr2'' : wf_res r2'').
     {
       unfold R_top, R' in Href''.
@@ -3797,29 +3815,14 @@ Proof.
       constructor. eapply V_top_wf_val_l; eauto.
     }
 
-    (* wf_res r1 follows from H12 (the source continuation step). *)
-    assert (HSe2 :
-      occurs_free e2 \subset
-      f |: (x |: occurs_free (Efun f l0 [] e (Eletapp x f l0 [] e2)))).
-    {
-      unfold Ensembles.Included, Ensembles.In; intros z Hz.
-      destruct (M.elt_eq z f) as [Heqf|Hnef]; [subst; left; constructor|].
-      destruct (M.elt_eq z x) as [Heqx|Hnex]; [subst; right; left; constructor|].
-      right; right.
-      apply Free_fun1; auto.
-      apply Free_letapp1; auto.
-    }
-
     assert (Hwfclos : wf_val (Tag l0 (Vfun f ρ1 [] e))).
     {
-      apply WF_TAG.
-      apply WF_Vfun with (Γ := occurs_free (Efun f l0 [] e (Eletapp x f l0 [] e2))); auto.
+      econstructor; eauto.
+      econstructor; eauto.
       rewrite FromList_nil, Union_Empty_set_neut_l.
       unfold Ensembles.Included, Ensembles.In; intros z Hz.
       destruct (M.elt_eq z f) as [Heqf|Hnef]; [subst; left; constructor|].
-      right.
-      apply Free_fun2; auto.
-      intros Hin; inv Hin.
+      fcrush.
     }
 
     assert (Hwfsetenv :
@@ -3830,10 +3833,12 @@ Proof.
       eapply wf_env_set; [exact Hwf1|inv Hwfv; auto].
     }
 
-    assert (Hwfr1 : wf_res r1).
-    { eapply bstep_fuel_wf_res; [exact Hwfsetenv|exact HSe2|exact H12]. }
+    eapply (R_top_res_eqv _ r1 r2'') ; eauto.
 
-    eapply R_top_mono with (i := (i - c) - c'); [|lia].
-    apply (proj2 (R_top_res_eqv _ r1 r2'' r2''' Hwfr1 Hwfr2'' Hres_eqv)).
-    exact Href''.
+    eapply @bstep_fuel_wf_res with (ρ := (M.set f (Tag l0 (Vfun f ρ1 [] e)) (M.set x v ρ1))) (e := e2); eauto.
+    eapply Included_trans; eauto.
+    unfold Ensembles.Included, Ensembles.In.
+    fcrush.
+
+    eapply R_top_mono; eauto; lia.
 Qed.
