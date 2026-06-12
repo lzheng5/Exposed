@@ -867,10 +867,6 @@ Scheme unique_label_mut := Induction for unique_label Sort Prop
 with unique_label_case_mut := Induction for unique_label_case Sort Prop.
 
 (* Well-formed Value and Environment *)
-(* [wf_env Γ ρ] is scoped on Γ: ρ is total on Γ, and every value stored in ρ
-   is well-formed. [WF_Vfun] additionally requires the closure's body's free
-   variables to be covered by the closure's argument list, the recursive name,
-   and the captured-environment scope Γ. *)
 Inductive wf_val : wval -> Prop :=
 | WF_TAG :
   forall w v,
@@ -1131,12 +1127,7 @@ Proof.
   eapply bstep_wf_res; eauto.
 Qed.
 
-(* Value and Environment Equivalence for the Labeled Semantics *)
-(* The labeled semantics tracks no exposed-web information, so the value
-   relation reduces to a structural equivalence: tags must match, constructors
-   match componentwise, and closures may differ only in the captured
-   environment (modulo agreement on the body's free variables). [env_eqv Γ ρ1
-   ρ2] requires both environments to be defined on Γ and equivalent on it. *)
+(* Structural Equivalence of Value and Environment *)
 Inductive val_eqv : wval -> wval -> Prop :=
 | Eqv_wval :
   forall v1 v2 w,

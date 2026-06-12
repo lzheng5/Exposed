@@ -93,7 +93,7 @@ Proof.
   assert (Hf3 : ~ Ensembles.In var (AI.occurs_free e3) f) by (inv HL1; fcrush).
   assert (Hf3' : ~ Ensembles.In var (AI.occurs_free e3') f) by (inv HL2; fcrush).
   pose proof HC1 as HC1'.
-  eapply (C.preserves_linking f x e3 e4 e3' e4') in HC1; eauto.
+  eapply (C.preserves_linking f x e3 e4 e3' e4') in HC1'; eauto.
   eexists; split; eauto.
 
   assert (Hf4 : ~ Ensembles.In var (R.AC.occurs_free_top e4) f) by (inv HC1; fcrush).
