@@ -2934,11 +2934,7 @@ Qed.
 Lemma R_top_res_inv_l i v1 r2 :
   R_top i (Res v1) r2 ->
   exists v2, r2 = CRes v2 /\ V_top i v1 v2.
-Proof.
-  intros.
-  destruct r2; simpl in *; try contradiction.
-  eexists; split; eauto.
-Qed.
+Proof. hauto. Qed.
 
 Lemma R_top_res_inv_l_V v1 r2 :
   (forall k, R_top k (Res v1) r2) ->
@@ -2983,16 +2979,7 @@ Lemma G_top_subset i Γ1 ρ1 Γ2 ρ2 Γ3 Γ4 :
   Γ3 \subset Γ1 ->
   Γ4 \subset Γ3 ->
   G_top i Γ3 ρ1 Γ4 ρ2.
-Proof.
-  unfold G_top.
-  intros.
-  destruct H as [Hwf1 [Hwf2 [Href [Hs HG]]]].
-  split.
-  eapply wf_env_subset; eauto.
-  repeat (split; auto); intros.
-  edestruct HG as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; eauto; invc.
-  fcrush.
-Qed.
+Proof. unfold G_top. fcrush. Qed.
 
 (* Top-level Environment Lemmas *)
 Lemma G_top_get {Γ1 Γ2 i ρ1 ρ2}:
@@ -3003,12 +2990,7 @@ Lemma G_top_get {Γ1 Γ2 i ρ1 ρ2}:
       M.get x ρ1 = Some v1 /\
         M.get x ρ2 = Some v2 /\
         V_top i v1 v2.
-Proof.
-  unfold G_top.
-  intros.
-  destruct H as [Hwf1 [Hwf2 [Href [Hs HG]]]].
-  edestruct HG as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; eauto.
-Qed.
+Proof. unfold G_top. sauto lq: on. Qed.
 
 Lemma G_top_get_list {i Γ1 ρ1 Γ2 ρ2} :
   G_top i Γ1 ρ1 Γ2 ρ2 ->
@@ -3106,10 +3088,8 @@ Proof.
     eapply G_top_subset with (Γ1 := (a |: (FromList xs :|: Γ1))) (Γ2 := (a |: (FromList xs :|: Γ2))); eauto.
     eapply G_top_set; eauto.
     normalize_sets.
-    rewrite Union_assoc.
-    apply Included_refl.
-    eapply Included_Union_compat; eauto.
-    apply Included_refl.
+    rewrite Union_assoc; fcrush.
+    eapply Included_Union_compat; fcrush.
 Qed.
 
 (* G_top is stronger than G *)
@@ -3122,10 +3102,7 @@ Proof.
   intros.
   destruct H as [Hwf1 [Hwf2 [Href [Hs HG]]]].
   unfold Ensembles.Included, Ensembles.In, Dom_map in *.
-  repeat (split; auto); intros.
-  edestruct HG as [v1' [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; eauto; invc.
-  eexists; eexists; repeat (split; eauto).
-  eapply V_V_top; eauto.
+  hauto lq: on use: V_V_top.
 Qed.
 
 Lemma G_G_top i Γ1 ρ1 Γ2 ρ2 :
@@ -3225,17 +3202,18 @@ Proof.
   intros.
   revert vs3 j H0 H4.
   induction H3; simpl; intros.
-  - inv H4; auto.
+  - sauto.
   - inv H1; inv H2; inv H5.
     econstructor; eauto.
-    eapply H with (v1 := x); eauto; try lia.
+    sfirstorder use: Nat.lt_succ_r.
 Qed.
 
 Lemma V_top_val_eqv_l :
-  forall i va vb v3,
-    wf_val va -> wf_val vb ->
-    val_eqv va vb ->
-    V_top i va v3 -> V_top i vb v3.
+  forall i v1 v2 v3,
+    wf_val v1 ->
+    wf_val v2 ->
+    val_eqv v1 v2 ->
+    V_top i v1 v3 -> V_top i v2 v3.
 Proof.
   intro i.
   induction i as [i IH] using lt_wf_rec.
@@ -3367,7 +3345,7 @@ Proof.
       inv Hbstep_a; auto. }
 
       inv Hreseqv.
-      eapply IH with (va := w); eauto; try lia.
+      eapply IH with (v1 := w); eauto; try lia.
 
     + destruct Hstr as [Hleq [Hceq [Hleneq Hcrest]]]; subst.
       edestruct (val_eqv_Vconstr_inv_l Heqv0) as [vsb' [Heqvb Hfaeqv]]; eauto; invc.
@@ -3388,13 +3366,14 @@ Proof.
 Qed.
 
 Lemma V_top_val_eqv_r :
-  forall i va vb v3,
-    wf_val va -> wf_val vb ->
-    val_eqv va vb ->
-    V_top i vb v3 -> V_top i va v3.
+  forall i v1 v2 v3,
+    wf_val v1 ->
+    wf_val v2 ->
+    val_eqv v1 v2 ->
+    V_top i v2 v3 -> V_top i v1 v3.
 Proof.
-  intros i va vb v3 Hwfa Hwfb Heqv HV.
-  eapply V_top_val_eqv_l with (va := vb) (vb := va); eauto.
+  intros i v1 v2 v3 Hwfa Hwfb Heqv HV.
+  eapply V_top_val_eqv_l with (v1 := v2) (v2 := v1); eauto.
   apply val_eqv_sym; auto.
 Qed.
 
@@ -3407,8 +3386,8 @@ Lemma V_top_val_eqv :
 Proof.
   intros i v1 v2 v3 Hwf1 Hwf2 Hsub.
   split; intros HV.
-  - eapply V_top_val_eqv_l with (va := v1); eauto.
-  - eapply V_top_val_eqv_r with (vb := v2); eauto.
+  - eapply V_top_val_eqv_l with (v1 := v1); eauto.
+  - eapply V_top_val_eqv_r with (v2 := v2); eauto.
 Qed.
 
 Lemma R_top_res_eqv :
@@ -3569,7 +3548,6 @@ Proof.
     assert (HSe1 : occurs_free e1 \subset occurs_free (Efun f l0 [] e1 (Eletapp x f l0 [] e2))).
     {
       unfold Ensembles.Included, Ensembles.In.
-      intros.
       sauto lq: on drew: off.
     }
 
@@ -3592,7 +3570,6 @@ Proof.
       econstructor; eauto.
       econstructor; eauto.
       unfold Ensembles.Included, Ensembles.In.
-      intros.
       fcrush.
       fcrush.
     }
@@ -3605,9 +3582,7 @@ Proof.
       intros.
       destruct (M.elt_eq x x0); subst.
       - fcrush.
-      - apply Union_intror.
-        unfold Ensembles.In.
-        sauto lq: on drew: off.
+      - sauto lq: on drew: off.
     }
 
     assert (Hwf2 : wf_env (x |: occurs_free (Efun f l0 [] e1 (Eletapp x f l0 [] e2))) (M.set x v ρ1)).
@@ -3665,7 +3640,6 @@ Proof.
     assert (HSe1 : occurs_free e1 \subset occurs_free (Efun f l0 [] e1 (Eletapp x f l0 [] e2))).
     {
       unfold Ensembles.Included, Ensembles.In.
-      intros.
       sauto lq: on drew: off.
     }
 
@@ -3686,35 +3660,22 @@ Lemma preserves_linking f x e1 e1' e2 e2' :
   f <> x ->
   ~ (f \in occurs_free e1) ->
   ~ (f \in occurs_free e2) ->
-  ~ (f \in occurs_free_top e1') ->
-  ~ (f \in occurs_free_top e2') ->
   trans_correct_top e1 e1' ->
   trans_correct_top e2 e2' ->
   trans_correct_top (link f x e1 e2) (clink x e1' e2').
 Proof.
-  intros Hfx Hf1 Hf2 Hf1' Hf2' Htr1 Htr2.
+  intros Hfx Hf1 Hf2 Htr1 Htr2.
   destruct Htr1 as [HFV1 [Hsnd1 HE1]].
   destruct Htr2 as [HFV2 [Hsnd2 HE2]].
-  unfold trans_correct_top.
+
+  assert (Hf1' : ~ (f \in occurs_free_top e1')) by sfirstorder.
+  assert (Hf2' : ~ (f \in occurs_free_top e2')) by sfirstorder.
+
+  unfold trans_correct_top, link, clink.
   repeat split.
 
-  - (* FV inclusion: occurs_free_top (link x e1' e2') ⊆ occurs_free (link f x e1 e2) *)
-    unfold link, clink.
-    unfold Ensembles.Included, Ensembles.In.
-    intros z Hz.
-    inv Hz.
-    + (* Free_clink1: z ∈ FV(e1'); need z ∈ FV(Efun f l0 [] e1 _) via Free_fun2 *)
-      assert (Hne : z <> f) by (intros ?; subst; apply Hf1'; auto).
-      apply Free_fun2.
-      * auto.
-      * intros Hin; inv Hin.
-      * apply HFV1; auto.
-    + (* Free_clink2: z ≠ x ∧ z ∈ FV(e2'); need z ∈ FV(Efun ...) via Free_fun1 + Free_letapp1 *)
-      assert (Hne : z <> f) by (intros ?; subst; apply Hf2'; auto).
-      apply Free_fun1.
-      * auto.
-      * apply Free_letapp1; auto.
-        apply HFV2; auto.
+  - unfold Ensembles.Included, Ensembles.In in *.
+    sauto lq: on drew: off.
 
   - eapply web_map_sound_top_preserves_linking; eauto.
 
@@ -3750,7 +3711,6 @@ Proof.
       destruct (M.elt_eq x x0); subst.
       - fcrush.
       - apply Union_intror.
-        unfold Ensembles.In.
         sauto lq: on drew: off.
     }
 
@@ -3771,9 +3731,8 @@ Proof.
       eapply wf_env_set; eauto.
       econstructor; eauto.
       econstructor; eauto.
-      unfold Ensembles.Included, Ensembles.In.
-      fcrush.
-      fcrush.
+      sfirstorder.
+      sfirstorder.
     }
 
     assert (Hwf2 : wf_env (x |: occurs_free (Efun f l0 [] e (Eletapp x f l0 [] e2))) (M.set x v ρ1)).
@@ -3801,7 +3760,6 @@ Proof.
     eapply G_top_set; eauto.
     eapply G_top_mono; eauto; lia.
 
-
     exists (S (S (j1 + j2''))), r2'''; split; eauto.
     econstructor; eauto.
     eapply cbstep_top_fuel_exposed_inv; eauto.
@@ -3819,10 +3777,7 @@ Proof.
     {
       econstructor; eauto.
       econstructor; eauto.
-      rewrite FromList_nil, Union_Empty_set_neut_l.
-      unfold Ensembles.Included, Ensembles.In; intros z Hz.
-      destruct (M.elt_eq z f) as [Heqf|Hnef]; [subst; left; constructor|].
-      fcrush.
+      sfirstorder.
     }
 
     assert (Hwfsetenv :
@@ -3836,9 +3791,6 @@ Proof.
     eapply (R_top_res_eqv _ r1 r2'') ; eauto.
 
     eapply @bstep_fuel_wf_res with (ρ := (M.set f (Tag l0 (Vfun f ρ1 [] e)) (M.set x v ρ1))) (e := e2); eauto.
-    eapply Included_trans; eauto.
-    unfold Ensembles.Included, Ensembles.In.
-    fcrush.
-
+    sfirstorder.
     eapply R_top_mono; eauto; lia.
 Qed.
