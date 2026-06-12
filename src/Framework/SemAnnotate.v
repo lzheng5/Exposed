@@ -57,7 +57,7 @@ Lemma G_wf_env_r { Γ1 Γ2 ρ1 ρ2 } :
   wf_env ρ2.
 Proof. unfold G, Cross. hauto. Qed.
 
-Lemma G_n_subset Γ1 Γ2 ρ1 Γ3 Γ4 ρ2 :
+Lemma G_subset Γ1 Γ2 ρ1 Γ3 Γ4 ρ2 :
   G Γ1 Γ2 ρ1 ρ2 ->
   Γ3 \subset Γ1 ->
   Γ4 \subset Γ3 ->
@@ -68,9 +68,7 @@ Proof.
   destruct H as [ρ3 [HL [ρ4 [HC HR]]]].
   exists ρ3; split.
   - sfirstorder.
-  - exists ρ4; split; intros.
-    + eapply C.G_top_subset; eauto.
-    + eapply R.G_top_subset; eauto.
+  - exists ρ4; split; eauto using C.G_top_subset, R.G_top_subset.
 Qed.
 
 (* Linking Preservation *)
@@ -85,44 +83,20 @@ Lemma Top_preserves_linking f w x e1 e2 e1' e2' :
 Proof.
   unfold Top, Cross.
   intros Hw Hfx Hf1 Hf2.
-  intros.
-  destruct H as [e3 [HL1 [e4 [HC1 HR1]]]].
-  destruct H0 as [e3' [HL2 [e4' [HC2 HR2]]]].
+  intros HT1 HT2.
+  destruct HT1 as [e3 [HL1 [e4 [HC1 HR1]]]].
+  destruct HT2 as [e3' [HL2 [e4' [HC2 HR2]]]].
 
   pose proof (L.preserves_linking_top f x _ _ _ _ HL1 HL2) as HL.
   eexists; split; eauto.
 
-  assert (Hf3 : ~ Ensembles.In var (AI.occurs_free e3) f).
-  {
-    inv HL1.
-    unfold Ensembles.Included, Ensembles.In in *.
-    fcrush.
-  }
-
-  assert (Hf3' : ~ Ensembles.In var (AI.occurs_free e3') f).
-  {
-    inv HL2.
-    unfold Ensembles.Included, Ensembles.In in *.
-    fcrush.
-  }
-
+  assert (Hf3 : ~ Ensembles.In var (AI.occurs_free e3) f) by (inv HL1; fcrush).
+  assert (Hf3' : ~ Ensembles.In var (AI.occurs_free e3') f) by (inv HL2; fcrush).
   pose proof HC1 as HC1'.
   eapply (C.preserves_linking f x e3 e4 e3' e4') in HC1; eauto.
   eexists; split; eauto.
 
-  assert (Hf4 : ~ Ensembles.In var (R.AC.occurs_free_top e4) f).
-  {
-    inv HC1.
-    unfold Ensembles.Included, Ensembles.In in *.
-    fcrush.
-  }
-
-  assert (Hf4' : ~ Ensembles.In var (R.AC.occurs_free_top e4') f).
-  {
-    inv HC2.
-    unfold Ensembles.Included, Ensembles.In in *.
-    fcrush.
-  }
-
+  assert (Hf4 : ~ Ensembles.In var (R.AC.occurs_free_top e4) f) by (inv HC1; fcrush).
+  assert (Hf4' : ~ Ensembles.In var (R.AC.occurs_free_top e4') f) by (inv HC2; fcrush).
   eapply R.preserves_linking; eauto.
 Qed.
