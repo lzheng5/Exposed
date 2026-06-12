@@ -30,6 +30,7 @@ src/Framework/ANF1.v
 src/Framework/Label.v
 src/Framework/Checking.v
 src/Framework/Reify.v
+src/Framework/SemAnnotate.v
 
 src/Framework/RelComp.v
 src/Framework/IdComp.v
