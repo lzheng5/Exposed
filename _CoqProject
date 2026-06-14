@@ -1,44 +1,51 @@
--Q theories/Framework Framework
+-Q theories/Common Common
+theories/Common/Util.v
+theories/Common/Base.v
+theories/Common/RelComp.v
 
-theories/Framework/Util.v
-theories/Framework/Base.v
-theories/Framework/W0.v
-theories/Framework/ANF.v
-theories/Framework/Refl.v
-theories/Framework/Exposed.v
-theories/Framework/Id.v
-theories/Framework/DPE.v
-theories/Framework/Defunc.v
-theories/Framework/ConstProp.v
-theories/Framework/TransTop.v
-theories/Framework/SemSubst.v
-theories/Framework/SemSubstDPE.v
-#theories/Framework/SemSubstDefunc.v
-theories/Framework/SemSubst1.v
-theories/Framework/SemSubst2.v
+-Q theories/LambdaANF LambdaANF
+theories/LambdaANF/ANF.v
+theories/LambdaANF/Refl.v
+theories/LambdaANF/Comp.v
 
-theories/Framework/ANF0.v
-theories/Framework/Refl0.v
+-Q theories/LambdaWeb LambdaWeb
+theories/LambdaWeb/Base.v
+theories/LambdaWeb/W0.v
+theories/LambdaWeb/ANF.v
+theories/LambdaWeb/Refl.v
+theories/LambdaWeb/Exposed.v
+theories/LambdaWeb/Id.v
+theories/LambdaWeb/DPE.v
+theories/LambdaWeb/Defunc.v
+theories/LambdaWeb/ConstProp.v
+theories/LambdaWeb/TransTop.v
+theories/LambdaWeb/SemSubst.v
+theories/LambdaWeb/SemSubstDPE.v
+#theories/LambdaWeb/SemSubstDefunc.v
+theories/LambdaWeb/SemSubst1.v
+theories/LambdaWeb/SemSubst2.v
+theories/LambdaWeb/Erase.v
+theories/LambdaWeb/IdComp.v
+theories/LambdaWeb/Comp.v
 
-theories/Framework/Erase.v
-theories/Framework/Annotate.v
-theories/Framework/Trivial.v
-theories/Framework/Known.v
-theories/Framework/KnownAnnotate.v
-theories/Framework/AnnotateComp.v
+-Q theories/Annotate Annotate
+# The Annotate Functor
+theories/Annotate/Annotate.v
+theories/Annotate/Trivial.v
+theories/Annotate/Known.v
+theories/Annotate/KnownAnnotate.v
+theories/Annotate/AnnotateComp.v
 
-theories/Framework/ANF1.v
-theories/Framework/Label.v
-theories/Framework/Checking.v
-theories/Framework/Reify.v
-theories/Framework/SemAnnotate.v
-theories/Framework/SemAnnotateAttempt.v
+# Semantic Analysis Framework
+theories/Annotate/LabeledANF.v
+theories/Annotate/Label.v
+theories/Annotate/Checking.v
+theories/Annotate/Reify.v
+theories/Annotate/SemComp.v
+theories/Annotate/SemCompAttempt.v
 
-theories/Framework/RelComp.v
-theories/Framework/IdComp.v
-theories/Framework/ReflComp.v
-theories/Framework/Refl0Comp.v
-theories/Framework/Comp.v
-theories/Framework/CompTop.v
-theories/Framework/SemComp.v
-theories/Framework/SemCompTop.v
+-Q theories/Comp Comp
+theories/Comp/AnnotateComp.v
+theories/Comp/AnnotateCompTop.v
+theories/Comp/SemComp.v
+theories/Comp/SemCompTop.v

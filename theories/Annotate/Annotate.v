@@ -1,0 +1,886 @@
+From Coq Require Import ZArith.ZArith Sets.Ensembles Lists.List.
+From CertiCoq.LambdaANF Require Import Ensembles_util map_util set_util List_util tactics.
+Import ListNotations.
+Require Import Lia.
+From Hammer Require Import Hammer Tactics Reflect.
+
+From Common Require Import Util.
+From LambdaANF Require Import ANF Refl.
+From LambdaWeb Require Import ANF Refl.
+
+Module A0 := LambdaANF.ANF.
+Module A1 := LambdaWeb.ANF.
+
+Module R0 := LambdaANF.Refl.
+Module R1 := LambdaWeb.Refl.
+
+(* Annotate Functor *)
+
+(* Note this formulation is too abstract to be used to verify any semantic analysis. See [SemAnnotateAttempt.v].
+   But this works for any syntactical analysis, such as the trivial analysis and the known function call analysis. See [Trivial.v] and [Known.v]. *)
+
+(* Due to the abstractness, it is probably more intuitive to see what's going on
+   with an instantiated/concrete V relation.
+
+   Take a look at `KnownAnnotate.v` or `TrivialAnnotate.v` (TODO). *)
+
+Module AnnotateUtil.
+
+  Definition V_ex0 (v1 : A0.val) (v2 : A1.val) : Prop :=
+    match v1, v2 with
+    | A0.Vconstr t1 vs1, A1.Vconstr t2 vs2 => t1 = t2 /\ length vs1 = length vs2
+    | A0.Vfun f1 ρ1 xs1 e1, A1.Vfun f2 ρ2 xs2 e2 => length xs1 = length xs2
+    | _, _ => False
+    end.
+
+  Definition V_ex
+    (V' : nat -> A0.val -> A1.wval -> Prop)
+    (E' : nat -> A0.env -> A0.exp -> A1.env -> A1.exp -> Prop)
+    (i0 : nat) (v1 : A0.val) (w2 : web) (v2 : A1.val) :=
+    match v1, v2 with
+    | A0.Vconstr t1 vs1, A1.Vconstr t2 vs2 =>
+        t1 = t2 /\
+        Forall2 (V' i0) vs1 vs2
+
+    | A0.Vfun f1 ρ1 xs1 e1, A1.Vfun f2 ρ2 xs2 e2 =>
+        length xs1 = length xs2 /\
+        forall j vs1 vs2 ρ3 ρ4,
+          j <= i0 ->
+          Forall exposed vs2 ->
+          Forall2 (V' j) vs1 vs2 ->
+          set_lists xs1 vs1 (M.set f1 (A0.Vfun f1 ρ1 xs1 e1) ρ1) = Some ρ3 ->
+          set_lists xs2 vs2 (M.set f2 (Tag w2 (A1.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
+          E' j ρ3 e1 ρ4 e2
+    | _, _ => False
+    end.
+
+  Lemma V_ex_V_ex0 { V E i v1 w2 v2 }:
+    V_ex V E i v1 w2 v2 -> V_ex0 v1 v2.
+  Proof.
+    unfold V_ex, V_ex0.
+    intros.
+    destruct v1; destruct v2; simpl in H; try contradiction.
+    - fcrush.
+    - destruct H as [Hc HF]; subst.
+      split; auto.
+      eapply Forall2_length; eauto.
+  Qed.
+
+  Definition R' (P : nat -> A0.val -> A1.wval -> Prop) (i : nat) (r1 : A0.res) (r2 : A1.res) :=
+    match r1, r2 with
+    | A0.OOT, A1.OOT => True
+    | A0.Res v1, A1.Res v2 => P i v1 v2
+    | _, _ => False
+    end.
+
+  Definition E' (P : nat -> A0.val -> A1.wval -> Prop) (ex : bool) (i : nat) (ρ1 : A0.env) (e1 :A0.exp) (ρ2 : A1.env) (e2 : A1.exp) : Prop :=
+    forall j1 r1,
+      j1 <= i ->
+      A0.bstep_fuel ρ1 e1 j1 r1 ->
+      exists j2 r2,
+        A1.bstep_fuel ex ρ2 e2 j2 r2 /\
+        R' P (i - j1) r1 r2.
+
+End AnnotateUtil.
+
+Module Type VAnn.
+
+  (* Analysis result type *)
+  Parameter web_map : Type.
+
+  Parameter V_ann0 : web_map -> A0.val -> web -> A1.val -> Prop.
+
+  Parameter V_ann : (nat -> A0.val -> A1.wval -> Prop) ->
+                    (bool -> nat -> A0.env -> A0.exp -> A1.env -> A1.exp -> Prop) ->
+                    web_map -> nat -> A0.val -> web -> A1.val -> Prop.
+
+  Parameter V_ann_V_ann0 :
+    forall V E W i v1 w2 v2,
+      V_ann V E W i v1 w2 v2 ->
+      V_ann0 W v1 w2 v2.
+
+  Parameter V_ann_mono :
+    forall V E W i j v1 w2 v2,
+      (forall k : nat,
+          k < S i ->
+          forall (j : nat) (v1 : A0.val) (v2 : A1.wval), V k v1 v2 -> j <= k -> V j v1 v2) ->
+      V_ann (fun i' => V (i - (i - i'))) (fun b i' => E b (i - (i - i'))) W i v1 w2 v2 ->
+      j <= i ->
+      V_ann (fun j' => V (j - (j - j'))) (fun b j' => E b (j - (j - j'))) W j v1 w2 v2.
+
+End VAnn.
+
+Module AnnotateV (VA : VAnn).
+
+  Import VA.
+  Export AnnotateUtil.
+
+  (* Cross-language Logical Relations *)
+  Fixpoint V (W : web_map) (i : nat) (v1 : A0.val) (wv2 : A1.wval) {struct i} : Prop :=
+    wf_val wv2 /\
+    match wv2 with
+    | A1.TAG _ w2 v2 =>
+        match i with
+        | 0 =>
+            match exposedb w2 with
+            | true => exposed wv2 /\ V_ex0 v1 v2
+            | false => V_ann0 W v1 w2 v2
+            end
+
+        | S i0 =>
+            let V' := (fun j v1 wv2 => V W (i0 - (i0 - j)) v1 wv2) in
+            let E' b := (fun j ρ1 e1 ρ2 e2 => E' (V W) b (i0 - (i0 - j)) ρ1 e1 ρ2 e2) in
+            match exposedb w2 with
+            | true => exposed wv2 /\ V_ex V' (E' true) i0 v1 w2 v2
+            | false => V_ann V' E' W i0 v1 w2 v2
+            end
+        end
+    end.
+
+  Definition R W := (R' (V W)).
+
+  Definition E W := (E' (V W)).
+
+  (* Lemmas about [wf_val], [wf_res], and [wf_env] *)
+  Lemma V_wf_val_r {W i v1 v2}:
+    V W i v1 v2 ->
+    wf_val v2.
+  Proof.
+    intros HV.
+    destruct i; simpl in *;
+      destruct HV as [Hv2 _]; auto.
+  Qed.
+
+  Lemma V_wf_val_Forall_r {W i vs1 vs2} :
+    Forall2 (V W i) vs1 vs2 ->
+    Forall wf_val vs2.
+  Proof.
+    intros.
+    induction H; auto.
+    constructor; auto.
+    eapply V_wf_val_r; eauto.
+  Qed.
+
+  Lemma V_wf_res_r {W i v1 v2}:
+    V W i v1 v2 ->
+    wf_res (Res v2).
+  Proof.
+    intros HV.
+    constructor.
+    eapply V_wf_val_r; eauto.
+  Qed.
+
+  Lemma R_wf_res_l {W i r1 r2} :
+    R W i r1 r2 ->
+    wf_res r2.
+  Proof.
+    unfold R.
+    intros.
+    destruct r1; destruct r2; try contradiction; auto.
+    constructor.
+    eapply V_wf_val_r; eauto.
+  Qed.
+
+  (* Inversion Lemmas *)
+  Lemma R_res_inv_l W i v1 r2 :
+    R W i (A0.Res v1) r2 ->
+    exists v2, r2 = A1.Res v2 /\ V W i v1 v2.
+  Proof.
+    intros.
+    destruct r2; simpl in *; try contradiction.
+    eexists; split; eauto.
+  Qed.
+
+  (* Monotonicity Lemmas *)
+  Lemma V_ex_mono :
+    forall i V E j v1 w2 v2,
+      (forall k : nat,
+          k < S i ->
+          forall (j : nat) (v1 : A0.val) (v2 : wval), V k v1 v2 -> j <= k -> V j v1 v2) ->
+      V_ex (fun i' => V (i - (i - i'))) (fun i' => E (i - (i - i'))) i v1 w2 v2 ->
+      j <= i ->
+      V_ex (fun j' => V (j - (j - j'))) (fun j' => E (j - (j - j'))) j v1 w2 v2.
+  Proof.
+    unfold V_ex.
+    intros.
+    destruct v1; destruct v2; auto;
+      simpl in *; try contradiction.
+    - destruct H0 as [Hlen HV].
+      repeat (split; auto); intros.
+      specialize (HV j0 vs1 vs2 ρ3 ρ4).
+      rewrite normalize_step in *; try lia.
+      eapply HV; eauto; try lia.
+    - destruct H0 as [Heqc HF];
+        repeat split; auto.
+      rewrite normalize_step in *; try lia.
+      eapply V_mono_Forall_aux; eauto; lia.
+  Qed.
+
+  Lemma V_mono i :
+      forall {W j v1 v2},
+        V W i v1 v2 ->
+        j <= i ->
+        V W j v1 v2.
+    Proof.
+      induction i using lt_wf_rec; intros.
+      destruct v2.
+      destruct i; simpl in H0;
+        destruct j; simpl; intros;
+        destruct H0 as [Hv1 HV]; subst.
+      - repeat (split; auto).
+      - inv H1.
+      - repeat (split; auto).
+        destruct (exposed_reflect w).
+        + inv HV; split; auto.
+          eapply V_ex_V_ex0; eauto.
+        + eapply V_ann_V_ann0; eauto.
+      - repeat (split; auto).
+        destruct (exposed_reflect w).
+        + inv HV; split; auto.
+          eapply V_ex_mono; eauto; lia.
+        + eapply V_ann_mono; eauto; lia.
+    Qed.
+
+  Lemma V_mono_Forall i j {W vs1 vs2} :
+    Forall2 (V W i) vs1 vs2 ->
+    j <= i ->
+    Forall2 (V W j) vs1 vs2.
+  Proof.
+    intros.
+    eapply V_mono_Forall_mono; eauto.
+    intros.
+    eapply V_mono; eauto.
+  Qed.
+
+  Lemma R_mono i j {W r1 r2} :
+    R W i r1 r2 ->
+    j <= i ->
+    R W j r1 r2.
+  Proof.
+    unfold R.
+    intros.
+    destruct r1; auto.
+    destruct r2; auto.
+    eapply V_mono; eauto.
+  Qed.
+
+  Lemma E_mono i j {W ex ρ1 ρ2 e1 e2}:
+    E W ex i ρ1 e1 ρ2 e2 ->
+    j <= i ->
+    E W ex j ρ1 e1 ρ2 e2.
+  Proof.
+    unfold E, E'.
+    intros.
+    destruct (H j1 r1) as [j2 [r2 [Hr2 HR]]]; auto; try lia.
+    exists j2, r2; split; eauto.
+    eapply R_mono; eauto; try lia.
+  Qed.
+
+End AnnotateV.
+
+Module AnnotateTop.
+
+  (* Top-level Cross-language Logical Relations *)
+
+  (* The top-level annotate relation is exactly the relation induced by the trivial analysis *)
+  Module VTrivM <: VAnn.
+
+    Definition web_map := unit.
+
+    Definition V_ann0 (_ : web_map) (v1 : A0.val) (w2 : web) (v2 : A1.val) : Prop := False.
+
+    Definition V_ann
+      (V' : nat -> A0.val -> A1.wval -> Prop)
+      (E' : bool -> nat -> A0.env -> A0.exp -> A1.env -> A1.exp -> Prop)
+      (_ : web_map) (i0 : nat) (v1 : A0.val) (w2 : web) (v2 : A1.val) := False.
+
+    Lemma V_ann_V_ann0 :
+      forall V E W i v1 w2 v2,
+        V_ann V E W i v1 w2 v2 ->
+        V_ann0 W v1 w2 v2.
+    Proof. unfold V_ann, V_ann0; auto. Qed.
+
+    Lemma V_ann_mono V E W i j v1 w2 v2 :
+      (forall k : nat,
+          k < S i ->
+          forall (j : nat) (v1 : A0.val) (v2 : A1.wval), V k v1 v2 -> j <= k -> V j v1 v2) ->
+      V_ann (fun i' => V (i - (i - i'))) (fun b i' => E b (i - (i - i'))) W i v1 w2 v2 ->
+      j <= i ->
+      V_ann (fun j' => V (j - (j - j'))) (fun b j' => E b (j - (j - j'))) W j v1 w2 v2.
+    Proof. unfold V_ann. intros; fcrush. Qed.
+
+  End VTrivM.
+
+  Module VM := AnnotateV VTrivM.
+  Export VM.
+
+  Definition V := (VM.V tt).
+  Definition E := (VM.E tt).
+  Definition R := (VM.R tt).
+
+  (* Top-level Exposed Lemmas *)
+  Lemma V_exposed_r {i v1 v2}:
+    V i v1 v2 ->
+    exposed v2.
+  Proof.
+    intros.
+    destruct i; destruct v2;
+      simpl in *; fcrush.
+  Qed.
+
+  Lemma V_exposed_Forall_r {i vs1 vs2} :
+    Forall2 (V i) vs1 vs2 ->
+    Forall exposed vs2.
+  Proof.
+    intros.
+    induction H; auto.
+    constructor; auto.
+    eapply V_exposed_r; eauto.
+  Qed.
+
+  Lemma V_exposed_res_r {i v1 v2}:
+    V i v1 v2 ->
+    exposed_res (Res v2).
+  Proof.
+    intros HV.
+    constructor.
+    eapply V_exposed_r; eauto.
+  Qed.
+
+  Lemma R_exposed_res_r {i r1 r2} :
+    R i r1 r2 ->
+    exposed_res r2.
+  Proof.
+    unfold R.
+    intros.
+    destruct r1; destruct r2; try contradiction; auto.
+    constructor.
+    eapply V_exposed_r; eauto.
+  Qed.
+
+  Lemma Vconstr_V i t vs1 vs2 w:
+    (w \in Exposed) ->
+    Forall wf_val vs2 ->
+    Forall2 (V i) vs1 vs2 ->
+    V i (A0.Vconstr t vs1) (Tag w (A1.Vconstr t vs2)).
+  Proof.
+    intros.
+    induction H1.
+    - destruct i; simpl; repeat (split; eauto); simpl;
+        destruct (exposed_reflect w); try contradiction;
+        eauto.
+    - inv H0.
+      assert (Hex : exposed (Tag w (A1.Vconstr t (y :: l')))).
+      {
+        constructor; auto.
+        constructor; auto.
+        eapply V_exposed_r; eauto.
+        eapply V_exposed_Forall_r; eauto.
+      }
+
+      assert (Hwf : wf_val (Tag w (A1.Vconstr t (y :: l')))).
+      {
+        eapply wf_val_Vconstr; eauto.
+        inv Hex; auto.
+      }
+
+      destruct i; simpl.
+      + split; simpl; auto.
+        destruct (exposed_reflect w); try contradiction.
+        repeat (split; fcrush).
+      + unfold V; simpl.
+        split; simpl; auto.
+        destruct (exposed_reflect w); try contradiction.
+        repeat (split; eauto).
+        constructor.
+        eapply V_mono; eauto; lia.
+        eapply V_mono_Forall; eauto; lia.
+  Qed.
+
+  (* Top-level Environment Relation *)
+  Definition G i Γ1 ρ1 Γ2 ρ2 :=
+    wf_env ρ2 /\
+    Γ2 \subset Γ1 /\
+    forall x,
+      (x \in Γ1) ->
+      exists v1 v2,
+        M.get x ρ1 = Some v1 /\
+        M.get x ρ2 = Some v2 /\
+        V i v1 v2.
+
+  Lemma G_wf_env_r i Γ1 ρ1 Γ2 ρ2 :
+    G i Γ1 ρ1 Γ2 ρ2 ->
+    wf_env ρ2.
+  Proof. unfold G. intros; tauto. Qed.
+
+  Lemma G_subset_inv i Γ1 ρ1 Γ2 ρ2 :
+    G i Γ1 ρ1 Γ2 ρ2 ->
+    Γ2 \subset Γ1.
+  Proof. unfold G; intros; tauto. Qed.
+
+  Lemma G_subset i Γ1 ρ1 Γ2 ρ2 Γ3 Γ4 :
+    G i Γ1 ρ1 Γ2 ρ2 ->
+    Γ3 \subset Γ1 ->
+    Γ4 \subset Γ3 ->
+    G i Γ3 ρ1 Γ4 ρ2.
+  Proof.
+    unfold G.
+    intros.
+    destruct H as [Hr [Hs HG]].
+    repeat (split; auto).
+  Qed.
+
+  (* Top-level Monotonicity Lemma *)
+  Lemma G_mono {Γ1 Γ2 ρ1 ρ2} i j:
+      G i Γ1 ρ1 Γ2 ρ2 ->
+      j <= i ->
+      G j Γ1 ρ1 Γ2 ρ2.
+  Proof.
+    unfold G.
+    intros.
+    destruct H as [Hwf [HS HG]].
+    split; auto.
+    split; auto; intros.
+    edestruct HG as [v1 [v2 [Heqv1 [Heqv2 HV]]]]; eauto.
+    eexists; eexists; repeat (split; eauto).
+    eapply V_mono; eauto.
+  Qed.
+
+  (* Top-level Relation *)
+  Definition trans_correct etop etop' :=
+    A1.occurs_free etop' \subset A0.occurs_free etop /\
+    forall i ρ1 ρ2,
+      G i (A0.occurs_free etop) ρ1 (A1.occurs_free etop') ρ2 ->
+      E true i ρ1 etop ρ2 etop'.
+
+  Lemma trans_correct_subset e1 e2 :
+    trans_correct e1 e2 ->
+    A1.occurs_free e2 \subset A0.occurs_free e1.
+  Proof.
+    unfold trans_correct.
+    intros.
+    inv H; auto.
+  Qed.
+
+  (* Top-level Environment Lemmas *)
+  Lemma G_get {Γ1 Γ2 i ρ1 ρ2}:
+    G i Γ1 ρ1 Γ2 ρ2 ->
+    forall x,
+      (x \in Γ1) ->
+      exists v1 v2,
+        M.get x ρ1 = Some v1 /\
+        M.get x ρ2 = Some v2 /\
+        V i v1 v2.
+  Proof.
+    unfold G.
+    intros.
+    destruct H as [Hr1 [HΓ HG]].
+    eapply (HG x); eauto.
+  Qed.
+
+  Lemma G_get_list {i Γ1 ρ1 Γ2 ρ2} :
+    G i Γ1 ρ1 Γ2 ρ2 ->
+    forall xs,
+      (FromList xs) \subset Γ1 ->
+      exists vs1 vs2,
+        get_list xs ρ1 = Some vs1 /\
+        get_list xs ρ2 = Some vs2 /\
+        Forall2 (V i) vs1 vs2.
+  Proof.
+    intros HG xs.
+    intros.
+    induction xs; simpl; intros.
+    - eexists; eexists; repeat split; eauto.
+    - rewrite FromList_cons in H.
+      edestruct (G_get HG) as [v1 [v2 [Heqv1 [Heqv2 HV]]]]; eauto.
+
+      edestruct IHxs as [vs1 [vs2 [Heqvs1 [Heqvs2 HVs]]]]; eauto.
+      eapply Included_trans; eauto.
+      apply Included_Union_r.
+
+      rewrite Heqv1.
+      rewrite Heqvs1.
+      rewrite Heqv2.
+      rewrite Heqvs2.
+      exists (v1 :: vs1), (v2 :: vs2); repeat (split; auto).
+  Qed.
+
+  Lemma G_set {i Γ1 ρ1 Γ2 ρ2}:
+    G i Γ1 ρ1 Γ2 ρ2 ->
+    forall {x v1 v2},
+      V i v1 v2 ->
+      G i (x |: Γ1) (M.set x v1 ρ1) (x |: Γ2) (M.set x v2 ρ2).
+  Proof.
+    intros.
+    unfold G; intros.
+
+    split.
+    eapply wf_env_set; eauto.
+    eapply G_wf_env_r; eauto.
+    eapply V_wf_val_r; eauto.
+
+    split.
+    apply Included_Union_compat; auto.
+    apply Included_refl.
+    eapply G_subset_inv; eauto.
+
+    intros.
+    destruct (M.elt_eq x0 x); subst.
+    - repeat rewrite M.gss.
+      eexists; eexists; repeat split; eauto.
+    - repeat (rewrite M.gso; auto).
+      assert (x0 \in Γ1) by fcrush.
+      eapply G_get; eauto.
+  Qed.
+
+  Lemma G_set_lists {i Γ1 ρ1 Γ2 ρ2}:
+    G i Γ1 ρ1 Γ2 ρ2 ->
+    forall {xs vs1 vs2 ρ3 ρ4},
+      Forall2 (V i) vs1 vs2 ->
+      set_lists xs vs1 ρ1 = Some ρ3 ->
+      set_lists xs vs2 ρ2 = Some ρ4 ->
+      G i (FromList xs :|: Γ1) ρ3 (FromList xs :|: Γ2) ρ4.
+  Proof.
+    intros HG xs.
+    assert (HΓ : Γ2 \subset Γ1) by (eapply G_subset_inv; eauto).
+    induction xs; simpl; intros.
+    - destruct vs1; try discriminate.
+      destruct vs2; try discriminate.
+      inv H0; inv H1.
+      eapply G_subset; eauto.
+      normalize_sets.
+      rewrite Union_Empty_set_neut_l; eauto.
+      apply Included_refl.
+      eapply Included_Union_compat; eauto.
+      apply Included_refl.
+    - destruct vs1; try discriminate.
+      destruct vs2; try discriminate.
+      destruct (set_lists xs vs1 ρ1) eqn:Heq1; try discriminate.
+      destruct (set_lists xs vs2 ρ2) eqn:Heq2; try discriminate.
+      inv H; inv H0; inv H1.
+      eapply G_subset with (Γ1 := (a |: (FromList xs :|: Γ1))) (Γ2 := (a |: (FromList xs :|: Γ2))); eauto.
+      eapply G_set; eauto.
+      normalize_sets.
+      rewrite Union_assoc.
+      apply Included_refl.
+      eapply Included_Union_compat; eauto.
+      apply Included_refl.
+  Qed.
+
+  (* Compatibility Lemmas *)
+  Lemma Vfun_V w e e' :
+    trans_correct e e' ->
+    (w \in Exposed) ->
+    forall i f xs Γ1 Γ2 ρ1 ρ2,
+      G i Γ1 ρ1 Γ2 ρ2 ->
+      A0.occurs_free e \subset (FromList xs :|: (f |: Γ1)) ->
+      A1.occurs_free e' \subset (FromList xs :|: (f |: Γ2)) ->
+      V i (A0.Vfun f ρ1 xs e) (Tag w (A1.Vfun f ρ2 xs e')).
+  Proof.
+    unfold trans_correct.
+    intros [HS He] Hw i.
+
+    induction i; intros; unfold V; simpl; auto;
+      assert (Hρ2 : wf_env ρ2) by (eapply G_wf_env_r; eauto);
+      destruct (exposed_reflect w); try contradiction;
+      repeat (split; auto); intros.
+
+    apply (He (i - (i - j)) ρ3 ρ4); auto.
+    eapply G_subset with (Γ1 := FromList xs :|: (f |: Γ1)) (Γ2 := FromList xs :|: (f |: Γ2)); eauto.
+    eapply G_set_lists; eauto.
+    eapply G_set; eauto.
+    eapply G_mono; eauto; try lia.
+    apply V_mono with i; try lia.
+    eapply IHi with (Γ2 := Γ2); eauto.
+    apply G_mono with (S i); eauto; lia.
+  Qed.
+
+  Lemma free_fun_compat e e' w f k k' xs :
+    A1.occurs_free e' \subset A0.occurs_free e ->
+    A1.occurs_free k' \subset A0.occurs_free k ->
+    A1.occurs_free (A1.Efun f w xs e' k') \subset A0.occurs_free (A0.Efun f xs e k).
+  Proof.
+    unfold Ensembles.Included, Ensembles.In.
+    intros.
+    inv H1; auto.
+  Qed.
+
+  Lemma fun_compat w e e' k k' f xs :
+    (w \in Exposed) ->
+    trans_correct e e' ->
+    trans_correct k k' ->
+    trans_correct (A0.Efun f xs e k) (Efun f w xs e' k').
+  Proof.
+    unfold trans_correct, E, VM.E, E'.
+    intro Hw; intros.
+
+    inv H.
+    inv H0.
+    split; intros.
+    eapply free_fun_compat; eauto.
+
+    inv H5.
+    - exists 0, OOT; split; simpl; eauto.
+    - inv H6.
+      edestruct (H3 (i - 1) (M.set f (A0.Vfun f ρ1 xs e) ρ1) (M.set f (Tag w (A1.Vfun f ρ2 xs e')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+      + eapply G_subset with (Γ1 := (f |: (A0.occurs_free (A0.Efun f xs e k)))) (Γ2 := (f |: (A1.occurs_free (A1.Efun f w xs e' k')))); eauto.
+        * eapply G_set; eauto.
+          eapply G_mono; eauto; try lia.
+
+          eapply Vfun_V with (Γ1 := (A0.occurs_free (A0.Efun f xs e k))) (Γ2 := (A1.occurs_free (A1.Efun f w xs e' k'))); eauto.
+          -- unfold trans_correct.
+             split; auto.
+          -- eapply G_mono; eauto; try lia.
+          -- eapply A0.free_fun_e_subset; eauto.
+          -- eapply A1.free_fun_e_subset; eauto.
+        * eapply A0.free_fun_k_subset; eauto.
+      + exists (S j2), r2; split; auto.
+        * constructor; auto.
+          eapply bstep_fuel_exposed_inv; eauto.
+        * apply R_mono with ((i - 1) - c); try lia; auto.
+  Qed.
+
+  Lemma free_letapp_compat w k k' f x xs :
+    A1.occurs_free k' \subset A0.occurs_free k ->
+    A1.occurs_free (A1.Eletapp x f w xs k') \subset A0.occurs_free (A0.Eletapp x f xs k).
+  Proof.
+    unfold Ensembles.Included, Ensembles.In.
+    intros.
+    inv H0; auto.
+  Qed.
+
+  (* Note here we require [Exposed] to be a singleton set *)
+  Lemma letapp_compat w k k' xs x f :
+    (w \in Exposed) ->
+    (forall w0, w0 \in Exposed -> w0 = w) ->
+    trans_correct k k' ->
+    trans_correct (A0.Eletapp x f xs k) (A1.Eletapp x f w xs k').
+  Proof.
+    unfold trans_correct, E, VM.E, E'.
+    intros Hw HEx; intros.
+    destruct H.
+    split; intros.
+    eapply free_letapp_compat; eauto.
+
+    inv H3.
+    - exists 0, OOT; split; simpl; auto.
+    - inv H4.
+      + edestruct (G_get H1) as [fv1 [fv2 [Heqfv1 [Heqfv2 HVf]]]]; eauto.
+        invc.
+        destruct fv2.
+        destruct i.
+        fcrush.
+        simpl in HVf.
+        destruct HVf as [Hfv2 HV]; subst.
+        destruct (exposed_reflect w); try contradiction.
+        destruct (exposed_reflect w0); inv HV.
+        assert (Heqw : w0 = w) by (eapply HEx; eauto); inv Heqw.
+        destruct v0; try contradiction.
+        destruct H4 as [Hlen HV]; subst.
+        edestruct (G_get_list H1 xs) as [vs1 [vs2 [Heqvs1 [Heqvs2 HVvs]]]]; eauto.
+        eapply A0.free_letapp_xs_subset; eauto.
+        invc.
+
+        destruct (set_lists_length3 (M.set v0 (Tag w (Vfun v0 t l e0)) t) l vs2) as [ρ4 Heqρ4].
+        unfold wval in *.
+        rewrite <- (Forall2_length _ _ _ HVvs).
+        rewrite <- (set_lists_length_eq _ _ _ _ H12); auto.
+
+        unfold E' in HV.
+        edestruct (HV i vs1 vs2 ρ'' ρ4) with (j1 := c0) as [j2 [r2 [He0 HR]]]; eauto; try lia.
+        * eapply V_exposed_Forall_r; eauto.
+        * eapply V_mono_Forall; eauto; lia.
+        * destruct r2; simpl in HR; try contradiction.
+          edestruct (H0 (i - c0) (M.set x v ρ1) (M.set x w0 ρ2)) with (j1 := c') as [j3 [r3 [He1 HR']]]; eauto; try lia.
+          eapply G_subset with (Γ1 := x |: (A0.occurs_free (A0.Eletapp x f xs k))) (Γ2 := x |: (A1.occurs_free (A1.Eletapp x f w xs k'))); eauto.
+          eapply G_set; eauto.
+          eapply G_mono; eauto; lia.
+          -- eapply V_mono; eauto; try lia.
+          -- eapply A0.free_letapp_k_subset; eauto.
+          -- exists (S (j2 + j3)), r3; split; eauto.
+             2 : { eapply R_mono; eauto; lia. }
+
+             constructor; auto.
+             eapply BStep_letapp_Res with (v := w0); eauto.
+             destruct (exposed_reflect w); try contradiction; auto.
+
+             intros.
+             split; auto.
+             eapply V_exposed_Forall_r; eauto.
+             assert (Hr : exposed_res (A1.Res w0)) by (eapply bstep_fuel_exposed_inv; eauto); inv Hr; auto.
+
+             eapply bstep_fuel_exposed_inv; eauto.
+      + eexists; exists OOT; split; simpl; eauto.
+  Qed.
+
+End AnnotateTop.
+
+Module AnnotateVVTop (VA : VAnn).
+
+  (* Equivalence between AnnotateV.V and AnnotateTop.V when for exposed values. *)
+
+  Import AnnotateUtil.
+
+  Lemma exposed_V_relate_Forall_aux :
+    forall i (V1 V2 : nat -> A0.val -> A1.wval -> Prop),
+      (forall m : nat,
+          m < S i ->
+          forall v1 v2,
+            exposed v2 ->
+            V1 m v1 v2 <-> V2 m v1 v2) ->
+      forall j vs1 vs2,
+        j <= i ->
+        Forall exposed vs2 ->
+        Forall2 (V1 j) vs1 vs2 <-> Forall2 (V2 j) vs1 vs2.
+  Proof.
+    intros.
+    revert vs1 j H0.
+    induction H1; simpl; intros.
+    - split; intros; inv H1; auto.
+    - split; intros; inv H3; constructor; auto;
+        solve [ eapply H; try lia; eauto |
+                eapply IHForall; eauto ].
+  Qed.
+
+  Lemma exposed_R_relate_aux :
+    forall i V1 V2,
+      (forall m : nat,
+          m < S i ->
+          forall v1 v2,
+            exposed v2 ->
+            V1 m v1 v2 <-> V2 m v1 v2) ->
+      forall j r1 r2,
+        j <= i ->
+        exposed_res r2 ->
+        R' V1 j r1 r2 <-> R' V2 j r1 r2.
+  Proof.
+    unfold R'.
+    intros; split; intros;
+      destruct r1; destruct r2; auto;
+      inv H1;
+      eapply H; eauto; try lia.
+  Qed.
+
+  Lemma exposed_E_relate_aux :
+    forall i V1 V2,
+      (forall m : nat,
+          m < S i ->
+          forall v1 v2,
+            exposed v2 ->
+            V1 m v1 v2 <-> V2 m v1 v2) ->
+      forall j ρ1 e1 ρ2 e2,
+        j <= i ->
+        E' V1 true j ρ1 e1 ρ2 e2 <-> E' V2 true j ρ1 e1 ρ2 e2.
+  Proof.
+    unfold E'.
+    intros; split; intros;
+      edestruct H1 as [j2 [r2 [Hstep HR]]]; eauto;
+      eexists; eexists; split; eauto;
+      eapply exposed_R_relate_aux with (V1 := V1); eauto; try lia;
+      eapply bstep_fuel_exposed_inv in Hstep; eauto; fcrush.
+  Qed.
+
+  Lemma exposed_V_ex_relate :
+    forall i V1 V2,
+      (forall m : nat,
+          m < S i ->
+          forall v1 v2,
+            exposed v2 ->
+            V1 m v1 v2 <-> V2 m v1 v2) ->
+      forall j v1 w v2,
+        j <= i ->
+        exposed (Tag w v2) ->
+        V_ex
+          (fun (j : nat)  => V1 (i - (i - j)))
+          (fun (j : nat) => E' V1 true (i - (i - j)))
+          j v1 w v2
+        <->
+        V_ex
+          (fun (j : nat) => V2 (i - (i - j)))
+          (fun (j : nat) => E' V2 true (i - (i - j)))
+          j v1 w v2.
+  Proof.
+    unfold V_ex.
+    intros.
+    split; intros.
+    - destruct v1; destruct v2; try contradiction;
+        inv H2; split; auto; intros.
+      + assert (He : E' V1 true (i - (i - j0)) ρ3 e ρ4 e0).
+        {
+          eapply H4; eauto.
+          eapply exposed_V_relate_Forall_aux; eauto; lia.
+        }
+        eapply exposed_E_relate_aux with (V1 := V1); eauto; lia.
+      + eapply exposed_V_relate_Forall_aux with (V1 := V1); eauto; try lia.
+        fcrush.
+    - destruct v1; destruct v2; try contradiction;
+        inv H2; split; auto; intros.
+      + assert (He : E' V2 true (i - (i - j0)) ρ3 e ρ4 e0).
+        {
+          eapply H4; eauto.
+          eapply exposed_V_relate_Forall_aux with (V1 := V1); eauto; lia.
+        }
+        eapply exposed_E_relate_aux with (V1 := V1); eauto; lia.
+      + eapply exposed_V_relate_Forall_aux with (V1 := V1); eauto; try lia.
+        fcrush.
+  Qed.
+
+  Module A := AnnotateV VA.
+  Module T := AnnotateTop.
+
+  Theorem exposed_V_relate :
+    forall i W v1 v2,
+      exposed v2 ->
+      (A.V W i v1 v2 <-> T.V i v1 v2).
+  Proof.
+    intro i.
+    induction i using lt_wf_rec; intros.
+    split; intros.
+    - destruct i; simpl in *;
+        inv H1; split; auto;
+        destruct v2;
+        destruct (exposed_reflect w); try contradiction.
+      + fcrush.
+      + fcrush.
+      + destruct H3 as [Hlen HV]; subst.
+        split; auto.
+        eapply exposed_V_ex_relate with (V1 := A.V W); eauto.
+      + fcrush.
+    - destruct i; simpl in *;
+        inv H1; split; auto;
+        destruct v2;
+        destruct (exposed_reflect w); try contradiction.
+      + fcrush.
+      + destruct H3 as [Hlen HV]; subst.
+        split; auto.
+        eapply exposed_V_ex_relate with (V1 := A.V W); eauto.
+  Qed.
+
+  Lemma exposed_V_relate_Forall :
+    forall i W vs1 vs2,
+      Forall exposed vs2 ->
+      (Forall2 (A.V W i) vs1 vs2 <-> Forall2 (T.V i) vs1 vs2).
+  Proof.
+    intros.
+    revert i W vs1.
+    induction H; intros.
+    - split; intros; inv H; auto.
+    - split; intros; inv H1; constructor; auto;
+        solve [ eapply exposed_V_relate; try lia; eauto |
+                eapply IHForall; eauto ].
+  Qed.
+
+  Lemma exposed_R_relate :
+    forall i W r1 r2,
+      exposed_res r2 ->
+      (A.R W i r1 r2 <-> T.R i r1 r2).
+  Proof.
+    unfold A.R, T.R, R'.
+    intros.
+    split; intros;
+      destruct r1; destruct r2; try contradiction; auto;
+      inv H;
+      eapply exposed_V_relate; eauto.
+  Qed.
+
+End AnnotateVVTop.
