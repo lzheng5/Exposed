@@ -4,6 +4,7 @@ From CertiCoq.LambdaANF Require Import Ensembles_util map_util set_util List_uti
 From CertiCoq.Libraries Require Import maps_util.
 Import ListNotations.
 Require Import Lia.
+From Hammer Require Import Hammer Tactics Reflect.
 
 From Framework Require Import Base Util ANF0 ANF1.
 
@@ -567,6 +568,11 @@ Proof.
   destruct r2; simpl in *; try contradiction.
   eexists; split; eauto.
 Qed.
+
+Lemma R_res_inv_l_V v1 r2 :
+  (forall k, R k (A0.Res v1) r2) ->
+  exists v2, r2 = A1.Res v2 /\ (forall k, V k v1 v2).
+Proof. intros. hauto. Qed.
 
 (* Environment Relation *)
 Definition G i Γ ρ1 ρ2 :=
@@ -1270,10 +1276,10 @@ Proof.
 Qed.
 
 (* Linking Preservation *)
-Lemma preserves_linking f l1 l2 x e1 e2 e1' e2' :
+Lemma preserves_linking f x e1 e2 e1' e2' :
   trans_correct (A0.occurs_free e1) e1 e2 ->
   trans_correct (A0.occurs_free e1') e1' e2' ->
-  trans_correct (A0.occurs_free (A0.link f x e1 e1')) (A0.link f x e1 e1') (A1.link f x l1 e2 l2 e2').
+  trans_correct (A0.occurs_free (A0.link f x e1 e1')) (A0.link f x e1 e1') (A1.link f x e2 e2').
 Proof.
   unfold A0.link, A1.link.
   intros.
@@ -1291,10 +1297,10 @@ Proof.
         eapply A0.free_fun_k_subset; eauto.
 Qed.
 
-Lemma free_link_subset_compat f x e1 e1' e2 e2' l1 l2:
+Lemma free_link_subset_compat f x e1 e1' e2 e2' :
   A1.occurs_free e2 \subset A0.occurs_free e1 ->
   A1.occurs_free e2' \subset A0.occurs_free e1' ->
-  A1.occurs_free (A1.link f x l1 e2 l2 e2') \subset A0.occurs_free (A0.link f x e1 e1').
+  A1.occurs_free (A1.link f x e2 e2') \subset A0.occurs_free (A0.link f x e1 e1').
 Proof.
   unfold A1.link, A0.link.
   unfold Ensembles.Included, Ensembles.In.
@@ -1303,10 +1309,10 @@ Proof.
   inv H9; eauto.
 Qed.
 
-Lemma preserves_linking_top f l1 l2 x e1 e2 e1' e2' :
+Lemma preserves_linking_top f x e1 e2 e1' e2' :
   trans_correct_top e1 e2 ->
   trans_correct_top e1' e2' ->
-  trans_correct_top (A0.link f x e1 e1') (A1.link f x l1 e2 l2 e2').
+  trans_correct_top (A0.link f x e1 e1') (A1.link f x e2 e2').
 Proof.
   intros.
   eapply trans_correct_trans_correct_top; eauto.

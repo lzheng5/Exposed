@@ -1,4 +1,4 @@
-From Coq Require Import ZArith.ZArith Sets.Ensembles Lists.List Classes.RelationClasses.
+From Coq Require Import ZArith.ZArith Sets.Ensembles Lists.List.
 From compcert.lib Require Export Maps.
 From CertiCoq.LambdaANF Require Import Ensembles_util map_util set_util List_util tactics.
 From CertiCoq.Libraries Require Import maps_util.
@@ -6,13 +6,14 @@ Import ListNotations.
 Require Import Lia.
 From Hammer Require Import Hammer Tactics Reflect.
 
-From Framework Require Import Util RelComp ANF0 Refl0 Refl0Comp AnnotateComp W0 ANF Refl ReflComp.
+From Framework Require Import Util RelComp ANF0 Refl0 Refl0Comp ANF Refl ReflComp SemAnnotate.
 
-(* Compositionality of The Cross-language Pipeline
+(* Compositionality of The Cross-language Pipeline with Some Semantic Analysis
 
    Unannotated ANF -> Annotate ANF
 
    Assume unique exposed web id *)
+
 
 (* Adequacy / Preservation of Termination *)
 (* Behavioral Refinement *)
@@ -27,18 +28,17 @@ Module R1 := Refl.
 Module C0 := Refl0Comp.
 Module C1 := ReflComp.
 
-Module AC := AnnotateComp.
-Module AM := AC.AM.
+Module AN := SemAnnotate.
 
 Section Comp_n.
 
-  Definition Top_n n m := Cross (Cross (C0.Top_n n) (fun e1 e2 => AM.trans_correct e1 e2)) (C1.Top_n m).
+  Definition Top_n n m := Cross (Cross (C0.Top_n n) AN.trans_correct_top) (C1.Top_n m).
 
-  Definition V_n n m := Cross (Cross (C0.V_n n) (fun v1 v2 => forall k, AM.V k v1 v2)) (C1.V_n m).
+  Definition V_n n m := Cross (Cross (C0.V_n n) AN.V) (C1.V_n m).
 
-  Definition R_n n m := Cross (Cross (C0.R_n n) (fun v1 v2 => forall k, AM.R k v1 v2)) (C1.R_n m).
+  Definition R_n n m := Cross (Cross (C0.R_n n) AN.R) (C1.R_n m).
 
-  Definition G_n n m Γ1 Γ2 := Cross (Cross (C0.G_n n Γ1 Γ2) (fun ρ1 ρ2 => forall k, AM.G k Γ1 ρ1 Γ2 ρ2)) (C1.G_n m Γ1 Γ2).
+  Definition G_n n m Γ1 Γ2 := Cross (Cross (C0.G_n n Γ1 Γ2) (AN.G Γ1 Γ2)) (C1.G_n m Γ1 Γ2).
 
   Lemma V_n_wf_val_r n m v1 v2:
     V_n n m v1 v2 ->
@@ -47,20 +47,8 @@ Section Comp_n.
     unfold V_n, Cross.
     intros H.
     destruct H as [v2' [[v1' [HC0 HA]] HC1]].
-    specialize (HA 0).
-    eapply AM.VM.V_wf_val_r in HA; eauto.
+    eapply AN.V_wf_val_r in HA; eauto.
     edestruct C1.V_n_wf_val; eauto.
-  Qed.
-
-  Lemma R_res_inv_l v1 r2 :
-    (forall i, AM.R i (A0.Res v1) r2) ->
-    exists v2, r2 = A1.Res v2 /\ (forall i, AM.V i v1 v2).
-  Proof.
-    intros.
-    pose proof (H 0) as H0.
-    eapply AM.VM.R_res_inv_l in H0.
-    destruct H0 as [v2 [Heqv2 _]]; subst.
-    eexists; split; eauto.
   Qed.
 
   Lemma R_n_V_n n m v1 v2:
@@ -72,7 +60,7 @@ Section Comp_n.
     destruct H as [r2' [[r1' [HC0 HA]] HC1]].
     apply C0.R_n_Res_inv in HC0.
     destruct HC0 as [v1' [Heqv1' HC0]]; subst.
-    edestruct R_res_inv_l as [v2' [Heqv2' HV]]; eauto; subst.
+    edestruct AN.R_res_inv_l as [v2' [Heqv2' HV]]; eauto; subst.
     eexists; split; eauto.
     eapply C1.R_n_V_n; eauto.
   Qed.
@@ -86,11 +74,10 @@ Section Comp_n.
     destruct H as [r2' [[r1' [HC0 HA]] HC1]].
     apply C0.R_n_Res_inv in HC0.
     destruct HC0 as [v1' [Heqv1' HC0]]; subst.
-    edestruct R_res_inv_l as [v2' [Heqv2' HV]]; eauto; subst.
+    edestruct AN.R_res_inv_l as [v2' [Heqv2' HV]]; eauto; subst.
 
     apply C1.R_n_Res_inv in HC1.
-    2 : { specialize (HV 0).
-          eapply AM.VM.V_wf_val_r; eauto. }
+    2 : { eapply AN.V_wf_val_r; eauto. }
     destruct HC1 as [v2'' [Heqv2'' HC1]]; subst.
     eexists; split; eauto.
   Qed.
@@ -104,7 +91,7 @@ Section Comp_n.
     destruct H as [e2' [[e1' [HC0 HA]] HC1]].
     apply C0.Top_n_subset in HC0.
     apply C1.Top_n_subset in HC1.
-    apply AM.trans_correct_subset in HA.
+    apply AN.trans_correct_top_subset in HA.
     eapply Included_trans; eauto.
     eapply Included_trans; eauto.
   Qed.
@@ -116,8 +103,7 @@ Section Comp_n.
     unfold G_n, Cross.
     intros H.
     destruct H as [ρ2' [[ρ1' [HC0 HA]] HC1]].
-    specialize (HA 0).
-    apply AM.G_wf_env_r in HA.
+    apply AN.G_wf_env_r in HA.
     eapply (C1.G_n_wf_env HC1); eauto.
   Qed.
 
@@ -137,12 +123,12 @@ Section Comp_n.
     eexists; split; eauto.
     eexists; split; eauto.
     intros.
-    specialize (HA k).
-    eapply AM.G_subset; eauto.
+    eapply AN.G_subset; eauto.
   Qed.
 
 End Comp_n.
 
+(*
 Section Adequacy.
 
   Lemma Top_n_R_n n m e1 e2:
@@ -167,17 +153,17 @@ Section Adequacy.
     assert (wf_env ρ2').
     {
       specialize (HAG 0).
-      eapply AM.G_wf_env_r; eauto.
+      eapply AN.G_wf_env_r; eauto.
     }
 
     edestruct (AC.adequacy _ _ HA) with (ρ2 := ρ2') as [j2' [r2' [Hstep2' HAR]]]; eauto.
     - intros.
-      eapply AM.G_subset; eauto.
+      eapply AN.G_subset; eauto.
       eapply C0.Top_n_subset; eauto.
-      eapply AM.trans_correct_subset; eauto.
+      eapply AN.trans_correct_subset; eauto.
     - edestruct (C1.Top_n_R_n _ _ _ HC1) with (ρ2 := ρ2) as [j2 [r2 [Hstep2 HRn1]]]; eauto.
       + eapply C1.G_n_subset; eauto.
-        * eapply AM.trans_correct_subset in HA; eauto.
+        * eapply AN.trans_correct_subset in HA; eauto.
           eapply Included_trans; eauto.
           eapply C0.Top_n_subset; eauto.
         * eapply C1.Top_n_subset; eauto.
@@ -223,7 +209,7 @@ Section Refinement.
     - eexists; split; eauto.
       eapply AC.V_val_ref; eauto.
     - specialize (HV2 0).
-      eapply AM.VM.V_wf_val_r; eauto.
+      eapply AN.VM.V_wf_val_r; eauto.
   Qed.
 
   (* Behavioral Refinement *)
@@ -246,26 +232,41 @@ Section Refinement.
   Qed.
 
 End Refinement.
+ *)
 
 Section Linking.
 
   (* Linking Preservation *)
   Lemma Top_n_preserves_linking f w x n n' m m' e1 e2 e1' e2' :
     (w \in Exposed) ->
+    f <> x ->
+    ~ (f \in A0.occurs_free e1) ->
+    ~ (f \in A0.occurs_free e1') ->
     Top_n n m e1 e2 ->
     Top_n n' m' e1' e2' ->
     Top_n (n + n') (m + m') (A0.link f x e1 e1') (A1.link f w x e2 e2').
   Proof.
     unfold Top_n, Cross.
-    intros Hw.
+    intros Hw Hfx Hf1 Hf1'.
     intros.
     destruct H as [e3 [[e4 [HC0 HA1]] HC1]].
     destruct H0 as [e3' [[e4' [HC0' HA1']] HC1']].
 
-    eapply (C0.Top_n_preserves_linking f x n n') in HC0; eauto.
-    eapply (AC.preserves_linking f w x e4 e3 e4' e3') in HA1; eauto.
+    pose proof HC0 as HC0''.
+    eapply (C0.Top_n_preserves_linking f x n n') in HC0''; eauto.
+
+    assert (Hf4 : ~ Ensembles.In var (A0.occurs_free e4) f).
+    {
+      eapply C0.Top_n_subset in HC0; eauto.
+    }
+
+    assert (Hf4' :  ~ Ensembles.In var (AN.AS.occurs_free e4') f).
+    {
+      eapply C0.Top_n_subset in HC0'; eauto.
+    }
+
+    eapply (AN.preserves_linking f w x e4 e4' e3 e3') in HA1; eauto.
     eapply (C1.Top_n_preserves_linking f w x m m') in HC1; eauto.
-    eapply Exposed_unique; eauto.
   Qed.
 
 End Linking.

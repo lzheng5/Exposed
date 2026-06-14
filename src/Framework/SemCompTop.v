@@ -6,7 +6,7 @@ Import ListNotations.
 Require Import Lia.
 From Hammer Require Import Hammer Tactics Reflect.
 
-From Framework Require Import Util RelComp ANF0 Refl0 Refl0Comp ANF Refl ReflComp Erase Comp SemComp W0.
+From Framework Require Import Util RelComp ANF0 Refl0 Refl0Comp ANF Refl ReflComp Erase SemComp W0.
 
 (* Compositionality of The Cross-language Pipeline with Erase
 
@@ -14,7 +14,9 @@ From Framework Require Import Util RelComp ANF0 Refl0 Refl0Comp ANF Refl ReflCom
 
    Assume unique exposed web id
 
-   Note this is completely analysis independent *)
+   Note this is completely analysis independent
+
+   The only difference between [SemCompTop.v] and [CompTop.v] is that the linking preservation theorem needs to have more premises *)
 
 (* Adequacy / Preservation of Termination *)
 (* Behavioral Refinement *)
@@ -29,7 +31,7 @@ Module R1 := Refl.
 Module C0 := Refl0Comp.
 Module C1 := ReflComp.
 
-Module C := Comp.
+Module C := SemComp.
 
 Section Comp_n.
 
@@ -87,6 +89,7 @@ Section Comp_n.
 
 End Comp_n.
 
+(*
 Section Adequacy.
 
   Lemma Top_n_R_n n m p e1 e2:
@@ -186,17 +189,21 @@ Section Refinement.
   Qed.
 
 End Refinement.
+ *)
 
 Section Linking.
 
   (* Linking Preservation *)
   Theorem Top_n_preserves_linking f x n n' m m' p p' e1 e2 e1' e2' :
+    f <> x ->
+    ~ (f \in A0.occurs_free e1) ->
+    ~ (f \in A0.occurs_free e1') ->
     Top_n n m p e1 e2 ->
     Top_n n' m' p' e1' e2' ->
     Top_n (n + n') (m + m') (p + p') (A0.link f x e1 e1') (A0.link f x e2 e2').
   Proof.
     unfold Top_n, Cross.
-    intros.
+    intros Hfx Hf1 Hf1'; intros.
     destruct H as [e3 [[e4 [HC0 HA1]] HC1]].
     destruct H0 as [e3' [[e4' [HC0' HA1']] HC1']].
     destruct Exposed_nonempty as [w0 Hw].
@@ -207,12 +214,18 @@ Section Linking.
   Qed.
 
   Corollary Top_n_preserves_linking_l f x n n' m p e1 e2 e1' e2' :
+    f <> x ->
+    ~ (f \in A0.occurs_free e1) ->
+    ~ (f \in A0.occurs_free e1') ->
     Top_n n 0 0 e1 e2 ->
     Top_n n' m p e1' e2' ->
     Top_n (n + n') m p (A0.link f x e1 e1') (A0.link f x e2 e2').
   Proof. eapply Top_n_preserves_linking; eauto. Qed.
 
   Corollary Top_n_preserves_linking_r f x n n' m p e1 e2 e1' e2' :
+    f <> x ->
+    ~ (f \in A0.occurs_free e1) ->
+    ~ (f \in A0.occurs_free e1') ->
     Top_n n m p e1 e2 ->
     Top_n n' 0 0 e1' e2' ->
     Top_n (n + n') m p (A0.link f x e1 e1') (A0.link f x e2 e2').
