@@ -25,21 +25,23 @@ src/Framework/Annotate.v
 src/Framework/Trivial.v
 src/Framework/Known.v
 src/Framework/KnownAnnotate.v
+src/Framework/AnnotateComp.v
 
 src/Framework/ANF1.v
 src/Framework/Label.v
 src/Framework/Checking.v
 src/Framework/Reify.v
 src/Framework/SemAnnotate.v
-src/Framework/SemComp.v
+src/Framework/SemAnnotateAttempt.v
 
 src/Framework/RelComp.v
 src/Framework/IdComp.v
 src/Framework/ReflComp.v
 src/Framework/Refl0Comp.v
-src/Framework/AnnotateComp.v
 src/Framework/Comp.v
 src/Framework/CompTop.v
+src/Framework/SemComp.v
+src/Framework/SemCompTop.v
 
 # Old
 #src/Framework/old/Annotate.v

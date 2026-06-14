@@ -11,6 +11,9 @@ Module A1 := ANF.
 
 (* Annotate Functor *)
 
+(* Note this formulation is too abstract to be used to verify any semantic analysis. See [SemAnnotateAttempt.v].
+   But this works for any syntactical analysis, such as the trivial analysis and the known function call analysis. See [Trivial.v] and [Known.v]. *)
+
 (* Due to the abstractness, it is probably more intuitive to see what's going on
    with an instantiated/concrete V relation.
 

@@ -19,8 +19,8 @@ Module C := Checking.
 Module R := Reify.
 
 Definition trans_correct_top := Cross L.trans_correct_top
-                    (Cross C.trans_correct_top
-                       R.trans_correct_top).
+                                  (Cross C.trans_correct_top
+                                     R.trans_correct_top).
 
 Definition V := Cross (fun v1 v2 => forall k, L.V k v1 v2)
                   (Cross (fun v1 v2 => forall k, C.V_top k v1 v2)
