@@ -1,57 +1,44 @@
--Q src/Framework Framework
+-Q theories/Framework Framework
 
-src/Framework/Util.v
-src/Framework/Base.v
-src/Framework/W0.v
-src/Framework/ANF.v
-src/Framework/Refl.v
-src/Framework/Exposed.v
-src/Framework/Id.v
-src/Framework/DPE.v
-src/Framework/Defunc.v
-src/Framework/ConstProp.v
-src/Framework/TransTop.v
-src/Framework/SemSubst.v
-src/Framework/SemSubstDPE.v
-#src/Framework/SemSubstDefunc.v
-src/Framework/SemSubst1.v
-src/Framework/SemSubst2.v
+theories/Framework/Util.v
+theories/Framework/Base.v
+theories/Framework/W0.v
+theories/Framework/ANF.v
+theories/Framework/Refl.v
+theories/Framework/Exposed.v
+theories/Framework/Id.v
+theories/Framework/DPE.v
+theories/Framework/Defunc.v
+theories/Framework/ConstProp.v
+theories/Framework/TransTop.v
+theories/Framework/SemSubst.v
+theories/Framework/SemSubstDPE.v
+#theories/Framework/SemSubstDefunc.v
+theories/Framework/SemSubst1.v
+theories/Framework/SemSubst2.v
 
-src/Framework/ANF0.v
-src/Framework/Refl0.v
+theories/Framework/ANF0.v
+theories/Framework/Refl0.v
 
-src/Framework/Erase.v
-src/Framework/Annotate.v
-src/Framework/Trivial.v
-src/Framework/Known.v
-src/Framework/KnownAnnotate.v
-src/Framework/AnnotateComp.v
+theories/Framework/Erase.v
+theories/Framework/Annotate.v
+theories/Framework/Trivial.v
+theories/Framework/Known.v
+theories/Framework/KnownAnnotate.v
+theories/Framework/AnnotateComp.v
 
-src/Framework/ANF1.v
-src/Framework/Label.v
-src/Framework/Checking.v
-src/Framework/Reify.v
-src/Framework/SemAnnotate.v
-src/Framework/SemAnnotateAttempt.v
+theories/Framework/ANF1.v
+theories/Framework/Label.v
+theories/Framework/Checking.v
+theories/Framework/Reify.v
+theories/Framework/SemAnnotate.v
+theories/Framework/SemAnnotateAttempt.v
 
-src/Framework/RelComp.v
-src/Framework/IdComp.v
-src/Framework/ReflComp.v
-src/Framework/Refl0Comp.v
-src/Framework/Comp.v
-src/Framework/CompTop.v
-src/Framework/SemComp.v
-src/Framework/SemCompTop.v
-
-# Old
-#src/Framework/old/Annotate.v
-#src/Framework/old/TrivialAnnotate.v
-
-#src/UntypedExposed/Util.v
-#src/UntypedExposed/ANF.v
-#src/UntypedExposed/Unary.v
-#src/UntypedExposed/Refl.v
-#src/UntypedExposed/Refl2.v
-#src/UntypedExposed/DPE.v
-#src/UntypedExposed/Top.v
-##src/UntypedExposed/Top2.v
+theories/Framework/RelComp.v
+theories/Framework/IdComp.v
+theories/Framework/ReflComp.v
+theories/Framework/Refl0Comp.v
+theories/Framework/Comp.v
+theories/Framework/CompTop.v
+theories/Framework/SemComp.v
+theories/Framework/SemCompTop.v
