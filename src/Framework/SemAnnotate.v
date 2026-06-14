@@ -6,7 +6,9 @@ Import ListNotations.
 Require Import Lia.
 From Hammer Require Import Hammer Tactics Reflect.
 
-From Framework Require Import Util W0 ANF0 ANF1 ANF Label Checking Reify Annotate Erase RelComp.
+From Framework Require Import Util ANF0 ANF1 ANF Label Checking Reify RelComp.
+
+(* Compositionality of The Semantic Analysis Component *)
 
 Module AS := ANF0.
 Module AI := ANF1.
@@ -16,7 +18,7 @@ Module L := Label.
 Module C := Checking.
 Module R := Reify.
 
-Definition Top := Cross L.trans_correct_top
+Definition trans_correct_top := Cross L.trans_correct_top
                     (Cross C.trans_correct_top
                        R.trans_correct_top).
 
@@ -47,10 +49,10 @@ Lemma R_res_inv_l v1 r2 :
   exists v2, r2 = AT.Res v2 /\ V v1 v2.
 Proof. unfold R, V, Cross. hauto. Qed.
 
-Lemma Top_subset e1 e2 :
-  Top e1 e2 ->
+Lemma trans_correct_top_subset e1 e2 :
+  trans_correct_top e1 e2 ->
   AT.occurs_free e2 \subset AS.occurs_free e1.
-Proof. unfold Top, Cross. sfirstorder. Qed.
+Proof. unfold trans_correct_top, Cross. sfirstorder. Qed.
 
 Lemma G_wf_env_r { Γ1 Γ2 ρ1 ρ2 } :
   G Γ1 Γ2 ρ1 ρ2 ->
@@ -72,16 +74,16 @@ Proof.
 Qed.
 
 (* Linking Preservation *)
-Lemma Top_preserves_linking f w x e1 e2 e1' e2' :
+Lemma preserves_linking f w x e1 e2 e1' e2' :
   (w \in Exposed) ->
   f <> x ->
   ~ (f \in AS.occurs_free e1) ->
   ~ (f \in AS.occurs_free e2) ->
-  Top e1 e1' ->
-  Top e2 e2' ->
-  Top (AS.link f x e1 e2) (AT.link f w x e1' e2').
+  trans_correct_top e1 e1' ->
+  trans_correct_top e2 e2' ->
+  trans_correct_top (AS.link f x e1 e2) (AT.link f w x e1' e2').
 Proof.
-  unfold Top, Cross.
+  unfold trans_correct_top, Cross.
   intros Hw Hfx Hf1 Hf2.
   intros HT1 HT2.
   destruct HT1 as [e3 [HL1 [e4 [HC1 HR1]]]].

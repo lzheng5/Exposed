@@ -6,14 +6,15 @@ Import ListNotations.
 Require Import Lia.
 From Hammer Require Import Hammer Tactics Reflect.
 
-From Framework Require Import Util RelComp ANF0 Refl0 Refl0Comp AnnotateComp ANF Refl ReflComp Erase Comp W0.
+From Framework Require Import Util RelComp ANF0 Refl0 Refl0Comp ANF Refl ReflComp Erase Comp W0.
 
 (* Compositionality of the cross-language pipeline
 
    Unannotated ANF -> Annotate ANF -> Unannotated ANF
 
    Assume unique exposed web id
- *)
+
+   Note this is completely analysis independent *)
 
 (* Adequacy / Preservation of Termination *)
 (* Behavioral Refinement *)
@@ -27,9 +28,6 @@ Module R1 := Refl.
 
 Module C0 := Refl0Comp.
 Module C1 := ReflComp.
-
-Module AC := AnnotateComp.
-Module AM := AC.AM.
 
 Module C := Comp.
 
