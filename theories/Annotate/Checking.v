@@ -19,7 +19,7 @@ Definition web_map := M.t web.
 Inductive ctag A : Type :=
 | CTAG : label -> web_map -> A -> ctag A.
 
-Hint Constructors tag : core.
+Hint Constructors ctag : core.
 
 (* Value *)
 Inductive cval : Type :=
@@ -106,8 +106,8 @@ Hint Constructors wf_cval' : core.
 Hint Constructors wf_cenv : core.
 
 Scheme wf_cval_mut := Induction for wf_cval Sort Prop
-    with wf_cval'_mut := Induction for wf_cval' Sort Prop
-                        with wf_cenv_mut := Induction for wf_cenv Sort Prop.
+with wf_cval'_mut := Induction for wf_cval' Sort Prop
+with wf_cenv_mut := Induction for wf_cenv Sort Prop.
 
 (* Well-formed Result *)
 Inductive wf_cres : cres -> Prop :=
@@ -210,7 +210,7 @@ Hint Constructors cbstep : core.
 Hint Constructors cbstep_fuel : core.
 
 Scheme cbstep_ind' := Minimality for cbstep Sort Prop
-    with cbstep_fuel_ind' := Minimality for cbstep_fuel Sort Prop.
+with cbstep_fuel_ind' := Minimality for cbstep_fuel Sort Prop.
 
 Lemma cbstep_deterministic_aux v v' {W ex ρ e c c' r r'}:
   cbstep W ex ρ e c r ->
