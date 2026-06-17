@@ -8,6 +8,7 @@ From Hammer Require Import Hammer Tactics Reflect.
 
 From Common Require Import Util.
 From Annotate Require Import LabeledANF.
+From LambdaWeb Require Import Base.
 
 (* Colored Collecting Semantics *)
 
@@ -197,3 +198,96 @@ Theorem cbstep_fuel_deterministic v v' {L c ρ e i i'}:
   cbstep_fuel L c ρ e i' (CRes v') ->
   (v = v' /\ i = i').
 Proof. srun eauto using cbstep_fuel_deterministic_aux. Qed.
+
+Definition web_map := M.t web.
+
+(* Converting [clabel_set] to [web_map] *)
+
+(* Labels of a given color appearing on either side of a pair in L. *)
+Definition labels_of_color (L : clabel_set) (c : color) : labels :=
+  fun l => exists cl, (((c, l), cl) \in L) \/ ((cl, (c, l)) \in L).
+
+(* Symmetric, undirected interaction between two colored labels in L. *)
+Definition cinteract (L : clabel_set) (cl1 cl2 : clabel) : Prop :=
+  ((cl1, cl2) \in L) \/ ((cl2, cl1) \in L).
+
+(* A blue label is tainted iff it can reach a red label through a chain of
+   blue-blue interactions. The transitive closure is captured by the recursive
+   `Tainted_blue` rule. *)
+Inductive tainted (L : clabel_set) : label -> Prop :=
+| Tainted_red :
+    forall l r,
+      cinteract L (Blue, l) (Red, r) ->
+      tainted L l
+
+| Tainted_blue :
+    forall l l',
+      cinteract L (Blue, l) (Blue, l') ->
+      tainted L l' ->
+      tainted L l.
+
+Hint Constructors tainted : core.
+
+(* Equivalence among non-tainted blue labels: the reflexive/symmetric/transitive
+   closure of blue-blue interaction restricted to non-tainted labels.
+   Symmetry of `BE_step` is inherited from `cinteract`. *)
+Inductive blue_equiv (L : clabel_set) : label -> label -> Prop :=
+| BE_refl :
+    forall l,
+      (l \in labels_of_color L Blue) ->
+      ~ tainted L l ->
+      blue_equiv L l l
+
+| BE_step :
+    forall l1 l2,
+      cinteract L (Blue, l1) (Blue, l2) ->
+      ~ tainted L l1 ->
+      ~ tainted L l2 ->
+      blue_equiv L l1 l2
+
+| BE_trans :
+    forall l1 l2 l3,
+      blue_equiv L l1 l2 ->
+      blue_equiv L l2 l3 ->
+      blue_equiv L l1 l3.
+
+Hint Constructors blue_equiv : core.
+
+(* W is a valid web map for the colored label set L. *)
+Inductive label_set_to_web_map (L : clabel_set) (W : web_map) : Prop :=
+| LS_to_WM :
+    (* (1) Totality: every blue label of L is mapped by W. *)
+    (forall l,
+        (l \in labels_of_color L Blue) ->
+        exists w, W ! l = Some w) ->
+    (* (2) Tainted blue labels map to exposed webs. *)
+    (forall l w,
+        tainted L l ->
+        W ! l = Some w ->
+        (w \in Exposed)) ->
+    (* (3) Non-tainted blue labels map to non-exposed webs
+       (these are the internal class representatives). *)
+    (forall l w,
+        (l \in labels_of_color L Blue) ->
+        ~ tainted L l ->
+        W ! l = Some w ->
+        ~ (w \in Exposed)) ->
+    (* (4) Equivalent non-tainted blue labels share the same web (the rep). *)
+    (forall l1 l2 w1 w2,
+        blue_equiv L l1 l2 ->
+        W ! l1 = Some w1 ->
+        W ! l2 = Some w2 ->
+        w1 = w2) ->
+    (* (5) Distinct equivalence classes get distinct reps: if two non-tainted
+       blue labels share a web, they must be in the same class. *)
+    (forall l1 l2 w,
+        (l1 \in labels_of_color L Blue) ->
+        (l2 \in labels_of_color L Blue) ->
+        ~ tainted L l1 ->
+        ~ tainted L l2 ->
+        W ! l1 = Some w ->
+        W ! l2 = Some w ->
+        blue_equiv L l1 l2) ->
+    label_set_to_web_map L W.
+
+Hint Constructors label_set_to_web_map : core.
