@@ -411,6 +411,30 @@ Section Refinement.
       eapply val_ref_trans; eauto.
   Qed.
 
+  Theorem val_ref_exposed_l v1 v2:
+    val_ref v1 v2 ->
+    exposed v1.
+  Proof.
+    intros H.
+    induction H using val_ref_mut with (P0 := fun v1 v2 _ =>
+                                                match v1 with
+                                                | Vfun _ _ _ _ => True
+                                                | Vconstr c vs => Forall exposed vs
+                                                end); fcrush.
+  Qed.
+
+  Theorem val_ref_exposed_r v1 v2:
+    val_ref v1 v2 ->
+    exposed v2.
+  Proof.
+    intros H.
+    induction H using val_ref_mut with (P0 := fun v1 v2 _ =>
+                                                match v2 with
+                                                | Vfun _ _ _ _ => True
+                                                | Vconstr c vs => Forall exposed vs
+                                                end); fcrush.
+  Qed.
+
   (* Behavioral Refinement *)
   Theorem Top_n_val_ref n e1 e2 :
     Top_n n e1 e2 ->

@@ -229,6 +229,15 @@ Section Refinement.
       eapply AM.V_exposed_r; eauto.
   Qed.
 
+  Theorem val_ref_exposed v1 v2 :
+    val_ref v1 v2 ->
+    exposed v2.
+  Proof.
+    unfold val_ref.
+    intros.
+    strivial use: val_ref_exposed_r unfold: AC.val_ref, Cross.
+  Qed.
+
   (* Behavioral Refinement *)
   Theorem Top_n_val_ref n m e1 e2 :
     Top_n n m e1 e2 ->

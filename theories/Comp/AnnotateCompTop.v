@@ -162,9 +162,10 @@ Section Refinement.
     edestruct Erase.R_res_inv_l as [v2' [Heqv2' HV2]]; eauto; subst.
     eapply C0.R_n_res_val_ref in HC1; eauto.
     eexists; split; eauto.
-    - eexists; split; eauto.
-      eapply Erase.V_val_ref; eauto.
-      eapply C.V_n_wf_val_r; eauto.
+    eexists; split; eauto.
+    eapply Erase.V_val_ref; eauto.
+    eapply C.V_n_wf_val_r; eauto.
+    eapply C.val_ref_exposed; eauto.
   Qed.
 
   (* Behavioral Refinement *)

@@ -986,6 +986,7 @@ Qed.
 Inductive val_ref : A1.wval -> A0.val -> Prop :=
 | Ref_Tag :
   forall w v1 v2,
+    (w \in Exposed) ->
     val_ref' v1 v2 ->
     val_ref (Tag w v1) v2
 
@@ -1011,18 +1012,18 @@ Scheme val_ref_mut := Induction for val_ref Sort Prop
 with val_ref'_mut := Induction for val_ref' Sort Prop.
 
 Lemma val_ref_Vconstr c w vs1 vs2 :
+  (w \in Exposed) ->
   Forall2 val_ref vs1 vs2 ->
   val_ref (Tag w (A1.Vconstr c vs1)) (A0.Vconstr c vs2).
 Proof.
   intros.
-  induction H; simpl; auto.
-  constructor.
-  econstructor; eauto.
-  inv IHForall2; auto.
+  induction H0; simpl; auto.
+  fcrush.
 Qed.
 
 Lemma V_val_ref {v1 v2} :
   wf_val v1 ->
+  exposed v1 ->
   (forall i, V i v1 v2) ->
   val_ref v1 v2.
 Proof.
@@ -1030,6 +1031,11 @@ Proof.
   revert v2.
   induction H using wf_val_mut with (P0 := fun v1 wf =>
                                              forall (v2 : A0.val) w,
+                                               (w \in Exposed) ->
+                                               (match v1 with
+                                                | Vfun _ _ _ _ => True
+                                                | Vconstr c vs1 => Forall exposed vs1
+                                                end) ->
                                                (forall i, (V i (Tag w v1) v2)) ->
                                                match v1, v2 with
                                                | A1.Vfun _ _ _ _, A0.Vfun _ _ _ _ => True
@@ -1039,71 +1045,67 @@ Proof.
                                                end)
                                     (P1 := fun ρ wf => True);
     intros; simpl in *; eauto.
-  - specialize (IHwf_val _ _ H).
-    destruct v; destruct v2; try contradiction; subst; auto.
-    destruct IHwf_val as [Hc HV]; subst; auto.
-    eapply val_ref_Vconstr; eauto.
-  - destruct v2; auto.
-    destruct (H 0); subst; auto; contradiction.
+  - inv H.
+    + specialize (IHwf_val v2 _ H2).
+      destruct v2.
+      destruct v; try contradiction; subst; auto.
+      fcrush.
+    + specialize (IHwf_val v2 _ H3 H4).
+      destruct v2.
+      destruct v; try contradiction; subst; auto.
+      * edestruct IHwf_val as [Heqc Hval]; eauto; subst.
+        eapply val_ref_Vconstr; eauto.
   - destruct v2.
-    + destruct (H 0); subst; auto; contradiction.
-    + destruct (H 0) as [_ [Hc Hlen]]; subst; simpl in *.
-      symmetry in Hlen.
-      apply length_zero_iff_nil in Hlen; subst.
-      split; auto.
+    destruct v; auto;
+      destruct (H1 0) as [_ [_ [Hw H']]]; subst; auto; contradiction.
+    specialize (H1 0).
+    sfirstorder.
   - destruct v2.
-    + destruct (H0 0); subst; auto; contradiction.
-    + destruct (H0 1) as [Hv1 [Hc HV']]; subst;
-        split; auto.
+    + specialize (H1 0); sfirstorder.
+    + specialize (H1 0); simpl in *;
+        destruct H1 as [Hc Hlen].
+      sauto.
+  - destruct v2.
+    + specialize (H2 0); sfirstorder.
+    + pose proof H2 as HV.
+      specialize (H2 1); simpl in *;
+        destruct H2 as [Hv1 [Hc HV']]; subst;
+          split; auto.
       inv HV'.
-      clear H3 H5.
-      assert (HV' : forall i, V i v y /\ V i (Tag w0 (A1.Vconstr c0 vs)) (A0.Vconstr c0 l')).
+      clear H4 H6.
+      assert (HV' : forall i, V i v y /\ V i (A1.Tag w0 (A1.Vconstr c0 vs)) (A0.Vconstr c0 l')).
       {
         intros.
-        specialize (H0 (S i)).
+        specialize (HV (S i)).
         destruct i; simpl in *;
-          destruct H0 as [_ [_ HFV]];
+          destruct HV as [_ [_ HFV]];
           inv HFV.
-        - inv Hv1.
-          inv H4.
-          inv H8; inv H5;
+          - inv Hv1.
+            inv H1.
+            inv H6.
             repeat (split; auto).
-          + intros.
-            apply H2 in H0.
-            inv H0.
-            inv H12; auto.
-          + simpl.
-            f_equal.
-            eapply Forall2_length; eauto.
-        - inv Hv1.
-          inv H4.
-          inv H8; inv H5;
+            + eapply Forall2_length; eauto.
+          - inv Hv1.
+            inv H1.
+            inv H6.
             repeat (split; auto).
-          + intros.
-            apply H2 in H0.
-            inv H0.
-            inv H12; auto.
-          + constructor; auto.
-            * eapply V_mono with (S i); eauto.
-            * eapply V_mono_Forall with (S i); eauto.
+            eapply V_mono_Forall with (S i); eauto.
       }
 
       assert (HV0 : forall i, V i v y) by (intros; destruct (HV' i); auto).
-      assert (HV1 : forall i, V i (Tag w0 (A1.Vconstr c0 vs)) (A0.Vconstr c0 l')) by (intros; destruct (HV' i); auto).
+      assert (HV1 : forall i, V i (A1.Tag w0 (A1.Vconstr c0 vs)) (A0.Vconstr c0 l')) by (intros; destruct (HV' i); auto).
 
+      inv H1.
       constructor; auto.
-      specialize (IHwf_val0 _ _ HV1).
-      simpl in IHwf_val0.
-      destruct IHwf_val0 as [Hc HF]; auto.
+      fcrush.
 Qed.
 
 Lemma R_res_val_ref {v1 v2} :
   wf_val v1 ->
+  exposed v1 ->
   (forall i, R i (A1.Res v1) (A0.Res v2)) ->
   val_ref v1 v2.
-Proof.
-  intros; eapply V_val_ref; eauto.
-Qed.
+Proof. intros; eapply V_val_ref; eauto. Qed.
 
 (* Linking Compat Lemmas *)
 
