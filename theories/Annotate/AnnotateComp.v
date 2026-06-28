@@ -54,14 +54,17 @@ Qed.
 Inductive val_ref_ : A0.val -> A1.wval -> Prop :=
 | Ref_Vfun :
   forall f1 ρ1 w xs1 e1 f2 ρ2 xs2 e2,
+    (w \in Exposed) ->
     val_ref_ (A0.Vfun f1 ρ1 xs1 e1) (Tag w (A1.Vfun f2 ρ2 xs2 e2))
 
 | Ref_Vconstr_nil :
   forall w c,
+    (w \in Exposed) ->
     val_ref_ (A0.Vconstr c []) (Tag w (A1.Vconstr c []))
 
 | Ref_Vconstr_cons :
   forall w c v1 v2 vs1 vs2,
+    (w \in Exposed) ->
     val_ref_ v1 v2 ->
     val_ref_ (A0.Vconstr c vs1) (Tag w (A1.Vconstr c vs2)) ->
     val_ref_ (A0.Vconstr c (v1 :: vs1)) (Tag w (A1.Vconstr c (v2 :: vs2))).
@@ -73,11 +76,12 @@ Definition val_ref := val_ref_.
 Hint Unfold val_ref : core.
 
 Lemma val_ref_Vconstr c w vs1 vs2 :
+  (w \in Exposed) ->
   Forall2 val_ref vs1 vs2 ->
   val_ref (A0.Vconstr c vs1) (Tag w (A1.Vconstr c vs2)).
 Proof.
   intros.
-  induction H; simpl; auto.
+  induction H0; simpl; auto.
 Qed.
 
 Theorem V_val_ref {v1 v2} :

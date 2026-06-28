@@ -219,11 +219,14 @@ Section Refinement.
     eapply C0.R_n_res_val_ref in HC0; eauto.
     edestruct R_res_inv_l as [v2' [Heqv2' HV2]]; eauto; subst.
     eapply C1.R_n_res_val_ref in HC1; eauto.
+
     eexists; split; eauto.
     - eexists; split; eauto.
       eapply AC.V_val_ref; eauto.
     - specialize (HV2 0).
       eapply AM.VM.V_wf_val_r; eauto.
+    - specialize (HV2 0).
+      eapply AM.V_exposed_r; eauto.
   Qed.
 
   (* Behavioral Refinement *)

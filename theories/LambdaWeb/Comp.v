@@ -4,6 +4,7 @@ From CertiCoq.LambdaANF Require Import Ensembles_util map_util set_util List_uti
 From CertiCoq.Libraries Require Import maps_util.
 Import ListNotations.
 Require Import Lia.
+From Hammer Require Import Hammer Tactics Reflect.
 
 From Common Require Import Util RelComp.
 From LambdaWeb Require Import ANF Refl.
@@ -223,6 +224,7 @@ Section Refinement.
   Inductive val_ref : wval -> wval -> Prop :=
   | Ref_Tag :
     forall w v1 v2,
+      (w \in Exposed) ->
       val_ref' v1 v2 ->
       val_ref (Tag w v1) (Tag w v2)
 
@@ -248,30 +250,32 @@ Section Refinement.
   with val_ref'_mut := Induction for val_ref' Sort Prop.
 
   Lemma val_ref_Vconstr c w vs1 vs2 :
+    (w \in Exposed) ->
     Forall2 val_ref vs1 vs2 ->
     val_ref (Tag w (Vconstr c vs1)) (Tag w (Vconstr c vs2)).
   Proof.
-    intros.
+    intros Hw H.
     induction H; simpl; auto.
-    constructor.
+    constructor; auto.
     econstructor; eauto.
     inv IHForall2; auto.
   Qed.
 
   Lemma val_ref_refl v :
     wf_val v ->
+    exposed v ->
     val_ref v v.
   Proof.
     intros H.
     induction H using wf_val_mut with (P0 := fun v wf =>
                                                match v with
                                                | Vfun _ _ _ _ => True
-                                               | Vconstr c vs => Forall2 val_ref vs vs
+                                               | Vconstr c vs => Forall exposed vs -> Forall2 val_ref vs vs
                                                end)
                                       (P1 := fun ρ wf => True);
-      intros; auto.
-    destruct v; auto.
+      intros; auto; inv H; eauto.
     eapply val_ref_Vconstr; eauto.
+    sauto lq: on drew: off.
   Qed.
 
   Lemma val_ref_trans : Transitive val_ref.
@@ -284,13 +288,12 @@ Section Refinement.
                                                   val_ref' v1 v3);
       simpl; intros; inv H; auto.
     inv H0.
-    apply IHval_ref in H5.
-    apply IHval_ref0 in H6.
-    constructor; auto.
+    sfirstorder.
   Qed.
 
   Lemma V_val_ref {v1 v2} :
     wf_val v1 ->
+    exposed v1 ->
     (forall i, V i v1 v2) ->
     val_ref v1 v2.
   Proof.
@@ -298,6 +301,11 @@ Section Refinement.
     revert v2.
     induction H using wf_val_mut with (P0 := fun v1 wf =>
                                                forall (v2 : wval) w,
+                                                 (w \in Exposed) ->
+                                                 (match v1 with
+                                                  | Vfun _ _ _ _ => True
+                                                  | Vconstr c vs1 => Forall exposed vs1
+                                                  end) ->
                                                  (forall i, (V i (Tag w v1) v2)) ->
                                                  match v1, v2 with
                                                  | Vfun _ _ _ _, TAG _ w' (Vfun _ _ _ _) => w = w'
@@ -307,58 +315,52 @@ Section Refinement.
                                                  end)
                                       (P1 := fun ρ wf => True);
       intros; simpl in *; eauto.
-    - specialize (IHwf_val _ _ H).
-      destruct v2.
-      destruct v; destruct v0; try contradiction; subst; auto.
-      destruct IHwf_val as [Hw [Hc HV]]; subst; auto.
-      destruct (H 0) as [_ [_ [Hw _]]]; subst.
-      eapply val_ref_Vconstr; eauto.
+    - inv H.
+      + specialize (IHwf_val v2 _ H2).
+        destruct v2.
+        destruct v; try contradiction; subst; auto.
+        * erewrite IHwf_val; eauto.
+          fcrush.
+        * fcrush.
+      + specialize (IHwf_val v2 _ H3 H4).
+        destruct v2.
+        destruct v; try contradiction; subst; auto.
+        * edestruct IHwf_val as [Heqw [Heqc Hval]]; eauto; subst.
+          eapply val_ref_Vconstr; eauto.
     - destruct v2.
       destruct v; auto;
-        destruct (H 0) as [_ [_ [Hw H']]]; subst; auto; contradiction.
+        destruct (H1 0) as [_ [_ [Hw H']]]; subst; auto; contradiction.
     - destruct v2.
       destruct v.
-      + destruct (H 0) as [_ [_ [_ H']]]; contradiction.
-      + destruct (H 1) as [Hv1 [Hv2 [Hw [Hc HV]]]]; subst;
+      + destruct (H1 0) as [_ [_ [_ H']]]; contradiction.
+      + destruct (H1 1) as [Hv1 [Hv2 [Hw [Hc HV]]]]; subst;
           split; auto.
         inv HV; auto.
     - destruct v2.
       destruct v0.
-      + destruct (H0 0) as [_ [_ [_ H']]]; contradiction.
-      + destruct (H0 1) as [Hv1 [Hv2 [Hw [Hc HV']]]]; subst;
+      + destruct (H2 0) as [_ [_ [_ H']]]; contradiction.
+      + destruct (H2 1) as [Hv1 [Hv2 [Hw [Hc HV']]]]; subst;
           split; auto.
         inv HV'.
-        clear H3 H5.
+        clear H5 H7.
         assert (HV' : forall i, V i v y /\ V i (Tag w1 (Vconstr c0 vs)) (Tag w1 (Vconstr c0 l'))).
         {
           intros.
-          specialize (H0 (S i)).
+          specialize (H2 (S i)).
           destruct i; simpl in *;
-            destruct H0 as [_ [_ [_ [_ HFV]]]];
+            destruct H2 as [_ [_ [_ [_ HFV]]]];
             inv HFV.
           - inv Hv1; inv Hv2.
-            inv H4; inv H7.
+            inv H1.
+            inv H6; inv H9.
             repeat (split; auto).
-            + intros.
-              apply H2 in H0.
-              inv H0.
-              inv H13; auto.
-            + intros.
-              apply H6 in H0.
-              inv H0.
-              inv H13; auto.
+            + fcrush.
             + eapply Forall2_length; eauto.
           - inv Hv1; inv Hv2.
-            inv H4; inv H7.
+            inv H6; inv H9.
             repeat (split; auto).
-            + intros.
-              apply H2 in H0.
-              inv H0.
-              inv H13; auto.
-            + intros.
-              apply H6 in H0.
-              inv H0.
-              inv H13; auto.
+            + fcrush.
+            + fcrush.
             + eapply V_mono_Forall with (S i); eauto.
         }
 
@@ -366,21 +368,22 @@ Section Refinement.
         assert (HV1 : forall i, V i (Tag w1 (Vconstr c0 vs)) (Tag w1 (Vconstr c0 l'))) by (intros; destruct (HV' i); auto).
 
         constructor; auto.
-        specialize (IHwf_val0 _ _ HV1).
+        inv H1.
+        specialize (IHwf_val0 _ _ H0 H6 HV1).
         simpl in IHwf_val0.
         destruct IHwf_val0 as [Hw [Hc HF]]; auto.
   Qed.
 
   Lemma R_res_val_ref {v1 v2} :
     wf_val v1 ->
+    exposed v1 ->
     (forall i, R i (Res v1) (Res v2)) ->
     val_ref v1 v2.
-  Proof.
-    intros; eapply V_val_ref; eauto.
-  Qed.
+  Proof. intros; eapply V_val_ref; eauto. Qed.
 
   Lemma R_n_res_val_ref {n v1 v2} :
     wf_val v1 ->
+    exposed v1 ->
     R_n n (Res v1) (Res v2) ->
     val_ref v1 v2.
   Proof.
@@ -389,7 +392,7 @@ Section Refinement.
     remember (Res v2) as r2.
     generalize dependent v1.
     generalize dependent v2.
-    induction H0; simpl; intros; subst.
+    induction H1; simpl; intros; subst.
     - inv Heqr1; auto.
       apply val_ref_refl; auto.
     - pose proof (H 0) as HR0.
@@ -397,8 +400,14 @@ Section Refinement.
       destruct HR0 as [_ [Hw _]].
       assert (Heqv2 : Res v2 = Res v2) by auto.
       assert (Heqw : Res w = Res w) by auto.
-      specialize (IHComp _ Heqv2 _ Hw Heqw).
-      specialize (R_res_val_ref H1 H); intros.
+      assert (Hexw : exposed w).
+      {
+        simpl in H.
+        specialize (H 0).
+        eapply Refl.V_exposed; eauto.
+      }
+      specialize (IHComp _ Heqv2 _ Hw Hexw Heqw).
+      specialize (R_res_val_ref H0 H2 H); intros.
       eapply val_ref_trans; eauto.
   Qed.
 
@@ -429,7 +438,7 @@ End Refinement.
 
 Section Linking.
 
-  (* The linking preservation theorem is more general than CertiCoq's, which only links program of a single hole with a closed program. Here,
+  (* The linking preservation theorem is more general than CertiCoq's, which only links program of a single hole with a closed program. Specifically, our formulations allow:
      1. e1 and e2 can contain multiple holes
      2. f can be either free or not in either e1 or e2 as long as e1 is compiled by the pipeline.
      3. x can be either free or not in e2 as long as e2 is compiled by the pipeline.
