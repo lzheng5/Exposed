@@ -9,14 +9,13 @@ From Hammer Require Import Hammer Tactics Reflect.
 From Common Require Import Util RelComp.
 From LambdaANF Require Import ANF Comp.
 From Annotate Require Import SemComp.
-From LambdaWeb Require Import W0 ANF Comp.
+From LambdaWeb Require Import ANF Comp.
 
 (* Compositionality of The Cross-language Pipeline with Some Semantic Analysis
 
    Unannotated ANF -> Annotate ANF
 
    Assume unique exposed web id *)
-
 
 (* Adequacy / Preservation of Termination *)
 (* Behavioral Refinement *)

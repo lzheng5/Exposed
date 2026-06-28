@@ -10,7 +10,7 @@ theories/LambdaANF/Comp.v
 
 -Q theories/LambdaWeb LambdaWeb
 theories/LambdaWeb/Base.v
-theories/LambdaWeb/W0.v
+theories/LambdaWeb/UniqueExposed.v
 theories/LambdaWeb/ANF.v
 theories/LambdaWeb/Refl.v
 theories/LambdaWeb/Exposed.v

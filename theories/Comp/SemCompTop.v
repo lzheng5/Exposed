@@ -9,7 +9,7 @@ From Hammer Require Import Hammer Tactics Reflect.
 From Common Require Import Util RelComp.
 From LambdaANF Require Import ANF Comp.
 From Comp Require Import SemComp.
-From LambdaWeb Require Import W0 ANF Comp Erase.
+From LambdaWeb Require Import UniqueExposed ANF Comp Erase.
 
 (* Compositionality of The Cross-language Pipeline with Erase
 

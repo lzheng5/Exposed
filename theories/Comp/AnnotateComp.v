@@ -9,7 +9,7 @@ From Hammer Require Import Hammer Tactics Reflect.
 From Common Require Import Util RelComp.
 From LambdaANF Require Import ANF Comp.
 From Annotate Require Import AnnotateComp.
-From LambdaWeb Require Import W0 ANF Comp.
+From LambdaWeb Require Import UniqueExposed ANF Comp.
 
 (* Compositionality of The Cross-language Pipeline
 
