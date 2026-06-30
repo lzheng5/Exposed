@@ -16,11 +16,10 @@ From Annotate Require Import Annotate.
 (* We annotate function values with some Exposed web id based on their arities. *)
 (* We annotate constructor values with a single Exposed web id. *)
 
-(* Note this is basically annotating with `fun_tag`s in CertiCoq, but there are no internal webs. *)
+(* Note this is basically annotating `fun_tag`s in CertiCoq, however, there are no internal webs. *)
 
 Module A0 := LambdaANF.ANF.
 Module A1 := LambdaWeb.ANF.
-Module AM := AnnotateTop.
 
 Definition arity_to_web (n : nat) : web := Pos.of_nat n.
 
@@ -143,12 +142,146 @@ Proof.
 Qed.
 
 (* Cross-language Logical Relations *)
+Definition R' (P : nat -> A0.val -> A1.wval -> Prop) (i : nat) (r1 : A0.res) (r2 : A1.res) :=
+  match r1, r2 with
+  | A0.OOT, A1.OOT => True
+  | A0.Res v1, A1.Res v2 => P i v1 v2
+  | _, _ => False
+  end.
 
-Import AM.VM.
+Definition E' (P : nat -> A0.val -> A1.wval -> Prop) (ex : bool) (i : nat) (ρ1 : A0.env) (e1 :A0.exp) (ρ2 : A1.env) (e2 : A1.exp) : Prop :=
+  forall j1 r1,
+    j1 <= i ->
+    A0.bstep_fuel ρ1 e1 j1 r1 ->
+    exists j2 r2,
+      A1.bstep_fuel ex ρ2 e2 j2 r2 /\
+        R' P (i - j1) r1 r2.
 
-Definition V := AM.V.
-Definition E := AM.E.
-Definition R := AM.R.
+Fixpoint V (i : nat) (v1 : A0.val) (wv2 : A1.wval) {struct i} : Prop :=
+  wf_val wv2 /\
+    exposed wv2 /\
+    match wv2 with
+    | A1.TAG _ w2 v2 =>
+        match v1, v2 with
+        | A0.Vconstr c1 vs1, A1.Vconstr c2 vs2 =>
+              w2 = wc /\
+              c1 = c2 /\
+              match i with
+              | 0 => length vs1 = length vs2
+              | S i0 => Forall2 (V i0) vs1 vs2
+              end
+
+        | A0.Vfun f1 ρ1 xs1 e1, A1.Vfun f2 ρ2 xs2 e2 =>
+            length xs1 = length xs2 /\
+              w2 = arity_to_web (length xs1) /\
+              match i with
+              | 0 => True
+              | S i0 =>
+                  forall j vs1 vs2 ρ3 ρ4,
+                    j <= i0 ->
+                    Forall exposed vs2 ->
+                    Forall2 (V (i0 - (i0 - j))) vs1 vs2 ->
+                    set_lists xs1 vs1 (M.set f1 (A0.Vfun f1 ρ1 xs1 e1) ρ1) = Some ρ3 ->
+                    set_lists xs2 vs2 (M.set f2 (Tag w2 (A1.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
+                    E' V true (i0 - (i0 - j)) ρ3 e1 ρ4 e2
+              end
+        | _, _ => False
+        end
+    end.
+
+Definition R := (R' V).
+
+Definition E := (E' V).
+
+(* Lemmas about [wf_val], [wf_res], and [wf_env] *)
+Lemma V_wf_val_r {i v1 v2}:
+  V i v1 v2 ->
+  wf_val v2.
+Proof.
+  intros HV.
+  destruct i; simpl in *;
+    destruct HV as [Hv2 _]; auto.
+Qed.
+
+Lemma V_wf_val_Forall_r {i vs1 vs2} :
+  Forall2 (V i) vs1 vs2 ->
+  Forall wf_val vs2.
+Proof.
+  intros.
+  induction H; auto.
+  constructor; auto.
+  eapply V_wf_val_r; eauto.
+Qed.
+
+Lemma V_wf_res_r {i v1 v2}:
+  V i v1 v2 ->
+  wf_res (Res v2).
+Proof.
+  intros HV.
+  constructor.
+  eapply V_wf_val_r; eauto.
+Qed.
+
+Lemma R_wf_res_l {i r1 r2} :
+  R i r1 r2 ->
+  wf_res r2.
+Proof.
+  unfold R.
+  intros.
+  destruct r1; destruct r2; try contradiction; auto.
+  constructor.
+  eapply V_wf_val_r; eauto.
+Qed.
+
+(* Inversion Lemmas *)
+Lemma R_res_inv_l i v1 r2 :
+  R i (A0.Res v1) r2 ->
+  exists v2, r2 = A1.Res v2 /\ V i v1 v2.
+Proof.
+  intros.
+  destruct r2; simpl in *; try contradiction.
+  eexists; split; eauto.
+Qed.
+
+(* Exposed Lemmas *)
+Lemma V_exposed_r {i v1 v2}:
+  V i v1 v2 ->
+  exposed v2.
+Proof.
+  intros.
+  destruct i; destruct v2;
+    simpl in *; fcrush.
+Qed.
+
+Lemma V_exposed_Forall_r {i vs1 vs2} :
+  Forall2 (V i) vs1 vs2 ->
+  Forall exposed vs2.
+Proof.
+  intros.
+  induction H; auto.
+  constructor; auto.
+  eapply V_exposed_r; eauto.
+Qed.
+
+Lemma V_exposed_res_r {i v1 v2}:
+  V i v1 v2 ->
+  exposed_res (Res v2).
+Proof.
+  intros HV.
+  constructor.
+  eapply V_exposed_r; eauto.
+Qed.
+
+Lemma R_exposed_res_r {i r1 r2} :
+  R i r1 r2 ->
+  exposed_res r2.
+Proof.
+  unfold R.
+  intros.
+  destruct r1; destruct r2; try contradiction; auto.
+  constructor.
+  eapply V_exposed_r; eauto.
+Qed.
 
 (* Environment Relation *)
 Definition G i Γ1 ρ1 ρ2 :=
@@ -167,13 +300,10 @@ Lemma G_subset Γ1 Γ2 {i ρ1 ρ2}:
   G i Γ2 ρ1 ρ2.
 Proof. unfold G. fcrush. Qed.
 
-Lemma G_wf_env_r {i Γ1 ρ1 ρ2}:
+Lemma G_wf_env_r i Γ1 ρ1 ρ2 :
   G i Γ1 ρ1 ρ2 ->
   wf_env ρ2.
-Proof.
-  unfold G.
-  intros H; destruct H; auto.
-Qed.
+Proof. unfold G. intros; tauto. Qed.
 
 Lemma G_get {Γ1 i ρ1 ρ2}:
   G i Γ1 ρ1 ρ2 ->
@@ -264,6 +394,91 @@ Proof.
     eapply G_set; eauto.
 Qed.
 
+(* Monotonicity Lemmas *)
+Lemma V_mono_Forall_aux :
+  forall i j (V : nat -> A0.val -> A1.wval -> Prop) vs1 vs2,
+    (forall k : nat,
+        k < S i ->
+        forall (j : nat) v1 v2, V k v1 v2 -> j <= k -> V j v1 v2) ->
+    Forall2 (V i) vs1 vs2 ->
+    j <= i ->
+    Forall2 (V j) vs1 vs2.
+Proof.
+  intros.
+  revert vs2 H0.
+  induction vs1; intros; inv H0; auto.
+  rename l' into vs2.
+  constructor; auto.
+  eapply H; eauto; lia.
+Qed.
+
+Lemma V_mono i :
+  forall {j v1 v2},
+    V i v1 v2 ->
+    j <= i ->
+    V j v1 v2.
+Proof.
+  induction i using lt_wf_rec; intros.
+  destruct v2.
+  destruct i; simpl in H0;
+    destruct j; simpl; intros;
+    destruct H0 as [Hv1 [Hex HV]]; subst.
+  - repeat (split; auto).
+  - inv H1.
+  - repeat (split; auto).
+    destruct v1; destruct v; try contradiction.
+    + fcrush.
+    + destruct HV as [Heqw [Heqc HV]]; subst.
+      repeat split; auto.
+      eapply Forall2_length; eauto.
+  - repeat (split; auto).
+    destruct v1; destruct v; try contradiction.
+    + destruct HV as [Hlen [Heqw HV]]; subst.
+      repeat split; auto; intros.
+      specialize (HV j0 vs1 vs2 ρ3 ρ4).
+      rewrite normalize_step in *; try lia.
+      apply HV; eauto; lia.
+    + destruct HV as [Heqw [Heqc HV]]; subst.
+      repeat split; auto.
+      eapply V_mono_Forall_aux; eauto; lia.
+Qed.
+
+Lemma V_mono_Forall {vs1 vs2} i j :
+  Forall2 (V i) vs1 vs2 ->
+  j <= i ->
+  Forall2 (V j) vs1 vs2.
+Proof.
+  intros H.
+  revert j.
+  induction H; simpl; intros; auto.
+  constructor; eauto.
+  eapply V_mono; eauto.
+Qed.
+
+Lemma R_mono {r1 r2} i j :
+  R i r1 r2 ->
+  j <= i ->
+  R j r1 r2.
+Proof.
+  unfold R.
+  intros.
+  destruct r1; auto.
+  destruct r2; auto.
+  eapply V_mono; eauto.
+Qed.
+
+Lemma E_mono {ex ρ1 ρ2 e1 e2} i j:
+  E ex i ρ1 e1 ρ2 e2 ->
+  j <= i ->
+  E ex j ρ1 e1 ρ2 e2.
+Proof.
+  unfold E, R, E', R'.
+  intros.
+  destruct (H j1 r1) as [j2 [r2 [Hr2 HR]]]; auto; try lia.
+  exists j2, r2; split; eauto.
+  apply R_mono with (i - j1); try lia; auto.
+Qed.
+
 Lemma G_mono {Γ1 ρ1 ρ2} i j:
   G i Γ1 ρ1 ρ2 ->
   j <= i ->
@@ -288,7 +503,7 @@ Lemma ret_compat Γ x :
   (x \in Γ) ->
   trans_correct Γ (A0.Eret x) (A1.Eret x).
 Proof.
-  unfold trans_correct, E, AM.E, AM.VM.E, E'.
+  unfold trans_correct, E, E'.
   intros.
   inv H2.
   - fcrush.
@@ -297,7 +512,7 @@ Proof.
     exists 1, (A1.Res v2); split; auto.
     + constructor.
       * constructor; auto.
-      * eapply AM.V_exposed_res_r; eauto.
+      * eapply V_exposed_res_r; eauto.
     + eapply V_mono; eauto; lia.
 Qed.
 
@@ -335,7 +550,7 @@ Lemma fun_compat Γ e e' k k' f xs :
   trans_correct (f |: Γ) k k' ->
   trans_correct Γ (A0.Efun f xs e k) (A1.Efun f w xs e' k').
 Proof.
-  unfold trans_correct, E, AM.E, AM.VM.E, E'.
+  unfold trans_correct, E, E'.
   intros.
   inv H4.
   - exists 0, A1.OOT; split; simpl; eauto.
@@ -349,31 +564,123 @@ Proof.
     + exists (S j2), r2; split; auto.
       constructor.
       econstructor; eauto.
-      eapply AM.R_exposed_res_r; eauto.
+      eapply R_exposed_res_r; eauto.
       eapply R_mono; eauto; lia.
 Qed.
 
-Lemma app_compat Γ xs f :
+Lemma app_compat Γ (xs : list var) f :
   (f \in Γ) ->
   (FromList xs \subset Γ) ->
   let w := arity_to_web (length xs) in
   (w \in Exposed) ->
   trans_correct Γ (A0.Eapp f xs) (A1.Eapp f w xs).
 Proof.
-  unfold trans_correct, G, E, AM.E, AM.VM.E, E'.
+  unfold trans_correct, E, E'.
   intros.
+  rename H2 into HG.
   inv H4.
-  - exists 0, A1.OOT; split; simpl; auto.
-  - inv H5.
-    edestruct (G_get H2 f) as [fv2 [Heqfv2 HV]]; eauto.
+  - fcrush.
+  - inv H2.
+    edestruct (G_get HG f) as [fv2 [Heqfv2 HV]]; eauto.
     destruct i.
     fcrush.
-    destruct fv2; simpl in HV;
-      destruct HV as [Hv1 HV];
-      destruct (exposed_reflect w); try contradiction;
-      destruct HV as [Hex HV];
-      destruct v; try contradiction.
-    destruct HV as [Hlen HV].
 
-    (* Stuck: need extra invariants between (arity_to_web (length xs)) and w *)
-Abort.
+    destruct fv2; simpl in HV;
+      destruct HV as [Hv1 [Hexv1 HV]];
+      destruct v; try contradiction.
+    destruct HV as [Hlen [Heqw HV]]; subst.
+
+    edestruct (G_get_list HG xs vs) as [vs2 [Heqvs2 Vvs]]; eauto.
+
+    destruct (set_lists_length3 (M.set v (Tag (arity_to_web (length xs')) (A1.Vfun v t l e0)) t) l vs2) as [ρ4 Heqρ4].
+    unfold wval in *.
+    rewrite <- (Forall2_length _ _ _ Vvs).
+    rewrite <- (set_lists_length_eq _ _ _ _ H8); auto.
+
+    assert (HE : E true (i - (i - i)) ρ'' e ρ4 e0).
+    {
+      eapply (HV i vs vs2); eauto.
+      eapply V_exposed_Forall_r; eauto.
+      apply V_mono_Forall with (S i); auto; lia.
+    }
+
+    apply (E_mono _ i) in HE; try lia.
+    unfold E in HE.
+    destruct (HE c r1) as [j2 [r2 [He0 Rr]]]; try lia; auto.
+
+    assert (length xs = length xs').
+    {
+      unfold var in *.
+      erewrite (get_list_length_eq xs vs); eauto.
+      symmetry; apply (set_lists_length_eq _ _ _ _ H8).
+    }
+
+    assert (Harity : arity_to_web (length xs) = arity_to_web (length xs')) by eauto.
+    rewrite Harity in *.
+    exists (S j2), r2; split; eauto.
+    constructor; auto.
+    econstructor; eauto.
+    destruct (exposed_reflect (arity_to_web (length xs'))); try contradiction; auto.
+    intros; split.
+    eapply V_exposed_Forall_r; eauto.
+    eapply R_exposed_res_r; eauto.
+    eapply R_exposed_res_r; eauto.
+Qed.
+
+(* Fundamental Property *)
+Lemma fundamental_property {Γ e e'}:
+  trans Γ e e' -> trans_correct Γ e e'.
+Proof.
+  intros H.
+  induction H.
+  - eapply ret_compat; auto.
+  - eapply fun_compat; eauto.
+  - eapply app_compat; eauto.
+  - admit.
+  - admit.
+  - (* eapply proj_compat; eauto. *) admit.
+  - (* eapply case_nil_compat; eauto. *) admit.
+  - (* eapply case_cons_compat; eauto. *) admit.
+Admitted.
+
+(* Top-level *)
+
+Definition trans_correct_top etop etop' :=
+  A1.occurs_free etop' \subset A0.occurs_free etop /\
+  trans_correct (A0.occurs_free etop) etop etop'.
+
+Lemma trans_correct_top_subset e1 e2 :
+  trans_correct_top e1 e2 ->
+  A1.occurs_free e2 \subset A0.occurs_free e1.
+Proof.
+  unfold trans_correct_top.
+  intros.
+  inv H; auto.
+Qed.
+
+Lemma trans_correct_top_trans_correct e1 e2 :
+  trans_correct_top e1 e2 ->
+  trans_correct (A0.occurs_free e1) e1 e2.
+Proof.
+  unfold trans_correct_top, trans_correct.
+  sfirstorder.
+Qed.
+
+Lemma trans_correct_trans_correct_top e1 e2:
+  A1.occurs_free e2 \subset A0.occurs_free e1 ->
+  trans_correct (A0.occurs_free e1) e1 e2 ->
+  trans_correct_top e1 e2.
+Proof.
+  unfold trans_correct_top, trans_correct.
+  sfirstorder.
+Qed.
+
+Theorem top etop etop':
+  trans (A0.occurs_free etop) etop etop' ->
+  trans_correct_top etop etop'.
+Proof.
+  intros H.
+  specialize (fundamental_property H).
+  eapply trans_correct_trans_correct_top; eauto.
+  eapply trans_exp_inv; eauto.
+Qed.

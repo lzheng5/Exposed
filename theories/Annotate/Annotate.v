@@ -400,7 +400,7 @@ Module AnnotateTop.
   (* Top-level Environment Relation *)
   Definition G i Γ1 ρ1 Γ2 ρ2 :=
     wf_env ρ2 /\
-    Γ2 \subset Γ1 /\
+    Γ2 \subset Γ1 /\ (* TODO: simplify? *)
     forall x,
       (x \in Γ1) ->
       exists v1 v2,
