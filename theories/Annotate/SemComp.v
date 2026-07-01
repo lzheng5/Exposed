@@ -42,6 +42,11 @@ Lemma V_wf_val_r v1 v2:
   wf_val v2.
 Proof. unfold V, Cross. strivial using @R.V_top_wf_val_r. Qed.
 
+Lemma V_exposed_r v1 v2:
+  V v1 v2 ->
+  exposed v2.
+Proof. unfold V, Cross. strivial using @R.V_top_exposed_r. Qed.
+
 Lemma R_V v1 v2:
   R (AS.Res v1) (AT.Res v2) ->
   V v1 v2.

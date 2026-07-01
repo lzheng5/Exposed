@@ -641,7 +641,10 @@ Section Linking.
     intros [HS He] i.
     induction i; simpl; intros; auto;
       repeat (split; auto); intros;
-      destruct (exposed_reflect w); try contradiction.
+      destruct (LM.L ! w) eqn:Hw;
+      try (eapply LM.L_inv_Some in Hw; contradiction);
+      destruct (exposed_reflect w); try contradiction;
+      repeat (split; auto); intros.
 
     apply (He (i - (i - j)) ρ3 ρ4); auto.
     eapply G_top_subset with (Γ1 := FromList xs :|: (f |: Γ1)); eauto.
@@ -651,8 +654,6 @@ Section Linking.
     apply V_mono with i; try lia.
     eapply IHi; eauto.
     apply G_top_mono with (S i); eauto; lia.
-    destruct H5; auto.
-    destruct H5; auto.
   Qed.
 
   Lemma fun_compat_top e e' k k' f w xs :
@@ -711,7 +712,10 @@ Section Linking.
         destruct i.
         inv H3.
         simpl in HVf.
-        destruct HVf as [Hfv1 [Hfv2 [Hw HV]]]; subst.
+        destruct HVf as [Hfv1 [Hfv2 HV]]; subst;
+          destruct (LM.L ! w) eqn:HLw;
+          try (eapply LM.L_inv_Some in HLw; contradiction).
+        destruct HV as [Hw HV]; subst.
         destruct v0; try contradiction.
         destruct HV as [Hlen HV].
 
@@ -727,10 +731,10 @@ Section Linking.
 
         unfold E' in HV.
         edestruct (HV i vs vs2 ρ'' ρ4) with (j1 := c0) as [j2 [r2 [He0 HR]]]; eauto; try lia.
+        * fcrush.
         * intros.
-          destruct H16; auto.
-          split; auto.
           eapply V_exposed_Forall; eauto.
+          fcrush.
         * eapply V_mono_Forall; eauto; lia.
         * destruct r2; simpl in HR; try contradiction.
           edestruct (H1 (i - c0) (M.set x v ρ1) (M.set x w ρ2)) with (j1 := c') as [j3 [r3 [He1 HR']]]; eauto; try lia.

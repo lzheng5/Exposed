@@ -79,6 +79,8 @@ Section Comp_n.
     2 : { eapply C.V_wf_val_r; eauto. }
     destruct HC1 as [v2'' [Heqv2'' HC1]]; subst.
     eexists; split; eauto.
+
+    eapply C.V_exposed_r; eauto.
   Qed.
 
   Lemma Top_n_subset n m e1 e2 :
