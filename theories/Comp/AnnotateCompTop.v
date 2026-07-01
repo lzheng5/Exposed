@@ -107,9 +107,6 @@ Section Adequacy.
     destruct H as [ρ2' [[ρ1' [HG0 HAG]] HG1]].
     edestruct (C.Top_n_R_n _ _ _ _ HC0) with (ρ2 := ρ1') as [j1' [r1' [Hstep1' HRn0]]]; eauto.
     eapply C.G_n_wf_env; eauto.
-    eapply C.G_n_subset; eauto.
-    apply Included_refl.
-    eapply C.Top_n_subset; eauto.
 
     edestruct (Erase.adequacy _ _ HA) with (ρ2 := ρ2') as [j2' [r2' [Hstep2' HAR]]]; eauto.
     - eapply C.G_n_wf_env; eauto.

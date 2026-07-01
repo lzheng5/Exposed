@@ -398,9 +398,8 @@ Module AnnotateTop.
   Qed.
 
   (* Top-level Environment Relation *)
-  Definition G i Γ1 ρ1 Γ2 ρ2 :=
+  Definition G i Γ1 ρ1 ρ2 :=
     wf_env ρ2 /\
-    Γ2 \subset Γ1 /\
     forall x,
       (x \in Γ1) ->
       exists v1 v2,
@@ -408,38 +407,31 @@ Module AnnotateTop.
         M.get x ρ2 = Some v2 /\
         V i v1 v2.
 
-  Lemma G_wf_env_r i Γ1 ρ1 Γ2 ρ2 :
-    G i Γ1 ρ1 Γ2 ρ2 ->
+  Lemma G_wf_env_r i Γ1 ρ1 ρ2 :
+    G i Γ1 ρ1 ρ2 ->
     wf_env ρ2.
   Proof. unfold G. intros; tauto. Qed.
 
-  Lemma G_subset_inv i Γ1 ρ1 Γ2 ρ2 :
-    G i Γ1 ρ1 Γ2 ρ2 ->
-    Γ2 \subset Γ1.
-  Proof. unfold G; intros; tauto. Qed.
-
-  Lemma G_subset i Γ1 ρ1 Γ2 ρ2 Γ3 Γ4 :
-    G i Γ1 ρ1 Γ2 ρ2 ->
-    Γ3 \subset Γ1 ->
-    Γ4 \subset Γ3 ->
-    G i Γ3 ρ1 Γ4 ρ2.
+  Lemma G_subset i Γ1 ρ1 Γ2 ρ2:
+    G i Γ1 ρ1 ρ2 ->
+    Γ2 \subset Γ1 ->
+    G i Γ2 ρ1 ρ2.
   Proof.
     unfold G.
     intros.
-    destruct H as [Hr [Hs HG]].
+    destruct H as [Hr HG].
     repeat (split; auto).
   Qed.
 
   (* Top-level Monotonicity Lemma *)
-  Lemma G_mono {Γ1 Γ2 ρ1 ρ2} i j:
-      G i Γ1 ρ1 Γ2 ρ2 ->
+  Lemma G_mono {Γ1 ρ1 ρ2} i j:
+      G i Γ1 ρ1 ρ2 ->
       j <= i ->
-      G j Γ1 ρ1 Γ2 ρ2.
+      G j Γ1 ρ1 ρ2.
   Proof.
     unfold G.
     intros.
-    destruct H as [Hwf [HS HG]].
-    split; auto.
+    destruct H as [Hwf HG].
     split; auto; intros.
     edestruct HG as [v1 [v2 [Heqv1 [Heqv2 HV]]]]; eauto.
     eexists; eexists; repeat (split; eauto).
@@ -450,7 +442,7 @@ Module AnnotateTop.
   Definition trans_correct etop etop' :=
     A1.occurs_free etop' \subset A0.occurs_free etop /\
     forall i ρ1 ρ2,
-      G i (A0.occurs_free etop) ρ1 (A1.occurs_free etop') ρ2 ->
+      G i (A0.occurs_free etop) ρ1 ρ2 ->
       E true i ρ1 etop ρ2 etop'.
 
   Lemma trans_correct_subset e1 e2 :
@@ -463,118 +455,102 @@ Module AnnotateTop.
   Qed.
 
   (* Top-level Environment Lemmas *)
-  Lemma G_get {Γ1 Γ2 i ρ1 ρ2}:
-    G i Γ1 ρ1 Γ2 ρ2 ->
-    forall x,
+  Lemma G_get {Γ1 i ρ1 ρ2}:
+    G i Γ1 ρ1 ρ2 ->
+    forall x v1,
       (x \in Γ1) ->
-      exists v1 v2,
-        M.get x ρ1 = Some v1 /\
+      M.get x ρ1 = Some v1 ->
+      exists v2,
         M.get x ρ2 = Some v2 /\
-        V i v1 v2.
+          V i v1 v2.
   Proof.
     unfold G.
     intros.
-    destruct H as [Hr1 [HΓ HG]].
-    eapply (HG x); eauto.
+    destruct H as [Hwf HG].
+    edestruct HG as [v1' [v2 [Heqv1 [Heqv2 HV]]]]; eauto; invc.
+    fcrush.
   Qed.
 
-  Lemma G_get_list {i Γ1 ρ1 Γ2 ρ2} :
-    G i Γ1 ρ1 Γ2 ρ2 ->
-    forall xs,
+  Lemma G_get_list {i Γ1 ρ1 ρ2} :
+    G i Γ1 ρ1 ρ2 ->
+    forall xs vs1,
       (FromList xs) \subset Γ1 ->
-      exists vs1 vs2,
-        get_list xs ρ1 = Some vs1 /\
+      get_list xs ρ1 = Some vs1 ->
+      exists vs2,
         get_list xs ρ2 = Some vs2 /\
-        Forall2 (V i) vs1 vs2.
+          Forall2 (V i) vs1 vs2.
   Proof.
     intros HG xs.
-    intros.
     induction xs; simpl; intros.
-    - eexists; eexists; repeat split; eauto.
-    - rewrite FromList_cons in H.
-      edestruct (G_get HG) as [v1 [v2 [Heqv1 [Heqv2 HV]]]]; eauto.
-
-      edestruct IHxs as [vs1 [vs2 [Heqvs1 [Heqvs2 HVs]]]]; eauto.
-      eapply Included_trans; eauto.
-      apply Included_Union_r.
-
-      rewrite Heqv1.
-      rewrite Heqvs1.
-      rewrite Heqv2.
-      rewrite Heqvs2.
-      exists (v1 :: vs1), (v2 :: vs2); repeat (split; auto).
+    - fcrush.
+    - destruct (ρ1 ! a) eqn:Heq1; try discriminate.
+      destruct (get_list xs ρ1) eqn:Heq3; try discriminate.
+      inv H0.
+      unfold Ensembles.Included, Ensembles.In in *.
+      edestruct (G_get HG) as [v2 [Heqv2 HV]]; eauto.
+      eapply (H a); fcrush.
+      edestruct IHxs as [vs2 [Heqvs2 Vvs]]; eauto; fcrush.
   Qed.
 
-  Lemma G_set {i Γ1 ρ1 Γ2 ρ2}:
-    G i Γ1 ρ1 Γ2 ρ2 ->
+  Lemma G_set {i Γ1 ρ1 ρ2}:
+    G i Γ1 ρ1 ρ2 ->
     forall {x v1 v2},
       V i v1 v2 ->
-      G i (x |: Γ1) (M.set x v1 ρ1) (x |: Γ2) (M.set x v2 ρ2).
+      G i (x |: Γ1) (M.set x v1 ρ1) (M.set x v2 ρ2).
   Proof.
+    unfold G.
+    intro HG.
+    pose proof HG as HG'.
     intros.
-    unfold G; intros.
 
+    destruct HG as [Hwf HG].
     split.
     eapply wf_env_set; eauto.
-    eapply G_wf_env_r; eauto.
     eapply V_wf_val_r; eauto.
-
-    split.
-    apply Included_Union_compat; auto.
-    apply Included_refl.
-    eapply G_subset_inv; eauto.
 
     intros.
     destruct (M.elt_eq x0 x); subst.
-    - repeat rewrite M.gss.
-      eexists; eexists; repeat split; eauto.
-    - repeat (rewrite M.gso; auto).
-      assert (x0 \in Γ1) by fcrush.
-      eapply G_get; eauto.
+    - repeat rewrite M.gss in *.
+      fcrush.
+    - repeat (rewrite M.gso in *; auto).
+      fcrush.
   Qed.
 
-  Lemma G_set_lists {i Γ1 ρ1 Γ2 ρ2}:
-    G i Γ1 ρ1 Γ2 ρ2 ->
+  Lemma G_set_lists {i Γ1 ρ1 ρ2}:
+    G i Γ1 ρ1 ρ2 ->
     forall {xs vs1 vs2 ρ3 ρ4},
       Forall2 (V i) vs1 vs2 ->
       set_lists xs vs1 ρ1 = Some ρ3 ->
       set_lists xs vs2 ρ2 = Some ρ4 ->
-      G i (FromList xs :|: Γ1) ρ3 (FromList xs :|: Γ2) ρ4.
+      G i (FromList xs :|: Γ1) ρ3 ρ4.
   Proof.
     intros HG xs.
-    assert (HΓ : Γ2 \subset Γ1) by (eapply G_subset_inv; eauto).
     induction xs; simpl; intros.
     - destruct vs1; try discriminate.
       destruct vs2; try discriminate.
       inv H0; inv H1.
-      eapply G_subset; eauto.
-      normalize_sets.
-      rewrite Union_Empty_set_neut_l; eauto.
-      apply Included_refl.
-      eapply Included_Union_compat; eauto.
-      apply Included_refl.
+      eapply G_subset; eauto; normalize_sets;
+        rewrite Union_Empty_set_neut_l; eauto;
+        apply Included_refl.
     - destruct vs1; try discriminate.
       destruct vs2; try discriminate.
       destruct (set_lists xs vs1 ρ1) eqn:Heq1; try discriminate.
       destruct (set_lists xs vs2 ρ2) eqn:Heq2; try discriminate.
       inv H; inv H0; inv H1.
-      eapply G_subset with (Γ1 := (a |: (FromList xs :|: Γ1))) (Γ2 := (a |: (FromList xs :|: Γ2))); eauto.
+      eapply G_subset with (Γ1 := (a |: (FromList xs :|: Γ1))); eauto;
+        try (normalize_sets;
+             rewrite Union_assoc;
+             apply Included_refl).
       eapply G_set; eauto.
-      normalize_sets.
-      rewrite Union_assoc.
-      apply Included_refl.
-      eapply Included_Union_compat; eauto.
-      apply Included_refl.
   Qed.
 
   (* Compatibility Lemmas *)
   Lemma Vfun_V w e e' :
     trans_correct e e' ->
     (w \in Exposed) ->
-    forall i f xs Γ1 Γ2 ρ1 ρ2,
-      G i Γ1 ρ1 Γ2 ρ2 ->
+    forall i f xs Γ1 ρ1 ρ2,
+      G i Γ1 ρ1 ρ2 ->
       A0.occurs_free e \subset (FromList xs :|: (f |: Γ1)) ->
-      A1.occurs_free e' \subset (FromList xs :|: (f |: Γ2)) ->
       V i (A0.Vfun f ρ1 xs e) (Tag w (A1.Vfun f ρ2 xs e')).
   Proof.
     unfold trans_correct.
@@ -586,12 +562,12 @@ Module AnnotateTop.
       repeat (split; auto); intros.
 
     apply (He (i - (i - j)) ρ3 ρ4); auto.
-    eapply G_subset with (Γ1 := FromList xs :|: (f |: Γ1)) (Γ2 := FromList xs :|: (f |: Γ2)); eauto.
+    eapply G_subset with (Γ1 := FromList xs :|: (f |: Γ1)); eauto.
     eapply G_set_lists; eauto.
     eapply G_set; eauto.
     eapply G_mono; eauto; try lia.
     apply V_mono with i; try lia.
-    eapply IHi with (Γ2 := Γ2); eauto.
+    eapply IHi; eauto.
     apply G_mono with (S i); eauto; lia.
   Qed.
 
@@ -623,16 +599,15 @@ Module AnnotateTop.
     - exists 0, OOT; split; simpl; eauto.
     - inv H6.
       edestruct (H3 (i - 1) (M.set f (A0.Vfun f ρ1 xs e) ρ1) (M.set f (Tag w (A1.Vfun f ρ2 xs e')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
-      + eapply G_subset with (Γ1 := (f |: (A0.occurs_free (A0.Efun f xs e k)))) (Γ2 := (f |: (A1.occurs_free (A1.Efun f w xs e' k')))); eauto.
+      + eapply G_subset with (Γ1 := (f |: (A0.occurs_free (A0.Efun f xs e k)))); eauto.
         * eapply G_set; eauto.
           eapply G_mono; eauto; try lia.
 
-          eapply Vfun_V with (Γ1 := (A0.occurs_free (A0.Efun f xs e k))) (Γ2 := (A1.occurs_free (A1.Efun f w xs e' k'))); eauto.
+          eapply Vfun_V with (Γ1 := (A0.occurs_free (A0.Efun f xs e k))); eauto.
           -- unfold trans_correct.
              split; auto.
           -- eapply G_mono; eauto; try lia.
           -- eapply A0.free_fun_e_subset; eauto.
-          -- eapply A1.free_fun_e_subset; eauto.
         * eapply A0.free_fun_k_subset; eauto.
       + exists (S j2), r2; split; auto.
         * constructor; auto.
@@ -665,8 +640,7 @@ Module AnnotateTop.
     inv H3.
     - exists 0, OOT; split; simpl; auto.
     - inv H4.
-      + edestruct (G_get H1) as [fv1 [fv2 [Heqfv1 [Heqfv2 HVf]]]]; eauto.
-        invc.
+      + edestruct (G_get H1) as [fv2 [Heqfv2 HVf]]; eauto.
         destruct fv2.
         destruct i.
         fcrush.
@@ -677,9 +651,8 @@ Module AnnotateTop.
         assert (Heqw : w0 = w) by (eapply HEx; eauto); inv Heqw.
         destruct v0; try contradiction.
         destruct H4 as [Hlen HV]; subst.
-        edestruct (G_get_list H1 xs) as [vs1 [vs2 [Heqvs1 [Heqvs2 HVvs]]]]; eauto.
+        edestruct (G_get_list H1 xs) as [vs2 [Heqvs2 HVvs]]; eauto.
         eapply A0.free_letapp_xs_subset; eauto.
-        invc.
 
         destruct (set_lists_length3 (M.set v0 (Tag w (Vfun v0 t l e0)) t) l vs2) as [ρ4 Heqρ4].
         unfold wval in *.
@@ -687,12 +660,13 @@ Module AnnotateTop.
         rewrite <- (set_lists_length_eq _ _ _ _ H12); auto.
 
         unfold E' in HV.
+        rename vs into vs1.
         edestruct (HV i vs1 vs2 ρ'' ρ4) with (j1 := c0) as [j2 [r2 [He0 HR]]]; eauto; try lia.
         * eapply V_exposed_Forall_r; eauto.
         * eapply V_mono_Forall; eauto; lia.
         * destruct r2; simpl in HR; try contradiction.
           edestruct (H0 (i - c0) (M.set x v ρ1) (M.set x w0 ρ2)) with (j1 := c') as [j3 [r3 [He1 HR']]]; eauto; try lia.
-          eapply G_subset with (Γ1 := x |: (A0.occurs_free (A0.Eletapp x f xs k))) (Γ2 := x |: (A1.occurs_free (A1.Eletapp x f w xs k'))); eauto.
+          eapply G_subset with (Γ1 := x |: (A0.occurs_free (A0.Eletapp x f xs k))); eauto.
           eapply G_set; eauto.
           eapply G_mono; eauto; lia.
           -- eapply V_mono; eauto; try lia.
@@ -710,7 +684,7 @@ Module AnnotateTop.
              assert (Hr : exposed_res (A1.Res w0)) by (eapply bstep_fuel_exposed_inv; eauto); inv Hr; auto.
 
              eapply bstep_fuel_exposed_inv; eauto.
-      + eexists; exists OOT; split; simpl; eauto.
+      + fcrush.
   Qed.
 
 End AnnotateTop.

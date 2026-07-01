@@ -38,7 +38,7 @@ Section Comp_n.
 
   Definition R_n n m := Cross (Cross (C0.R_n n) (fun v1 v2 => forall k, AM.R k v1 v2)) (C1.R_n m).
 
-  Definition G_n n m Γ1 Γ2 := Cross (Cross (C0.G_n n Γ1 Γ2) (fun ρ1 ρ2 => forall k, AM.G k Γ1 ρ1 Γ2 ρ2)) (C1.G_n m Γ1 Γ2).
+  Definition G_n n m Γ1 Γ2 := Cross (Cross (C0.G_n n Γ1 Γ2) (fun ρ1 ρ2 => forall k, AM.G k Γ1 ρ1 ρ2)) (C1.G_n m Γ1 Γ2).
 
   Lemma V_n_wf_val_r n m v1 v2:
     V_n n m v1 v2 ->
@@ -177,7 +177,6 @@ Section Adequacy.
     - intros.
       eapply AM.G_subset; eauto.
       eapply C0.Top_n_subset; eauto.
-      eapply AM.trans_correct_subset; eauto.
     - edestruct (C1.Top_n_R_n _ _ _ HC1) with (ρ2 := ρ2) as [j2 [r2 [Hstep2 HRn1]]]; eauto.
       + eapply C1.G_n_subset; eauto.
         * eapply AM.trans_correct_subset in HA; eauto.
