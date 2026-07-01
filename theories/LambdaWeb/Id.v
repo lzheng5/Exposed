@@ -8,7 +8,7 @@ Require Import Lia.
 From Common Require Import Util.
 From LambdaWeb Require Import ANF Exposed.
 
-(* Reflexive/Identity Transformation with Exposed webs *)
+(* Reflexive/Identity Transformation *)
 
 (* Specification *)
 Inductive trans (Γ : Ensemble var) : exp -> exp -> Prop :=

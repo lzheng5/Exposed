@@ -7,7 +7,9 @@ Require Import Lia.
 From Hammer Require Import Hammer Tactics Reflect.
 
 From Common Require Import Util RelComp.
-From LambdaWeb Require Import ANF Refl.
+From LambdaWeb Require Import ANF Refl IdComp.
+
+Import Refl.RM.
 
 (* Compositionality of The Reflexive Pipeline Based on [Refl.related_top] *)
 
@@ -27,6 +29,7 @@ Section ReflComp.
 
   Lemma V_n_refl n v :
     wf_val v ->
+    exposed v ->
     V_n n v v.
   Proof.
     revert v.
@@ -67,6 +70,7 @@ Section ReflComp.
   Lemma R_n_Res_inv n v1 r2 :
     R_n n (Res v1) r2 ->
     wf_val v1 ->
+    exposed v1 ->
     exists v2, r2 = Res v2 /\ V_n n v1 v2.
   Proof.
     intros H.
@@ -79,11 +83,14 @@ Section ReflComp.
       destruct c2; simpl in Hr; try contradiction.
       destruct Hr as [Hv1 [Hw HV]].
       edestruct IHComp as [v2 [Heq1 HVn]]; subst; eauto.
-      eexists; split; eauto.
-      econstructor.
-      + intros.
-        specialize (H k); simpl in *; eauto.
-      + eapply R_n_V_n; eauto.
+      + specialize (H 0).
+        assert (V 0 v1 w) by auto.
+        eapply V_exposed; eauto.
+      + eexists; split; eauto.
+        econstructor.
+        * intros.
+          specialize (H k); simpl in *; eauto.
+        * eapply R_n_V_n; eauto.
   Qed.
 
   Lemma Top_n_refl n e:
@@ -329,49 +336,72 @@ Section Refinement.
           eapply val_ref_Vconstr; eauto.
     - destruct v2.
       destruct v; auto;
-        destruct (H1 0) as [_ [_ [Hw H']]]; subst; auto; contradiction.
+        destruct (H1 0) as [Hv1 [Hv2 H']]; simpl in *;
+        destruct (LM.L ! w0) eqn:Hw0; try contradiction;
+        try (eapply LM.L_inv_Some in Hw0; contradiction);
+        fcrush.
     - destruct v2.
       destruct v.
-      + destruct (H1 0) as [_ [_ [_ H']]]; contradiction.
-      + destruct (H1 1) as [Hv1 [Hv2 [Hw [Hc HV]]]]; subst;
-          split; auto.
-        inv HV; auto.
+      + destruct (H1 0) as [_ [_ H']]; simpl in *;
+          destruct (LM.L ! w) eqn:Hw;
+          try (eapply LM.L_inv_Some in Hw; contradiction);
+          sfirstorder.
+      + destruct (H1 1) as [Hv1 [Hv2 HV]]; simpl in *;
+          destruct (LM.L ! w) eqn:Hw;
+          try (eapply LM.L_inv_Some in Hw; contradiction);
+          fcrush.
     - destruct v2.
       destruct v0.
-      + destruct (H2 0) as [_ [_ [_ H']]]; contradiction.
-      + destruct (H2 1) as [Hv1 [Hv2 [Hw [Hc HV']]]]; subst;
-          split; auto.
-        inv HV'.
+      + destruct (H2 0) as [_ [_ H']]; simpl in *;
+          destruct (LM.L ! w0) eqn:Hw;
+          try (eapply LM.L_inv_Some in Hw; contradiction);
+          fcrush.
+      + destruct (H2 1) as [Hv1 [Hv2 HV]]; simpl in *;
+          destruct (LM.L ! w0) eqn:Hw;
+          try (eapply LM.L_inv_Some in Hw; contradiction);
+          destruct HV as [Heqw1 [Heqc HV]]; subst;
+          repeat (split; auto).
+
+        inv HV.
         clear H5 H7.
         assert (HV' : forall i, V i v y /\ V i (Tag w1 (Vconstr c0 vs)) (Tag w1 (Vconstr c0 l'))).
         {
           intros.
           specialize (H2 (S i)).
           destruct i; simpl in *;
-            destruct H2 as [_ [_ [_ [_ HFV]]]];
-            inv HFV.
+            destruct H2 as [_ [_ HV]];
+            destruct (LM.L ! w1) eqn:Hw1;
+            try (eapply LM.L_inv_Some in Hw1; contradiction).
+            inv HV.
           - inv Hv1; inv Hv2.
             inv H1.
-            inv H6; inv H9.
+            inv H7; inv H9.
             repeat (split; auto).
             + fcrush.
-            + eapply Forall2_length; eauto.
+            + intros.
+              fcrush.
+            + inv H3.
+              inv H4.
+              eapply Forall2_length; eauto.
           - inv Hv1; inv Hv2.
-            inv H6; inv H9.
+            destruct HV as [Heqw [Heqc HV]].
+            inv HV.
+            inv H5; inv H7.
+            rewrite_math (i - i = 0).
             repeat (split; auto).
             + fcrush.
             + fcrush.
-            + eapply V_mono_Forall with (S i); eauto.
+            + eapply V_mono_Forall with (S i); fcrush.
         }
 
         assert (HV0 : forall i, V i v y) by (intros; destruct (HV' i); auto).
         assert (HV1 : forall i, V i (Tag w1 (Vconstr c0 vs)) (Tag w1 (Vconstr c0 l'))) by (intros; destruct (HV' i); auto).
 
-        constructor; auto.
         inv H1.
+        constructor; auto.
         specialize (IHwf_val0 _ _ H0 H6 HV1).
         simpl in IHwf_val0.
-        destruct IHwf_val0 as [Hw [Hc HF]]; auto.
+        destruct IHwf_val0 as [Hw' [Hc HF]]; auto.
   Qed.
 
   Lemma R_res_val_ref {v1 v2} :
@@ -404,7 +434,7 @@ Section Refinement.
       {
         simpl in H.
         specialize (H 0).
-        eapply Refl.V_exposed; eauto.
+        eapply V_exposed; eauto.
       }
       specialize (IHComp _ Heqv2 _ Hw Hexw Heqw).
       specialize (R_res_val_ref H0 H2 H); intros.
@@ -470,55 +500,6 @@ Section Linking.
 
      Print link.
    *)
-
-  (* Note the following lemma is not applicable as [trans_correct] is not the top-level relation.
-   * Thus, we need to show the compat lemmas for fun and letapp with [related_top] *)
-  Lemma related_preserves_linking f w x e1 e2 e1' e2':
-    (w \in Exposed) ->
-    related e1 e2 ->
-    related e1' e2' ->
-    related (link f w x e1 e1') (link f w x e2 e2').
-  Proof.
-    unfold link.
-    intros Hw He He'.
-    eapply fun_compat; eauto.
-    eapply letapp_compat; eauto.
-  Qed.
-
-  (* [related] is stronger than [related_top] due to [G_top] *)
-  Lemma related_related_top e1 e2 :
-    occurs_free e2 \subset occurs_free e1 ->
-    related e1 e2 ->
-    related_top e1 e2.
-  Proof.
-    unfold related_top, related.
-    intros.
-    split; auto; intros.
-    eapply H0; eauto.
-    eapply G_top_G; eauto.
-  Qed.
-
-  Lemma related_top_related e1 e2 :
-    related_top e1 e2 ->
-    related e1 e2.
-  Proof.
-    unfold related_top, related.
-    intros.
-    inv H.
-  Abort.
-
-  Lemma G_G_top i Γ1 ρ1 Γ2 ρ2 :
-    G i Γ1 ρ1 ρ2 ->
-    Γ2 \subset Γ1 ->
-    wf_env ρ1 ->
-    wf_env ρ2 ->
-    G_top i Γ1 ρ1 ρ2.
-  Proof.
-    unfold G, G_top.
-    intros.
-    repeat (split; auto); intros.
-    destruct H as [Hr1 [Hr2 HG]].
-  Abort.
 
   (* Environment Lemmas *)
   Lemma G_top_get_list {i Γ1 ρ1 ρ2} :

@@ -6,9 +6,9 @@ Import ListNotations.
 Require Import Lia.
 
 From Common Require Import Util.
-From LambdaWeb Require Import ANF Exposed Refl Id DPE ConstProp Defunc.
+From LambdaWeb Require Import ANF Exposed Id DPE ConstProp Defunc.
 
-(* [TODO] Refactoring *)
+(* Relate all the transformation top-level relations to the identity transformation top-level relation *)
 
 Lemma exposed_V_relate_Forall_aux :
   forall i (V1 V2 : nat -> wval -> wval -> Prop),
@@ -26,138 +26,6 @@ Proof.
       solve [ apply H; try lia; auto |
               apply IHForall; auto ].
 Qed.
-
-Module ReflTop.
-
-  (* Relate Id and Refl as Equivalence *)
-
-  Import ExposedUtil.
-  Import Id.EM.EG.EV.
-
-  Lemma exposed_V_relate :
-    forall i v1 v2,
-      exposed v1 ->
-      V i v1 v2 <-> Refl.V i v1 v2.
-  Proof.
-    intro i.
-    induction i using lt_wf_rec; intros.
-    destruct i.
-    - destruct v1; destruct v2; split; simpl; intros; auto;
-        destruct H1 as [Hv1 [Hv2 [Hw HV]]]; subst;
-        repeat (split; auto);
-        destruct v; destruct v0; try contradiction;
-        simpl in *; tauto.
-    - split; simpl in *; intro Hv;
-        destruct Hv as [Hv1 [Hv2 HV]];
-        repeat (split; auto);
-        destruct v1; destruct v2; auto;
-        destruct HV; subst; split; auto.
-      + destruct v; destruct v0; try contradiction; simpl in *.
-        * destruct H2.
-          split; auto; intros.
-
-          assert (HE' : E' V (exposedb w0) (i - (i - j)) ρ3 e ρ4 e0).
-          {
-            inv H0.
-            eapply H2 with (vs1 := vs1) (vs2 := vs2); try lia; eauto;
-              intros; destruct H4; auto.
-            eapply exposed_V_relate_Forall_aux; eauto; try lia.
-          }
-
-          unfold Refl.E', E', Refl.R', R' in *.
-          intros.
-          edestruct HE' as [j2 [r2 [He0 HR']]]; eauto.
-          exists j2; exists r2; split; auto.
-          destruct r1; destruct r2; auto.
-          eapply H; try lia; auto.
-          inv H9.
-          destruct (exposed_reflect w0); try contradiction.
-          inv H11; auto.
-          inv H0; contradiction.
-        * destruct H2 as [Hc HV]; subst.
-          repeat split; auto.
-          rewrite normalize_step in *; try lia.
-          eapply exposed_V_relate_Forall_aux with (V1 := V); eauto.
-          inv H0; auto.
-
-      + unfold V_refl in *.
-        destruct v; destruct v0; try contradiction.
-        * destruct H2.
-          split; auto; intros.
-
-          assert (HE' : Refl.E' Refl.V (exposedb w0) (i - (i - j)) ρ3 e ρ4 e0).
-          {
-            inv H0.
-            eapply H2 with (vs1 := vs1) (vs2 := vs2); try lia; eauto.
-            eapply exposed_V_relate_Forall_aux with (V1 := V); eauto; try lia.
-          }
-
-          unfold Refl.E', E', Refl.R', R' in *.
-          intros.
-          edestruct HE' as [j2 [r2 [He0 HR']]]; eauto.
-          exists j2; exists r2; split; auto.
-          destruct r1; destruct r2; auto.
-          eapply H; try lia; auto.
-          inv H10.
-          destruct (exposed_reflect w0); try contradiction.
-          inv H12; auto.
-          inv H0; contradiction.
-        * destruct H2 as [Hc HV]; subst.
-          repeat split; auto.
-          rewrite normalize_step in *; try lia.
-          eapply exposed_V_relate_Forall_aux with (V1 := V); eauto.
-          inv H0; auto.
-  Qed.
-
-  Lemma exposed_R_relate {i r1 r2}:
-    exposed_res r1 ->
-    R i r1 r2 <-> Refl.R i r1 r2.
-  Proof.
-    intros Hr1.
-    unfold R, Refl.R.
-    split; intros;
-      destruct r1;
-      destruct r2;
-      auto; inv Hr1;
-      apply exposed_V_relate; auto.
-  Qed.
-
-  Lemma exposed_E_relate {i ρ1 ρ2 e1 e2}:
-    E true i ρ1 e1 ρ2 e2 <-> Refl.E true i ρ1 e1 ρ2 e2.
-  Proof.
-    unfold E, Refl.E, E', Refl.E'.
-    split; intros;
-    edestruct H as [j2 [r2 [He2 HR]]]; eauto;
-      eexists; eexists; split; eauto;
-      eapply exposed_R_relate; eauto;
-      inv H1; auto.
-  Qed.
-
-  Lemma G_top_relate {i Γ1 ρ1 ρ2}:
-    Id.G_top i Γ1 ρ1 ρ2 <-> Refl.G_top i Γ1 ρ1 ρ2.
-  Proof.
-    unfold Id.G_top, Refl.G_top.
-    split; intros;
-      destruct H as [Hr1 [Hr2 HG]];
-      repeat (split; auto); intros;
-      edestruct HG as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; eauto;
-      eexists; eexists; repeat (split; eauto);
-      eapply exposed_V_relate; eauto.
-  Qed.
-
-  Theorem top_relate {etop etop'} :
-    Id.trans_correct_top etop etop' <-> Refl.related_top etop etop'.
-  Proof.
-    unfold Id.trans_correct_top, Refl.related_top.
-    split; intros HR;
-      destruct HR;
-      split; auto; intros;
-      eapply exposed_E_relate; eauto;
-      apply H0; auto;
-      apply G_top_relate; auto.
-  Qed.
-
-End ReflTop.
 
 Module Top (LM : LSig) (VT : VTrans LM).
 
