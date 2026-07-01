@@ -173,15 +173,15 @@ Module DPETop.
   Qed.
 
   Theorem top_relate {etop etop'} :
-    (occurs_free etop') \subset (occurs_free etop) ->
     DPE.trans_correct_top etop etop' ->
     Id.trans_correct_top etop etop'.
   Proof.
     unfold DPE.trans_correct_top, Id.trans_correct_top.
     intros.
+    inv H.
     split; auto; intros.
     eapply exposed_E_relate; eauto.
-    eapply H0; eauto.
+    eapply H1; eauto.
     eapply G_top_relate; eauto.
   Qed.
 
@@ -190,9 +190,8 @@ Module DPETop.
     Id.trans_correct_top etop etop'.
   Proof.
     intros.
-    apply top_relate.
-    eapply DPE.trans_exp_inv; eauto.
-    apply DPE.top; auto.
+    eapply DPE.top in H; auto.
+    apply top_relate; auto.
   Qed.
 
   Theorem top' {etop etop'} :
@@ -294,15 +293,15 @@ Module DefuncTop.
   Qed.
 
   Theorem top_relate {etop etop'} :
-    (occurs_free etop') \subset (occurs_free etop) ->
     Defunc.trans_correct_top etop etop' ->
     Id.trans_correct_top etop etop'.
   Proof.
     unfold Defunc.trans_correct_top, Id.trans_correct_top.
     intros.
+    inv H.
     split; auto; intros.
     eapply exposed_E_relate; eauto.
-    eapply H0; eauto.
+    eapply H1; eauto.
     eapply G_top_relate; eauto.
   Qed.
 
@@ -311,9 +310,8 @@ Module DefuncTop.
     Id.trans_correct_top etop etop'.
   Proof.
     intros.
-    apply top_relate.
-    eapply Defunc.trans_exp_inv; eauto.
-    apply Defunc.top; auto.
+    eapply Defunc.top in H; eauto.
+    apply top_relate; auto.
   Qed.
 
   Theorem top' {etop etop'} :
@@ -415,15 +413,15 @@ Module ConstPropTop.
   Qed.
 
   Theorem top_relate {etop etop'} :
-    (occurs_free etop') \subset (occurs_free etop) ->
     ConstProp.trans_correct_top etop etop' ->
     Id.trans_correct_top etop etop'.
   Proof.
     unfold ConstProp.trans_correct_top, Id.trans_correct_top.
     intros.
+    inv H.
     split; auto; intros.
     eapply exposed_E_relate; eauto.
-    eapply H0; eauto.
+    eapply H1; eauto.
     eapply G_top_relate; eauto.
   Qed.
 
@@ -433,9 +431,8 @@ Module ConstPropTop.
     Id.trans_correct_top etop etop'.
   Proof.
     intros.
-    apply top_relate.
-    eapply ConstProp.trans_exp_inv; eauto.
-    apply ConstProp.top; auto.
+    eapply ConstProp.top in H0; eauto.
+    apply top_relate; auto.
   Qed.
 
   Theorem top' {etop etop'} :
