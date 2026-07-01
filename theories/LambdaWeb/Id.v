@@ -566,99 +566,103 @@ Proof.
     eapply V_wf_val_r; eauto.
 Qed.
 
-(* Alternative Top Level Without Restricting The Free Variables To Decrease *)
-Definition weak_G_top i Γ1 ρ1 Γ2 ρ2 :=
-  wf_env ρ1 /\
-  wf_env ρ2 /\
-  forall x,
-    (x \in Γ1 ->
-     exists v1,
-       M.get x ρ1 = Some v1 /\
-       exposed v1) /\
-    (x \in Γ2 ->
-     exists v2,
-       M.get x ρ2 = Some v2 /\
-       exposed v2) /\
-    (x \in (Γ1 :&: Γ2) ->
-     exists v1 v2,
-       M.get x ρ1 = Some v1 /\
-       M.get x ρ2 = Some v2 /\
-       V i v1 v2).
+Section AlterTop.
 
-Lemma weak_G_top_G {i Γ1 ρ1 Γ2 ρ2}:
-  weak_G_top i Γ1 ρ1 Γ2 ρ2 ->
-  G i Γ1 ρ1 Γ2 ρ2.
-Proof.
-  unfold weak_G_top, G.
-  intros.
-  destruct H as [Hr1 [Hr2 HG]].
-  repeat (split; auto); intros.
-  destruct (HG x) as [HG1 [HG2 HG3]].
-  destruct HG3 as [v1' [v2 [Heqv1' [Heqv2 Hexv2]]]]; auto.
-  rewrite Heqv1' in H0; inv H0.
-  eexists; split; eauto; intros.
-Qed.
+  (* Alternative Top Level Without Restricting The Free Variables To Decrease *)
+  Definition weak_G_top i Γ1 ρ1 Γ2 ρ2 :=
+    wf_env ρ1 /\
+      wf_env ρ2 /\
+      forall x,
+        (x \in Γ1 ->
+         exists v1,
+           M.get x ρ1 = Some v1 /\
+             exposed v1) /\
+          (x \in Γ2 ->
+           exists v2,
+             M.get x ρ2 = Some v2 /\
+               exposed v2) /\
+          (x \in (Γ1 :&: Γ2) ->
+           exists v1 v2,
+             M.get x ρ1 = Some v1 /\
+               M.get x ρ2 = Some v2 /\
+               V i v1 v2).
 
-Definition strong_trans_correct_top etop etop' :=
-  forall i ρ1 ρ2,
-    weak_G_top i (occurs_free etop) ρ1 (occurs_free etop') ρ2 ->
-    E true i ρ1 etop ρ2 etop'.
+  Lemma weak_G_top_G {i Γ1 ρ1 Γ2 ρ2}:
+    weak_G_top i Γ1 ρ1 Γ2 ρ2 ->
+    G i Γ1 ρ1 Γ2 ρ2.
+  Proof.
+    unfold weak_G_top, G.
+    intros.
+    destruct H as [Hr1 [Hr2 HG]].
+    repeat (split; auto); intros.
+    destruct (HG x) as [HG1 [HG2 HG3]].
+    destruct HG3 as [v1' [v2 [Heqv1' [Heqv2 Hexv2]]]]; auto.
+    rewrite Heqv1' in H0; inv H0.
+    eexists; split; eauto; intros.
+  Qed.
 
-Theorem top etop etop':
-  trans (occurs_free etop) etop etop' ->
-  strong_trans_correct_top etop etop'.
-Proof.
-  unfold strong_trans_correct_top.
-  intros H.
-  specialize (fundamental_property H);
-    unfold trans_correct; intros.
-  eapply H0; eauto.
-  eapply weak_G_top_G; eauto.
-Qed.
+  Definition strong_trans_correct_top etop etop' :=
+    forall i ρ1 ρ2,
+      weak_G_top i (occurs_free etop) ρ1 (occurs_free etop') ρ2 ->
+      E true i ρ1 etop ρ2 etop'.
 
-(* Reflexivity of [strong_trans_correct_top] *)
-Corollary refl_strong_trans_correct_top etop :
-  strong_trans_correct_top etop etop.
-Proof.
-  unfold strong_trans_correct_top.
-  intros.
-  specialize (fundamental_property' etop);
-    unfold trans_correct.
-  intros.
-  eapply H0; eauto.
-  eapply weak_G_top_G; eauto.
-Qed.
+  Theorem top etop etop':
+    trans (occurs_free etop) etop etop' ->
+    strong_trans_correct_top etop etop'.
+  Proof.
+    unfold strong_trans_correct_top.
+    intros H.
+    specialize (fundamental_property H);
+      unfold trans_correct; intros.
+    eapply H0; eauto.
+    eapply weak_G_top_G; eauto.
+  Qed.
 
-(* However, [strong_trans_correct_top] is not transitive *)
+  (* Reflexivity of [strong_trans_correct_top] *)
+  Corollary refl_strong_trans_correct_top etop :
+    strong_trans_correct_top etop etop.
+  Proof.
+    unfold strong_trans_correct_top.
+    intros.
+    specialize (fundamental_property' etop);
+      unfold trans_correct.
+    intros.
+    eapply H0; eauto.
+    eapply weak_G_top_G; eauto.
+  Qed.
 
-(* Stronger [G_top] *)
-Lemma G_top_weak_G_top {i Γ1 ρ1 Γ2 ρ2} :
-  Γ2 \subset Γ1 ->
-  G_top i Γ1 ρ1 ρ2 ->
-  weak_G_top i Γ1 ρ1 Γ2 ρ2.
-Proof.
-  unfold weak_G_top, G_top.
-  intros.
-  destruct H0 as [Hr1 [Hr2 HG]].
-  repeat (split; auto); intros.
-  - edestruct (HG x) as [v1' [v2 [Heqv1' [Heqv2 [Hex HV]]]]]; eauto.
-  - unfold Ensembles.Included, Ensembles.In in *.
-    edestruct (HG x) as [v1' [v2 [Heqv1' [Heqv2 [Hex HV]]]]]; eauto.
-    eexists; split; eauto.
-    eapply V_exposed; eauto.
-  - inv H0.
-    edestruct (HG x) as [v1' [v2 [Heqv1' [Heqv2 [Hex HV]]]]]; eauto.
-Qed.
+  (* However, [strong_trans_correct_top] is not transitive *)
 
-(* Weaker [trans_correct_top] *)
-Lemma strong_trans_correct_top_trans_correct_top etop etop' :
-  strong_trans_correct_top etop etop' ->
-  (occurs_free etop') \subset (occurs_free etop) ->
-  trans_correct_top etop etop'.
-Proof.
-  unfold trans_correct_top, strong_trans_correct_top.
-  intros.
-  split; intros; auto.
-  eapply H; eauto.
-  eapply G_top_weak_G_top; eauto.
-Qed.
+  (* [G_top] is stronger than [trans_correct_top] *)
+  Lemma G_top_weak_G_top {i Γ1 ρ1 Γ2 ρ2} :
+    Γ2 \subset Γ1 ->
+    G_top i Γ1 ρ1 ρ2 ->
+    weak_G_top i Γ1 ρ1 Γ2 ρ2.
+  Proof.
+    unfold weak_G_top, G_top.
+    intros.
+    destruct H0 as [Hr1 [Hr2 HG]].
+    repeat (split; auto); intros.
+    - edestruct (HG x) as [v1' [v2 [Heqv1' [Heqv2 [Hex HV]]]]]; eauto.
+    - unfold Ensembles.Included, Ensembles.In in *.
+      edestruct (HG x) as [v1' [v2 [Heqv1' [Heqv2 [Hex HV]]]]]; eauto.
+      eexists; split; eauto.
+      eapply V_exposed; eauto.
+    - inv H0.
+      edestruct (HG x) as [v1' [v2 [Heqv1' [Heqv2 [Hex HV]]]]]; eauto.
+  Qed.
+
+  (* [trans_correct_top] is weaker than [strong_trans_correct_top] *)
+  Lemma strong_trans_correct_top_trans_correct_top etop etop' :
+    strong_trans_correct_top etop etop' ->
+    (occurs_free etop') \subset (occurs_free etop) ->
+    trans_correct_top etop etop'.
+  Proof.
+    unfold trans_correct_top, strong_trans_correct_top.
+    intros.
+    split; intros; auto.
+    eapply H; eauto.
+    eapply G_top_weak_G_top; eauto.
+  Qed.
+
+End AlterTop.

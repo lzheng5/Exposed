@@ -694,6 +694,7 @@ Proof.
   destruct Hv2 as [v2 [Heqv2 HV]]; eauto.
 Qed.
 
+(* TODO: fix Γ *)
 Definition trans_correct_top etop etop' :=
   forall i ρ1 ρ2,
     G_top i (occurs_free etop) ρ1 (occurs_free etop') ρ2 ->

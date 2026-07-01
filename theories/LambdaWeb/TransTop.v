@@ -6,7 +6,7 @@ Import ListNotations.
 Require Import Lia.
 
 From Common Require Import Util.
-From LambdaWeb Require Import ANF Exposed Id DPE ConstProp Defunc.
+From LambdaWeb Require Import ANF Exposed Id Refl DPE ConstProp Defunc.
 
 (* Relate all the transformation top-level relations to the identity transformation top-level relation *)
 
@@ -159,6 +159,61 @@ Module DPETop.
   Import M.
 
   Lemma G_top_relate {i Γ1 ρ1 Γ2 ρ2}:
+    Id.G_top i Γ1 ρ1 ρ2 ->
+    DPE.G_top i Γ1 ρ1 Γ2 ρ2.
+  Proof.
+    unfold DPE.G_top, Id.G_top, Ensembles.Included, Ensembles.In, Dom_map.
+    intros.
+    destruct H as [Hr1 [Hr2 HG]].
+    repeat (split; auto); intros.
+    destruct (HG x) as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; auto.
+    eexists; repeat split; eauto; intros.
+    eexists; split; eauto.
+    apply exposed_V_relate; auto.
+  Qed.
+
+  Theorem top_relate {etop etop'} :
+    (occurs_free etop') \subset (occurs_free etop) ->
+    DPE.trans_correct_top etop etop' ->
+    Id.trans_correct_top etop etop'.
+  Proof.
+    unfold DPE.trans_correct_top, Id.trans_correct_top.
+    intros.
+    split; auto; intros.
+    eapply exposed_E_relate; eauto.
+    eapply H0; eauto.
+    eapply G_top_relate; eauto.
+  Qed.
+
+  Theorem top {etop etop'} :
+    DPE.trans (occurs_free etop) etop etop' ->
+    Id.trans_correct_top etop etop'.
+  Proof.
+    intros.
+    apply top_relate.
+    eapply DPE.trans_exp_inv; eauto.
+    apply DPE.top; auto.
+  Qed.
+
+  Theorem top' {etop etop'} :
+    DPE.trans (occurs_free etop) etop etop' ->
+    Refl.related_top etop etop'.
+  Proof.
+    intros.
+    apply Refl.related_top_trans_correct_top; eauto.
+    apply top; auto.
+  Qed.
+
+End DPETop.
+
+Module DPETopAlt.
+
+  (* Relate DPE to Id at the top level using [Id.strong_trans_correct_top] *)
+
+  Module M := Top DPE.LM DPE.VTransM.
+  Import M.
+
+  Lemma G_top_relate {i Γ1 ρ1 Γ2 ρ2}:
     Id.weak_G_top i Γ1 ρ1 Γ2 ρ2 ->
     DPE.G_top i Γ1 ρ1 Γ2 ρ2.
   Proof.
@@ -206,11 +261,75 @@ Module DPETop.
     eapply DPE.trans_exp_inv; eauto.
   Qed.
 
-End DPETop.
+  Theorem top'' {etop etop'} :
+    DPE.trans (occurs_free etop) etop etop' ->
+    Refl.related_top etop etop'.
+  Proof.
+    intros.
+    apply Refl.related_top_trans_correct_top; eauto.
+    apply top'; auto.
+  Qed.
+
+End DPETopAlt.
 
 Module DefuncTop.
 
   (* Relate Defunc to Id at the top level *)
+
+  Module M := Top Defunc.LM Defunc.VTransM.
+  Import M.
+
+  Lemma G_top_relate {i Γ1 ρ1 Γ2 ρ2}:
+    Id.G_top i Γ1 ρ1 ρ2 ->
+    Defunc.G_top i Γ1 ρ1 Γ2 ρ2.
+  Proof.
+    unfold Defunc.G_top, Id.G_top, Ensembles.Included, Ensembles.In, Dom_map.
+    intros.
+    destruct H as [Hr1 [Hr2 HG]].
+    repeat (split; auto); intros.
+    destruct (HG x) as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; auto.
+    eexists; repeat split; eauto; intros.
+    eexists; split; eauto.
+    apply exposed_V_relate; auto.
+  Qed.
+
+  Theorem top_relate {etop etop'} :
+    (occurs_free etop') \subset (occurs_free etop) ->
+    Defunc.trans_correct_top etop etop' ->
+    Id.trans_correct_top etop etop'.
+  Proof.
+    unfold Defunc.trans_correct_top, Id.trans_correct_top.
+    intros.
+    split; auto; intros.
+    eapply exposed_E_relate; eauto.
+    eapply H0; eauto.
+    eapply G_top_relate; eauto.
+  Qed.
+
+  Theorem top {etop etop'} :
+    Defunc.trans (occurs_free etop) etop etop' ->
+    Id.trans_correct_top etop etop'.
+  Proof.
+    intros.
+    apply top_relate.
+    eapply Defunc.trans_exp_inv; eauto.
+    apply Defunc.top; auto.
+  Qed.
+
+  Theorem top' {etop etop'} :
+    Defunc.trans (occurs_free etop) etop etop' ->
+    Refl.related_top etop etop'.
+  Proof.
+    intros.
+    apply related_top_trans_correct_top.
+    apply top; auto.
+  Qed.
+
+End DefuncTop.
+
+Module DefuncTopAlt.
+
+  (* Relate Defunc to Id at the top level with [Id.strong_trans_correct] *)
 
   Module M := Top Defunc.LM Defunc.VTransM.
   Import M.
@@ -263,11 +382,77 @@ Module DefuncTop.
     eapply Defunc.trans_exp_inv; eauto.
   Qed.
 
-End DefuncTop.
+  Theorem top'' {etop etop'} :
+    Defunc.trans (occurs_free etop) etop etop' ->
+    Refl.related_top etop etop'.
+  Proof.
+    intros.
+    apply Refl.related_top_trans_correct_top; eauto.
+    apply top'; auto.
+  Qed.
+
+End DefuncTopAlt.
 
 Module ConstPropTop.
 
   (* Relate ConstProp to Id at the top level *)
+
+  Module M := Top ConstProp.LM ConstProp.VTransM.
+  Import M.
+
+  Lemma G_top_relate {i Γ1 ρ1 Γ2 ρ2}:
+    Id.G_top i Γ1 ρ1 ρ2 ->
+    ConstProp.G_top i Γ1 ρ1 Γ2 ρ2.
+  Proof.
+    unfold ConstProp.G_top, Id.G_top, Ensembles.Included, Ensembles.In, Dom_map.
+    intros.
+    destruct H as [Hr1 [Hr2 HG]].
+    repeat (split; auto); intros.
+    destruct (HG x) as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; auto.
+    eexists; repeat split; eauto; intros.
+    eexists; split; eauto.
+    apply exposed_V_relate; auto.
+  Qed.
+
+  Theorem top_relate {etop etop'} :
+    (occurs_free etop') \subset (occurs_free etop) ->
+    ConstProp.trans_correct_top etop etop' ->
+    Id.trans_correct_top etop etop'.
+  Proof.
+    unfold ConstProp.trans_correct_top, Id.trans_correct_top.
+    intros.
+    split; auto; intros.
+    eapply exposed_E_relate; eauto.
+    eapply H0; eauto.
+    eapply G_top_relate; eauto.
+  Qed.
+
+  Theorem top {etop etop'} :
+    C_inv_top (occurs_free etop) ->
+    ConstProp.trans (occurs_free etop) etop etop' ->
+    Id.trans_correct_top etop etop'.
+  Proof.
+    intros.
+    apply top_relate.
+    eapply ConstProp.trans_exp_inv; eauto.
+    apply ConstProp.top; auto.
+  Qed.
+
+  Theorem top' {etop etop'} :
+    C_inv_top (occurs_free etop) ->
+    ConstProp.trans (occurs_free etop) etop etop' ->
+    Refl.related_top etop etop'.
+  Proof.
+    intros.
+    apply Refl.related_top_trans_correct_top.
+    apply top; auto.
+  Qed.
+
+End ConstPropTop.
+
+Module ConstPropTopAlt.
+
+  (* Relate ConstProp to Id at the top level with [Id.strong_trans_correct_top] *)
 
   Module M := Top ConstProp.LM ConstProp.VTransM.
   Import M.
@@ -322,4 +507,14 @@ Module ConstPropTop.
     eapply ConstProp.trans_exp_inv; eauto.
   Qed.
 
-End ConstPropTop.
+  Theorem top'' {etop etop'} :
+    C_inv_top (occurs_free etop) ->
+    ConstProp.trans (occurs_free etop) etop etop' ->
+    Refl.related_top etop etop'.
+  Proof.
+    intros.
+    apply Refl.related_top_trans_correct_top; eauto.
+    apply top'; auto.
+  Qed.
+
+End ConstPropTopAlt.
