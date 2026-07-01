@@ -943,6 +943,7 @@ Lemma R_top_res_inv_l_V v1 r2 :
   exists v2, r2 = AT.Res v2 /\ (forall k, V_top k v1 v2).
 Proof. intros. hauto. Qed.
 
+(* TODO: simplify *)
 Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
   wf_cenv ρ1 /\
     wf_env ρ2 /\

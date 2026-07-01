@@ -33,8 +33,8 @@ Definition R := Cross (fun r1 r2 => forall k, L.R k r1 r2)
                   (Cross (fun r1 r2 => forall k, C.R_top k r1 r2)
                      (fun r1 r2 => forall k, R.R_top k r1 r2)).
 
-Definition G Γ1 Γ2 := Cross (fun ρ1 ρ2 => forall k, L.G_top k Γ1 ρ1 Γ2 ρ2)
-                        (Cross (fun ρ1 ρ2 => forall k, C.G_top k Γ1 ρ1 Γ2 ρ2)
+Definition G Γ1 Γ2 := Cross (fun ρ1 ρ2 => forall k, L.G k Γ1 ρ1 ρ2)
+                        (Cross (fun ρ1 ρ2 => forall k, C.G_top k Γ1 ρ1 ρ2)
                            (fun ρ1 ρ2 => forall k, R.G_top k Γ1 ρ1 Γ2 ρ2)).
 
 Lemma V_wf_val_r v1 v2:
