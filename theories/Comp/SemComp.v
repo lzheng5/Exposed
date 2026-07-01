@@ -37,7 +37,7 @@ Section Comp_n.
 
   Definition R_n n m := Cross (Cross (C0.R_n n) C.R) (C1.R_n m).
 
-  Definition G_n n m Γ1 Γ2 := Cross (Cross (C0.G_n n Γ1 Γ2) (C.G Γ1 Γ2)) (C1.G_n m Γ1 Γ2).
+  Definition G_n n m Γ1 Γ2 := Cross (Cross (C0.G_n n Γ1 Γ2) (C.G Γ1)) (C1.G_n m Γ1 Γ2).
 
   Lemma V_n_wf_val_r n m v1 v2:
     V_n n m v1 v2 ->
