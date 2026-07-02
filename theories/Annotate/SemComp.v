@@ -33,14 +33,19 @@ Definition R := Cross (fun r1 r2 => forall k, L.R k r1 r2)
                   (Cross (fun r1 r2 => forall k, C.R_top k r1 r2)
                      (fun r1 r2 => forall k, R.R_top k r1 r2)).
 
-Definition G Γ1 Γ2 := Cross (fun ρ1 ρ2 => forall k, L.G_top k Γ1 ρ1 Γ2 ρ2)
-                        (Cross (fun ρ1 ρ2 => forall k, C.G_top k Γ1 ρ1 Γ2 ρ2)
-                           (fun ρ1 ρ2 => forall k, R.G_top k Γ1 ρ1 Γ2 ρ2)).
+Definition G Γ1 := Cross (fun ρ1 ρ2 => forall k, L.G k Γ1 ρ1 ρ2)
+                     (Cross (fun ρ1 ρ2 => forall k, C.G_top k Γ1 ρ1 ρ2)
+                        (fun ρ1 ρ2 => forall k, R.G_top k Γ1 ρ1 ρ2)).
 
 Lemma V_wf_val_r v1 v2:
   V v1 v2 ->
   wf_val v2.
 Proof. unfold V, Cross. strivial using @R.V_top_wf_val_r. Qed.
+
+Lemma V_exposed_r v1 v2:
+  V v1 v2 ->
+  exposed v2.
+Proof. unfold V, Cross. strivial using @R.V_top_exposed_r. Qed.
 
 Lemma R_V v1 v2:
   R (AS.Res v1) (AT.Res v2) ->
@@ -57,16 +62,15 @@ Lemma trans_correct_top_subset e1 e2 :
   AT.occurs_free e2 \subset AS.occurs_free e1.
 Proof. unfold trans_correct_top, Cross. sfirstorder. Qed.
 
-Lemma G_wf_env_r { Γ1 Γ2 ρ1 ρ2 } :
-  G Γ1 Γ2 ρ1 ρ2 ->
+Lemma G_wf_env_r { Γ1 ρ1 ρ2 } :
+  G Γ1 ρ1 ρ2 ->
   wf_env ρ2.
 Proof. unfold G, Cross. hauto. Qed.
 
-Lemma G_subset Γ1 Γ2 ρ1 Γ3 Γ4 ρ2 :
-  G Γ1 Γ2 ρ1 ρ2 ->
-  Γ3 \subset Γ1 ->
-  Γ4 \subset Γ3 ->
-  G Γ3 Γ4 ρ1 ρ2.
+Lemma G_subset Γ1 Γ2 ρ1 ρ2 :
+  G Γ1 ρ1 ρ2 ->
+  Γ2 \subset Γ1 ->
+  G Γ2 ρ1 ρ2.
 Proof.
   unfold G, Cross.
   intros.

@@ -1235,13 +1235,13 @@ Section Top.
   (* G_top is stronger than G *)
   Lemma G_top_G :
     forall {i K Γ1 ρ1 Γ2 ρ2},
-      AM.G i Γ1 ρ1 Γ2 ρ2 ->
+      AM.G i Γ1 ρ1 ρ2 ->
       Disjoint _ Γ1 (Dom_map K) ->
       G K i Γ1 ρ1 Γ2 ρ2.
   Proof.
     unfold AM.G, G.
     intros.
-    destruct H as [HΓ [Hρ HG]].
+    destruct H as [Hr HG].
     unfold Ensembles.Included, Ensembles.In, Dom_map in *.
     split; auto; intros.
     edestruct HG as [v1' [v2 [Heqv1 [Heqv2 HV]]]]; eauto.
@@ -1259,7 +1259,7 @@ Section Top.
   Lemma G_G_top K i Γ1 ρ1 Γ2 ρ2 :
     G K i Γ1 ρ1 Γ2 ρ2 ->
     Γ2 \subset Γ1 ->
-    AM.G i Γ1 ρ1 Γ2 ρ2.
+    AM.G i Γ1 ρ1 ρ2.
   Proof.
     unfold G, AM.G.
     intros.

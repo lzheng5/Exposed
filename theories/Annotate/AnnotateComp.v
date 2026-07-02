@@ -22,7 +22,7 @@ Theorem adequacy e1 e2:
   trans_correct e1 e2 ->
   forall ρ1 ρ2,
     wf_env ρ2 ->
-    (forall k, G k (A0.occurs_free e1) ρ1 (A1.occurs_free e2) ρ2) ->
+    (forall k, G k (A0.occurs_free e1) ρ1 ρ2) ->
     forall j1 r1,
       A0.bstep_fuel ρ1 e1 j1 r1 ->
       exists j2 r2,

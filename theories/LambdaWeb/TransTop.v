@@ -6,9 +6,9 @@ Import ListNotations.
 Require Import Lia.
 
 From Common Require Import Util.
-From LambdaWeb Require Import ANF Exposed Refl Id DPE ConstProp Defunc.
+From LambdaWeb Require Import ANF Exposed Id Refl DPE ConstProp Defunc.
 
-(* [TODO] Refactoring *)
+(* Relate all the transformation top-level relations to the identity transformation top-level relation *)
 
 Lemma exposed_V_relate_Forall_aux :
   forall i (V1 V2 : nat -> wval -> wval -> Prop),
@@ -26,138 +26,6 @@ Proof.
       solve [ apply H; try lia; auto |
               apply IHForall; auto ].
 Qed.
-
-Module ReflTop.
-
-  (* Relate Id and Refl as Equivalence *)
-
-  Import ExposedUtil.
-  Import Id.EM.EG.EV.
-
-  Lemma exposed_V_relate :
-    forall i v1 v2,
-      exposed v1 ->
-      V i v1 v2 <-> Refl.V i v1 v2.
-  Proof.
-    intro i.
-    induction i using lt_wf_rec; intros.
-    destruct i.
-    - destruct v1; destruct v2; split; simpl; intros; auto;
-        destruct H1 as [Hv1 [Hv2 [Hw HV]]]; subst;
-        repeat (split; auto);
-        destruct v; destruct v0; try contradiction;
-        simpl in *; tauto.
-    - split; simpl in *; intro Hv;
-        destruct Hv as [Hv1 [Hv2 HV]];
-        repeat (split; auto);
-        destruct v1; destruct v2; auto;
-        destruct HV; subst; split; auto.
-      + destruct v; destruct v0; try contradiction; simpl in *.
-        * destruct H2.
-          split; auto; intros.
-
-          assert (HE' : E' V (exposedb w0) (i - (i - j)) ρ3 e ρ4 e0).
-          {
-            inv H0.
-            eapply H2 with (vs1 := vs1) (vs2 := vs2); try lia; eauto;
-              intros; destruct H4; auto.
-            eapply exposed_V_relate_Forall_aux; eauto; try lia.
-          }
-
-          unfold Refl.E', E', Refl.R', R' in *.
-          intros.
-          edestruct HE' as [j2 [r2 [He0 HR']]]; eauto.
-          exists j2; exists r2; split; auto.
-          destruct r1; destruct r2; auto.
-          eapply H; try lia; auto.
-          inv H9.
-          destruct (exposed_reflect w0); try contradiction.
-          inv H11; auto.
-          inv H0; contradiction.
-        * destruct H2 as [Hc HV]; subst.
-          repeat split; auto.
-          rewrite normalize_step in *; try lia.
-          eapply exposed_V_relate_Forall_aux with (V1 := V); eauto.
-          inv H0; auto.
-
-      + unfold V_refl in *.
-        destruct v; destruct v0; try contradiction.
-        * destruct H2.
-          split; auto; intros.
-
-          assert (HE' : Refl.E' Refl.V (exposedb w0) (i - (i - j)) ρ3 e ρ4 e0).
-          {
-            inv H0.
-            eapply H2 with (vs1 := vs1) (vs2 := vs2); try lia; eauto.
-            eapply exposed_V_relate_Forall_aux with (V1 := V); eauto; try lia.
-          }
-
-          unfold Refl.E', E', Refl.R', R' in *.
-          intros.
-          edestruct HE' as [j2 [r2 [He0 HR']]]; eauto.
-          exists j2; exists r2; split; auto.
-          destruct r1; destruct r2; auto.
-          eapply H; try lia; auto.
-          inv H10.
-          destruct (exposed_reflect w0); try contradiction.
-          inv H12; auto.
-          inv H0; contradiction.
-        * destruct H2 as [Hc HV]; subst.
-          repeat split; auto.
-          rewrite normalize_step in *; try lia.
-          eapply exposed_V_relate_Forall_aux with (V1 := V); eauto.
-          inv H0; auto.
-  Qed.
-
-  Lemma exposed_R_relate {i r1 r2}:
-    exposed_res r1 ->
-    R i r1 r2 <-> Refl.R i r1 r2.
-  Proof.
-    intros Hr1.
-    unfold R, Refl.R.
-    split; intros;
-      destruct r1;
-      destruct r2;
-      auto; inv Hr1;
-      apply exposed_V_relate; auto.
-  Qed.
-
-  Lemma exposed_E_relate {i ρ1 ρ2 e1 e2}:
-    E true i ρ1 e1 ρ2 e2 <-> Refl.E true i ρ1 e1 ρ2 e2.
-  Proof.
-    unfold E, Refl.E, E', Refl.E'.
-    split; intros;
-    edestruct H as [j2 [r2 [He2 HR]]]; eauto;
-      eexists; eexists; split; eauto;
-      eapply exposed_R_relate; eauto;
-      inv H1; auto.
-  Qed.
-
-  Lemma G_top_relate {i Γ1 ρ1 ρ2}:
-    Id.G_top i Γ1 ρ1 ρ2 <-> Refl.G_top i Γ1 ρ1 ρ2.
-  Proof.
-    unfold Id.G_top, Refl.G_top.
-    split; intros;
-      destruct H as [Hr1 [Hr2 HG]];
-      repeat (split; auto); intros;
-      edestruct HG as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; eauto;
-      eexists; eexists; repeat (split; eauto);
-      eapply exposed_V_relate; eauto.
-  Qed.
-
-  Theorem top_relate {etop etop'} :
-    Id.trans_correct_top etop etop' <-> Refl.related_top etop etop'.
-  Proof.
-    unfold Id.trans_correct_top, Refl.related_top.
-    split; intros HR;
-      destruct HR;
-      split; auto; intros;
-      eapply exposed_E_relate; eauto;
-      apply H0; auto;
-      apply G_top_relate; auto.
-  Qed.
-
-End ReflTop.
 
 Module Top (LM : LSig) (VT : VTrans LM).
 
@@ -291,6 +159,60 @@ Module DPETop.
   Import M.
 
   Lemma G_top_relate {i Γ1 ρ1 Γ2 ρ2}:
+    Id.G_top i Γ1 ρ1 ρ2 ->
+    DPE.G_top i Γ1 ρ1 Γ2 ρ2.
+  Proof.
+    unfold DPE.G_top, Id.G_top, Ensembles.Included, Ensembles.In, Dom_map.
+    intros.
+    destruct H as [Hr1 [Hr2 HG]].
+    repeat (split; auto); intros.
+    destruct (HG x) as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; auto.
+    eexists; repeat split; eauto; intros.
+    eexists; split; eauto.
+    apply exposed_V_relate; auto.
+  Qed.
+
+  Theorem top_relate {etop etop'} :
+    DPE.trans_correct_top etop etop' ->
+    Id.trans_correct_top etop etop'.
+  Proof.
+    unfold DPE.trans_correct_top, Id.trans_correct_top.
+    intros.
+    inv H.
+    split; auto; intros.
+    eapply exposed_E_relate; eauto.
+    eapply H1; eauto.
+    eapply G_top_relate; eauto.
+  Qed.
+
+  Theorem top {etop etop'} :
+    DPE.trans (occurs_free etop) etop etop' ->
+    Id.trans_correct_top etop etop'.
+  Proof.
+    intros.
+    eapply DPE.top in H; auto.
+    apply top_relate; auto.
+  Qed.
+
+  Theorem top' {etop etop'} :
+    DPE.trans (occurs_free etop) etop etop' ->
+    Refl.related_top etop etop'.
+  Proof.
+    intros.
+    apply Refl.related_top_trans_correct_top; eauto.
+    apply top; auto.
+  Qed.
+
+End DPETop.
+
+Module DPETopAlt.
+
+  (* Relate DPE to Id at the top level using [Id.strong_trans_correct_top] *)
+
+  Module M := Top DPE.LM DPE.VTransM.
+  Import M.
+
+  Lemma G_top_relate {i Γ1 ρ1 Γ2 ρ2}:
     Id.weak_G_top i Γ1 ρ1 Γ2 ρ2 ->
     DPE.G_top i Γ1 ρ1 Γ2 ρ2.
   Proof.
@@ -338,11 +260,74 @@ Module DPETop.
     eapply DPE.trans_exp_inv; eauto.
   Qed.
 
-End DPETop.
+  Theorem top'' {etop etop'} :
+    DPE.trans (occurs_free etop) etop etop' ->
+    Refl.related_top etop etop'.
+  Proof.
+    intros.
+    apply Refl.related_top_trans_correct_top; eauto.
+    apply top'; auto.
+  Qed.
+
+End DPETopAlt.
 
 Module DefuncTop.
 
   (* Relate Defunc to Id at the top level *)
+
+  Module M := Top Defunc.LM Defunc.VTransM.
+  Import M.
+
+  Lemma G_top_relate {i Γ1 ρ1 Γ2 ρ2}:
+    Id.G_top i Γ1 ρ1 ρ2 ->
+    Defunc.G_top i Γ1 ρ1 Γ2 ρ2.
+  Proof.
+    unfold Defunc.G_top, Id.G_top, Ensembles.Included, Ensembles.In, Dom_map.
+    intros.
+    destruct H as [Hr1 [Hr2 HG]].
+    repeat (split; auto); intros.
+    destruct (HG x) as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; auto.
+    eexists; repeat split; eauto; intros.
+    eexists; split; eauto.
+    apply exposed_V_relate; auto.
+  Qed.
+
+  Theorem top_relate {etop etop'} :
+    Defunc.trans_correct_top etop etop' ->
+    Id.trans_correct_top etop etop'.
+  Proof.
+    unfold Defunc.trans_correct_top, Id.trans_correct_top.
+    intros.
+    inv H.
+    split; auto; intros.
+    eapply exposed_E_relate; eauto.
+    eapply H1; eauto.
+    eapply G_top_relate; eauto.
+  Qed.
+
+  Theorem top {etop etop'} :
+    Defunc.trans (occurs_free etop) etop etop' ->
+    Id.trans_correct_top etop etop'.
+  Proof.
+    intros.
+    eapply Defunc.top in H; eauto.
+    apply top_relate; auto.
+  Qed.
+
+  Theorem top' {etop etop'} :
+    Defunc.trans (occurs_free etop) etop etop' ->
+    Refl.related_top etop etop'.
+  Proof.
+    intros.
+    apply related_top_trans_correct_top.
+    apply top; auto.
+  Qed.
+
+End DefuncTop.
+
+Module DefuncTopAlt.
+
+  (* Relate Defunc to Id at the top level with [Id.strong_trans_correct] *)
 
   Module M := Top Defunc.LM Defunc.VTransM.
   Import M.
@@ -395,11 +380,76 @@ Module DefuncTop.
     eapply Defunc.trans_exp_inv; eauto.
   Qed.
 
-End DefuncTop.
+  Theorem top'' {etop etop'} :
+    Defunc.trans (occurs_free etop) etop etop' ->
+    Refl.related_top etop etop'.
+  Proof.
+    intros.
+    apply Refl.related_top_trans_correct_top; eauto.
+    apply top'; auto.
+  Qed.
+
+End DefuncTopAlt.
 
 Module ConstPropTop.
 
   (* Relate ConstProp to Id at the top level *)
+
+  Module M := Top ConstProp.LM ConstProp.VTransM.
+  Import M.
+
+  Lemma G_top_relate {i Γ1 ρ1 Γ2 ρ2}:
+    Id.G_top i Γ1 ρ1 ρ2 ->
+    ConstProp.G_top i Γ1 ρ1 Γ2 ρ2.
+  Proof.
+    unfold ConstProp.G_top, Id.G_top, Ensembles.Included, Ensembles.In, Dom_map.
+    intros.
+    destruct H as [Hr1 [Hr2 HG]].
+    repeat (split; auto); intros.
+    destruct (HG x) as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; auto.
+    eexists; repeat split; eauto; intros.
+    eexists; split; eauto.
+    apply exposed_V_relate; auto.
+  Qed.
+
+  Theorem top_relate {etop etop'} :
+    ConstProp.trans_correct_top etop etop' ->
+    Id.trans_correct_top etop etop'.
+  Proof.
+    unfold ConstProp.trans_correct_top, Id.trans_correct_top.
+    intros.
+    inv H.
+    split; auto; intros.
+    eapply exposed_E_relate; eauto.
+    eapply H1; eauto.
+    eapply G_top_relate; eauto.
+  Qed.
+
+  Theorem top {etop etop'} :
+    C_inv_top (occurs_free etop) ->
+    ConstProp.trans (occurs_free etop) etop etop' ->
+    Id.trans_correct_top etop etop'.
+  Proof.
+    intros.
+    eapply ConstProp.top in H0; eauto.
+    apply top_relate; auto.
+  Qed.
+
+  Theorem top' {etop etop'} :
+    C_inv_top (occurs_free etop) ->
+    ConstProp.trans (occurs_free etop) etop etop' ->
+    Refl.related_top etop etop'.
+  Proof.
+    intros.
+    apply Refl.related_top_trans_correct_top.
+    apply top; auto.
+  Qed.
+
+End ConstPropTop.
+
+Module ConstPropTopAlt.
+
+  (* Relate ConstProp to Id at the top level with [Id.strong_trans_correct_top] *)
 
   Module M := Top ConstProp.LM ConstProp.VTransM.
   Import M.
@@ -454,4 +504,14 @@ Module ConstPropTop.
     eapply ConstProp.trans_exp_inv; eauto.
   Qed.
 
-End ConstPropTop.
+  Theorem top'' {etop etop'} :
+    C_inv_top (occurs_free etop) ->
+    ConstProp.trans (occurs_free etop) etop etop' ->
+    Refl.related_top etop etop'.
+  Proof.
+    intros.
+    apply Refl.related_top_trans_correct_top; eauto.
+    apply top'; auto.
+  Qed.
+
+End ConstPropTopAlt.

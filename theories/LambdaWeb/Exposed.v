@@ -81,6 +81,8 @@ Module ExposedUtil.
 
 End ExposedUtil.
 
+(* The web selector which selects internal webs that we would like to preserve the behaviors. *)
+
 Module Type LSig.
 
   Parameter elt : Type.
