@@ -1386,6 +1386,7 @@ Proof.
 Qed.
 
 Definition trans_correct_top etop etop' :=
+  (occurs_free etop') \subset (occurs_free etop) /\
   forall i ρ1 ρ2,
     G_top i (occurs_free etop) ρ1 (occurs_free etop') ρ2 ->
     E true i ρ1 etop ρ2 etop'.
@@ -1397,9 +1398,11 @@ Theorem top etop etop' :
 Proof.
   unfold trans_correct_top.
   intros.
+  split.
+  eapply trans_exp_inv; eauto.
   specialize (fundamental_property H0);
     unfold trans_correct; intros.
-  eapply H2; auto.
+  eapply H1; auto.
   - eapply C_inv_top_C_inv; eauto.
   - eapply G_top_G; eauto.
 Qed.

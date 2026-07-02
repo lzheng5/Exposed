@@ -1061,48 +1061,11 @@ Proof.
 Qed.
 
 (* Top Level *)
-Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
-  Γ2 \subset Γ1 /\
-  G i Γ1 ρ1 ρ2.
-
-Lemma G_top_subset i Γ1 ρ1 Γ2 ρ2 Γ3 Γ4 :
-  G_top i Γ1 ρ1 Γ2 ρ2 ->
-  Γ3 \subset Γ1 ->
-  Γ4 \subset Γ3 ->
-  G_top i Γ3 ρ1 Γ4 ρ2.
-Proof.
-  unfold G_top.
-  intros.
-  destruct H as [Hs HG].
-  repeat (split; auto).
-  eapply G_subset; eauto.
-Qed.
-
-Lemma G_G_top i Γ1 ρ1 Γ2 ρ2 :
-  G i Γ1 ρ1 ρ2 ->
-  Γ2 \subset Γ1 ->
-  G_top i Γ1 ρ1 Γ2 ρ2.
-Proof.
-  unfold G, G_top.
-  intros.
-  repeat (split; auto); intros.
-Qed.
-
-Lemma G_top_G : forall {i Γ1 ρ1 Γ2 ρ2},
-    G_top i Γ1 ρ1 Γ2 ρ2 ->
-    G i Γ1 ρ1 ρ2.
-Proof.
-  unfold G_top, G.
-  intros.
-  destruct H as [HΓ HG].
-  unfold Ensembles.Included, Ensembles.In, Dom_map in *.
-  edestruct HG as [v2 [Heqv2 HV]]; eauto.
-Qed.
 
 Definition trans_correct_top etop etop' :=
   A1.occurs_free etop' \subset A0.occurs_free etop /\
   forall i ρ1 ρ2,
-    G_top i (A0.occurs_free etop) ρ1 (A1.occurs_free etop') ρ2 ->
+    G i (A0.occurs_free etop) ρ1 ρ2 ->
     E i ρ1 etop ρ2 etop'.
 
 Lemma trans_correct_top_subset e1 e2 :
@@ -1133,7 +1096,6 @@ Proof.
   intros.
   destruct H as [HS H].
   eapply H; eauto.
-  eapply G_G_top; eauto.
 Qed.
 
 Lemma trans_correct_trans_correct_top e1 e2 :
@@ -1144,8 +1106,6 @@ Proof.
   unfold trans_correct_top, trans_correct.
   intros.
   split; auto; intros.
-  eapply H0; eauto.
-  eapply G_top_G; eauto.
 Qed.
 
 Theorem top l etop l' etop':
@@ -1159,7 +1119,6 @@ Proof.
   split; intros.
   - eapply trans_exp_inv; eauto.
   - eapply H0; eauto.
-    eapply G_top_G; eauto.
 Qed.
 
 (* Cross-language Compositionality *)
@@ -1168,7 +1127,7 @@ Qed.
 Theorem adequacy e1 e2:
   trans_correct_top e1 e2 ->
   forall ρ1 ρ2,
-    (forall k, G_top k (A0.occurs_free e1) ρ1 (A1.occurs_free e2) ρ2) ->
+    (forall k, G k (A0.occurs_free e1) ρ1 ρ2) ->
     forall j1 r1,
       A0.bstep_fuel ρ1 e1 j1 r1 ->
       exists j2 r2,
