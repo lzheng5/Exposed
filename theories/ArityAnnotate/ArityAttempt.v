@@ -11,6 +11,8 @@ From LambdaANF Require Import ANF.
 From LambdaWeb Require Import ANF Erase.
 From Annotate Require Import Annotate.
 
+(* This file is used to illustrate that the trivial annotate functor is insufficient for arity-based annotations. *)
+
 (* Trivial Web Annotation Based on Function Arities *)
 
 (* We annotate function values with some Exposed web id based on their arities. *)
