@@ -151,15 +151,20 @@ Corollary R_res_val_ref {v1 v2} :
 Proof. intros; eapply V_val_ref; eauto. Qed.
 
 (* Linking Preservation *)
+
+(* A dedicated link web *)
+Definition w_link := arity_to_web 0.
+Parameter w_link_exposed : w_link \in Exposed.
+
 Theorem preserves_linking f x e1 e2 e1' e2' :
-  let w := arity_to_web 0 in
-  (w \in Exposed) ->
   trans_correct e1 e2 ->
   trans_correct e1' e2' ->
-  trans_correct (A0.link f x e1 e1') (A1.link f w x e2 e2').
+  trans_correct (A0.link f x e1 e1') (A1.link f w_link x e2 e2').
 Proof.
   unfold A0.link, A1.link.
   intros.
   eapply fun_compat; eauto.
+  eapply w_link_exposed; eauto.
   eapply letapp_compat; eauto.
+  eapply w_link_exposed; eauto.
 Qed.

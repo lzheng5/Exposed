@@ -59,7 +59,7 @@ theories/SemAnnotate/CompAttempt.v
 -Q theories/Comp Comp
 theories/Comp/TrivialComp.v
 theories/Comp/TrivialCompTop.v
-#theories/Comp/ArityComp.v
-#theories/Comp/ArityCompTop.v
+theories/Comp/ArityComp.v
+theories/Comp/ArityCompTop.v
 theories/Comp/SemComp.v
 theories/Comp/SemCompTop.v
