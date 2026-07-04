@@ -8,8 +8,9 @@ From Hammer Require Import Hammer Tactics Reflect.
 
 From Common Require Import Util.
 From LambdaANF Require Import ANF.
-From LambdaWeb Require Import ANF Erase.
+From LambdaWeb Require Import ANF.
 From Annotate Require Import Annotate.
+From ArityAnnotate Require Import Base.
 
 (* This file is used to illustrate that the trivial annotate functor is insufficient for arity-based annotations. *)
 
@@ -23,12 +24,6 @@ From Annotate Require Import Annotate.
 Module A0 := LambdaANF.ANF.
 Module A1 := LambdaWeb.ANF.
 Module AM := AnnotateTop.
-
-Definition arity_to_web (n : nat) : web := Pos.of_nat n.
-
-(* Annotate constructor values with `wc`.
-   This works since closure and constructor values live in different web universes. *)
-Definition wc := arity_to_web 0.
 
 (* Specification *)
 Inductive trans (Γ : vars) : A0.exp -> A1.exp -> Prop :=
@@ -151,134 +146,7 @@ Import AM.VM.
 Definition V := AM.V.
 Definition E := AM.E.
 Definition R := AM.R.
-
-(* Environment Relation *)
-Definition G i Γ1 ρ1 ρ2 :=
-  wf_env ρ2 /\
-    forall x,
-      (x \in Γ1) ->
-      exists v1 v2,
-        M.get x ρ1 = Some v1 /\
-          M.get x ρ2 = Some v2 /\
-          V i v1 v2.
-
-(* Environment Lemmas *)
-Lemma G_subset Γ1 Γ2 {i ρ1 ρ2}:
-  G i Γ1 ρ1 ρ2 ->
-  Γ2 \subset Γ1 ->
-  G i Γ2 ρ1 ρ2.
-Proof. unfold G. fcrush. Qed.
-
-Lemma G_wf_env_r {i Γ1 ρ1 ρ2}:
-  G i Γ1 ρ1 ρ2 ->
-  wf_env ρ2.
-Proof.
-  unfold G.
-  intros H; destruct H; auto.
-Qed.
-
-Lemma G_get {Γ1 i ρ1 ρ2}:
-  G i Γ1 ρ1 ρ2 ->
-  forall x v1,
-    (x \in Γ1) ->
-    M.get x ρ1 = Some v1 ->
-    exists v2,
-      M.get x ρ2 = Some v2 /\
-        V i v1 v2.
-Proof.
-  unfold G.
-  intros.
-  destruct H as [Hwf HG].
-  edestruct HG as [v1' [v2 [Heqv1 [Heqv2 HV]]]]; eauto; invc.
-  fcrush.
-Qed.
-
-Lemma G_get_list {i Γ1 ρ1 ρ2} :
-  G i Γ1 ρ1 ρ2 ->
-  forall xs vs1,
-    (FromList xs) \subset Γ1 ->
-    get_list xs ρ1 = Some vs1 ->
-    exists vs2,
-      get_list xs ρ2 = Some vs2 /\
-        Forall2 (V i) vs1 vs2.
-Proof.
-  intros HG xs.
-  induction xs; simpl; intros.
-  - fcrush.
-  - destruct (ρ1 ! a) eqn:Heq1; try discriminate.
-    destruct (get_list xs ρ1) eqn:Heq3; try discriminate.
-    inv H0.
-    unfold Ensembles.Included, Ensembles.In in *.
-    edestruct (G_get HG) as [v2 [Heqv2 HV]]; eauto.
-    eapply (H a); fcrush.
-    edestruct IHxs as [vs2 [Heqvs2 Vvs]]; eauto; fcrush.
-Qed.
-
-Lemma G_set {i Γ1 ρ1 ρ2}:
-  G i Γ1 ρ1 ρ2 ->
-  forall {x v1 v2},
-    V i v1 v2 ->
-    G i (x |: Γ1) (M.set x v1 ρ1) (M.set x v2 ρ2).
-Proof.
-  unfold G.
-  intro HG.
-  pose proof HG as HG'.
-  intros.
-
-  destruct HG as [Hwf HG].
-  split.
-  eapply wf_env_set; eauto.
-  eapply V_wf_val_r; eauto.
-
-  intros.
-  destruct (M.elt_eq x0 x); subst.
-  - repeat rewrite M.gss in *.
-    fcrush.
-  - repeat (rewrite M.gso in *; auto).
-    fcrush.
-Qed.
-
-Lemma G_set_lists {i Γ1 ρ1 ρ2}:
-  G i Γ1 ρ1 ρ2 ->
-  forall {xs vs1 vs2 ρ3 ρ4},
-    Forall2 (V i) vs1 vs2 ->
-    set_lists xs vs1 ρ1 = Some ρ3 ->
-    set_lists xs vs2 ρ2 = Some ρ4 ->
-    G i (FromList xs :|: Γ1) ρ3 ρ4.
-Proof.
-  intros HG xs.
-  induction xs; simpl; intros.
-  - destruct vs1; try discriminate.
-    destruct vs2; try discriminate.
-    inv H0; inv H1.
-    eapply G_subset; eauto; normalize_sets;
-      rewrite Union_Empty_set_neut_l; eauto;
-      apply Included_refl.
-  - destruct vs1; try discriminate.
-    destruct vs2; try discriminate.
-    destruct (set_lists xs vs1 ρ1) eqn:Heq1; try discriminate.
-    destruct (set_lists xs vs2 ρ2) eqn:Heq2; try discriminate.
-    inv H; inv H0; inv H1.
-    eapply G_subset with (Γ1 := (a |: (FromList xs :|: Γ1))); eauto;
-      try (normalize_sets;
-           rewrite Union_assoc;
-           apply Included_refl).
-    eapply G_set; eauto.
-Qed.
-
-Lemma G_mono {Γ1 ρ1 ρ2} i j:
-  G i Γ1 ρ1 ρ2 ->
-  j <= i ->
-  G j Γ1 ρ1 ρ2.
-Proof.
-  unfold G.
-  intros.
-  inv H.
-  split; auto; intros.
-  edestruct H2 as [v1 [v2 [Heqv1 [Heqv2 HV]]]]; eauto; invc.
-  eexists; eexists; repeat split; eauto.
-  apply V_mono with i; eauto.
-Qed.
+Definition G := AM.G.
 
 (* Compatibility Lemmas *)
 Definition trans_correct Γ e1 e2 :=
@@ -295,7 +163,7 @@ Proof.
   inv H2.
   - fcrush.
   - inv H3.
-    edestruct (G_get H0) as [v2 [Heqv2 HV]]; eauto.
+    edestruct (AM.G_get H0) as [v2 [Heqv2 HV]]; eauto.
     exists 1, (A1.Res v2); split; auto.
     + constructor.
       * constructor; auto.
@@ -322,12 +190,12 @@ Proof.
     intros.
 
   apply (He (i - (i - j)) ρ3 ρ4); auto.
-  - eapply G_set_lists; eauto.
-    eapply G_set; eauto.
-    + apply G_mono with (S i); eauto; lia.
+  - eapply AM.G_set_lists; eauto.
+    eapply AM.G_set; eauto.
+    + apply AM.G_mono with (S i); eauto; lia.
     + apply V_mono with i; try lia.
       eapply IHi; eauto.
-      apply G_mono with (S i); eauto; lia.
+      apply AM.G_mono with (S i); eauto; lia.
 Qed.
 
 Lemma fun_compat Γ e e' k k' f xs :
@@ -343,11 +211,11 @@ Proof.
   - exists 0, A1.OOT; split; simpl; eauto.
   - inv H5.
     edestruct (H1 (i - 1) (M.set f (A0.Vfun f ρ1 xs e) ρ1) (M.set f (Tag (arity_to_web (length xs)) (A1.Vfun f ρ2 xs e')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
-    + eapply G_set; eauto.
-      apply G_mono with i; eauto; lia.
+    + eapply AM.G_set; eauto.
+      apply AM.G_mono with i; eauto; lia.
       * eapply Vfun_V; eauto.
-        -- eapply G_wf_env_r; eauto.
-        -- apply G_mono with i; eauto; lia.
+        -- eapply AM.G_wf_env_r; eauto.
+        -- apply AM.G_mono with i; eauto; lia.
     + exists (S j2), r2; split; auto.
       constructor.
       econstructor; eauto.
@@ -367,7 +235,7 @@ Proof.
   inv H4.
   - exists 0, A1.OOT; split; simpl; auto.
   - inv H5.
-    edestruct (G_get H2 f) as [fv2 [Heqfv2 HV]]; eauto.
+    edestruct (AM.G_get H2 f) as [fv2 [Heqfv2 HV]]; eauto.
     destruct i.
     fcrush.
     destruct fv2; simpl in HV;

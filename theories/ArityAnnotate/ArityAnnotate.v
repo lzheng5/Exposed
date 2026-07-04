@@ -8,8 +8,8 @@ From Hammer Require Import Hammer Tactics Reflect.
 
 From Common Require Import Util.
 From LambdaANF Require Import ANF.
-From LambdaWeb Require Import ANF Erase.
-From Annotate Require Import Annotate.
+From LambdaWeb Require Import ANF.
+From ArityAnnotate Require Import Base.
 
 (* Trivial Web Annotation Based on Function Arities *)
 
@@ -20,12 +20,6 @@ From Annotate Require Import Annotate.
 
 Module A0 := LambdaANF.ANF.
 Module A1 := LambdaWeb.ANF.
-
-Definition arity_to_web (n : nat) : web := Pos.of_nat n.
-
-(* Annotate constructor values with `wc`.
-   This works since closure and constructor values live in different web universes. *)
-Definition wc := arity_to_web 0.
 
 (* Specification *)
 Inductive trans (Γ : vars) : A0.exp -> A1.exp -> Prop :=
