@@ -61,22 +61,22 @@ Inductive val_ref : A0.val -> A1.wval -> Prop :=
 
 | Ref_Vconstr_nil :
   forall c,
-    (wc \in Exposed) ->
-    val_ref (A0.Vconstr c []) (Tag wc (A1.Vconstr c []))
+    (w_constr \in Exposed) ->
+    val_ref (A0.Vconstr c []) (Tag w_constr (A1.Vconstr c []))
 
 | Ref_Vconstr_cons :
-  forall wc c v1 v2 vs1 vs2,
-    (wc \in Exposed) ->
+  forall c v1 v2 vs1 vs2,
+    (w_constr \in Exposed) ->
     val_ref v1 v2 ->
-    val_ref (A0.Vconstr c vs1) (Tag wc (A1.Vconstr c vs2)) ->
-    val_ref (A0.Vconstr c (v1 :: vs1)) (Tag wc (A1.Vconstr c (v2 :: vs2))).
+    val_ref (A0.Vconstr c vs1) (Tag w_constr (A1.Vconstr c vs2)) ->
+    val_ref (A0.Vconstr c (v1 :: vs1)) (Tag w_constr (A1.Vconstr c (v2 :: vs2))).
 
 Hint Constructors val_ref : core.
 
 Lemma val_ref_Vconstr c vs1 vs2 :
-  (wc \in Exposed) ->
+  (w_constr \in Exposed) ->
   Forall2 val_ref vs1 vs2 ->
-  val_ref (A0.Vconstr c vs1) (Tag wc (A1.Vconstr c vs2)).
+  val_ref (A0.Vconstr c vs1) (Tag w_constr (A1.Vconstr c vs2)).
 Proof.
   intros.
   induction H0; simpl; auto.
@@ -108,12 +108,12 @@ Proof.
     destruct l0; simpl in *; inv Hlen.
     inv H0.
     inv H6.
-    assert (HV' : forall i, V i v1 t /\ V i (A0.Vconstr c l) (Tag wc (A1.Vconstr c l0))).
+    assert (HV' : forall i, V i v1 t /\ V i (A0.Vconstr c l) (Tag w_constr (A1.Vconstr c l0))).
     {
       intros.
       specialize (H (S i0)); simpl in *.
       destruct H as [_ HV]; subst.
-      destruct (exposed_reflect wc); try contradiction.
+      destruct (exposed_reflect w_constr); try contradiction.
       simpl in *.
       destruct HV as [Hex [Heqw [Hc HFV]]]; subst; eauto.
 
@@ -121,11 +121,11 @@ Proof.
       split.
       eapply V_mono; eauto; lia.
 
-      assert (He' : exposed (Tag wc (A1.Vconstr c l0))) by sauto.
-      assert (Hw' : wf_val (Tag wc (A1.Vconstr c l0))) by sauto.
+      assert (He' : exposed (Tag w_constr (A1.Vconstr c l0))) by sauto.
+      assert (Hw' : wf_val (Tag w_constr (A1.Vconstr c l0))) by sauto.
 
       destruct i0; unfold V; simpl in *;
-        destruct (exposed_reflect wc); try contradiction;
+        destruct (exposed_reflect w_constr); try contradiction;
         repeat (split; auto);
         simpl in *;
         rewrite_math (i0 - i0 = 0);
@@ -134,7 +134,7 @@ Proof.
     }
 
     assert (HV0 : forall i, V i v1 t) by sauto.
-    assert (HV1 : forall i, V i (A0.Vconstr c l) (Tag wc (A1.Vconstr c l0))) by sauto.
+    assert (HV1 : forall i, V i (A0.Vconstr c l) (Tag w_constr (A1.Vconstr c l0))) by sauto.
     auto.
   - specialize (H 0); simpl in *.
     destruct H as [Hw HV].

@@ -26,7 +26,7 @@ Module AnnotateUtil.
 
   Definition V_ex0 (v1 : A0.val) (w : web) (v2 : A1.val) : Prop :=
     match v1, v2 with
-    | A0.Vconstr t1 vs1, A1.Vconstr t2 vs2 => w = wc /\ t1 = t2 /\ length vs1 = length vs2
+    | A0.Vconstr t1 vs1, A1.Vconstr t2 vs2 => w = w_constr /\ t1 = t2 /\ length vs1 = length vs2
     | A0.Vfun f1 ρ1 xs1 e1, A1.Vfun f2 ρ2 xs2 e2 => w = arity_to_web (length xs1) /\ length xs1 = length xs2
     | _, _ => False
     end.
@@ -37,7 +37,7 @@ Module AnnotateUtil.
     (i0 : nat) (v1 : A0.val) (w2 : web) (v2 : A1.val) :=
     match v1, v2 with
     | A0.Vconstr t1 vs1, A1.Vconstr t2 vs2 =>
-        w2 = wc /\
+        w2 = w_constr /\
         t1 = t2 /\
         Forall2 (V' i0) vs1 vs2
 
@@ -359,17 +359,17 @@ Module AnnotateTop.
   Qed.
 
   Lemma Vconstr_V i t vs1 vs2:
-    (wc \in Exposed) ->
+    (w_constr \in Exposed) ->
     Forall wf_val vs2 ->
     Forall2 (V i) vs1 vs2 ->
-    V i (A0.Vconstr t vs1) (Tag wc (A1.Vconstr t vs2)).
+    V i (A0.Vconstr t vs1) (Tag w_constr (A1.Vconstr t vs2)).
   Proof.
     intros.
     induction H1.
     - destruct i; simpl; repeat (split; eauto); simpl;
-        destruct (exposed_reflect wc); try contradiction; eauto.
+        destruct (exposed_reflect w_constr); try contradiction; eauto.
     - inv H0.
-      assert (Hex : exposed (Tag wc (A1.Vconstr t (y :: l')))).
+      assert (Hex : exposed (Tag w_constr (A1.Vconstr t (y :: l')))).
       {
         constructor; auto.
         constructor; auto.
@@ -377,7 +377,7 @@ Module AnnotateTop.
         eapply V_exposed_Forall_r; eauto.
       }
 
-      assert (Hwf : wf_val (Tag wc (A1.Vconstr t (y :: l')))).
+      assert (Hwf : wf_val (Tag w_constr (A1.Vconstr t (y :: l')))).
       {
         eapply wf_val_Vconstr; eauto.
         inv Hex; auto.
@@ -385,11 +385,11 @@ Module AnnotateTop.
 
       destruct i; simpl.
       + split; simpl; auto.
-        destruct (exposed_reflect wc); try contradiction.
+        destruct (exposed_reflect w_constr); try contradiction.
         repeat (split; fcrush).
       + unfold V; simpl.
         split; simpl; auto.
-        destruct (exposed_reflect wc); try contradiction.
+        destruct (exposed_reflect w_constr); try contradiction.
         repeat (split; eauto).
         constructor.
         eapply V_mono; eauto; lia.

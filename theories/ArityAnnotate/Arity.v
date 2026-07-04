@@ -19,8 +19,6 @@ From ArityAnnotate Require Import Base Annotate.
 Module A0 := LambdaANF.ANF.
 Module A1 := LambdaWeb.ANF.
 
-(* TODO: rename wc *)
-
 (* Specification *)
 Inductive trans (Γ : vars) : A0.exp -> A1.exp -> Prop :=
 | Trans_ret :
@@ -56,30 +54,30 @@ Inductive trans (Γ : vars) : A0.exp -> A1.exp -> Prop :=
 | Trans_constr :
   forall {x t xs k k'},
     (FromList xs \subset Γ) ->
-    (wc \in Exposed) ->
+    (w_constr \in Exposed) ->
     trans (x |: Γ) k k' ->
-    trans Γ (A0.Econstr x t xs k) (A1.Econstr x wc t xs k')
+    trans Γ (A0.Econstr x t xs k) (A1.Econstr x w_constr t xs k')
 
 | Trans_proj :
   forall {x y k k' n},
     (y \in Γ) ->
-    (wc \in Exposed) ->
+    (w_constr \in Exposed) ->
     trans (x |: Γ) k k' ->
-    trans Γ (A0.Eproj x n y k) (A1.Eproj x wc n y k')
+    trans Γ (A0.Eproj x n y k) (A1.Eproj x w_constr n y k')
 
 | Trans_case_nil :
   forall {x},
     (x \in Γ) ->
-    (wc \in Exposed) ->
-    trans Γ (A0.Ecase x []) (A1.Ecase x wc [])
+    (w_constr \in Exposed) ->
+    trans Γ (A0.Ecase x []) (A1.Ecase x w_constr [])
 
 | Trans_case_cons :
   forall {x e e' t cl cl'},
     (x \in Γ) ->
-    (wc \in Exposed) ->
+    (w_constr \in Exposed) ->
     trans Γ e e' ->
-    trans Γ (A0.Ecase x cl) (A1.Ecase x wc cl') ->
-    trans Γ (A0.Ecase x ((t, e) :: cl)) (A1.Ecase x wc ((t, e') :: cl')).
+    trans Γ (A0.Ecase x cl) (A1.Ecase x w_constr cl') ->
+    trans Γ (A0.Ecase x ((t, e) :: cl)) (A1.Ecase x w_constr ((t, e') :: cl')).
 
 Hint Constructors trans : core.
 
@@ -172,10 +170,10 @@ Section Compat.
   Qed.
 
   Lemma constr_compat Γ x t xs k k' :
-    (wc \in Exposed) ->
+    (w_constr \in Exposed) ->
     (FromList xs \subset Γ) ->
     trans_correct (x |: Γ) k k' ->
-    trans_correct Γ (A0.Econstr x t xs k) (A1.Econstr x wc t xs k').
+    trans_correct Γ (A0.Econstr x t xs k) (A1.Econstr x w_constr t xs k').
   Proof.
     unfold trans_correct, E, AM.E, AM.VM.E, E'.
     intross Hw.
@@ -190,7 +188,7 @@ Section Compat.
           rewrite <- (get_list_length_eq _ _ _ Heqvs'); auto.
         }
 
-        edestruct (H0 ex i (M.set x (A0.Vconstr t vs) ρ1) (M.set x (Tag wc (A1.Vconstr t vs')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk' Rr]]]; eauto; try lia.
+        edestruct (H0 ex i (M.set x (A0.Vconstr t vs) ρ1) (M.set x (Tag w_constr (A1.Vconstr t vs')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk' Rr]]]; eauto; try lia.
         * eapply AM.G_set; eauto.
           -- eapply AM.Vconstr_V; eauto.
              eapply V_wf_val_Forall_r; eauto.
@@ -350,10 +348,10 @@ Section Compat.
   Qed.
 
   Lemma proj_compat Γ x i y e e' :
-    (wc \in Exposed) ->
+    (w_constr \in Exposed) ->
     (y \in Γ) ->
     trans_correct (x |: Γ) e e' ->
-    trans_correct Γ (A0.Eproj x i y e) (A1.Eproj x wc i y e').
+    trans_correct Γ (A0.Eproj x i y e) (A1.Eproj x w_constr i y e').
   Proof.
     unfold trans_correct, E, AM.E, AM.VM.E, E'.
     intross Hw.
@@ -385,9 +383,9 @@ Section Compat.
   Qed.
 
   Lemma case_nil_compat Γ x:
-    (wc \in Exposed) ->
+    (w_constr \in Exposed) ->
     (x \in Γ) ->
-    trans_correct Γ (A0.Ecase x []) (A1.Ecase x wc []).
+    trans_correct Γ (A0.Ecase x []) (A1.Ecase x w_constr []).
   Proof.
     unfold trans_correct, E, AM.E, AM.VM.E, E'.
     intross Hw.
@@ -395,11 +393,11 @@ Section Compat.
   Qed.
 
   Lemma case_cons_compat Γ x t e e' cl cl':
-    (wc \in Exposed) ->
+    (w_constr \in Exposed) ->
     (x \in Γ) ->
     trans_correct Γ e e' ->
-    trans_correct Γ (A0.Ecase x cl) (A1.Ecase x wc cl') ->
-    trans_correct Γ (A0.Ecase x ((t, e) :: cl)) (A1.Ecase x wc ((t, e') :: cl')).
+    trans_correct Γ (A0.Ecase x cl) (A1.Ecase x w_constr cl') ->
+    trans_correct Γ (A0.Ecase x ((t, e) :: cl)) (A1.Ecase x w_constr ((t, e') :: cl')).
   Proof.
     unfold trans_correct, E, AM.E, AM.VM.E, E'.
     intross Hw.

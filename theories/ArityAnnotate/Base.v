@@ -10,6 +10,6 @@ Definition arity_to_web (n : nat) : web := Pos.of_nat n.
 (* Annotate constructor values with `wc`.
    This works since closure and constructor values live in different web universes. *)
 (* TODO: rename *)
-Definition wc := arity_to_web 0.
+Definition w_constr := arity_to_web 0.
 
-Parameter w_constr_exposed : (wc \in Exposed).
+Parameter w_constr_exposed : (w_constr \in Exposed).

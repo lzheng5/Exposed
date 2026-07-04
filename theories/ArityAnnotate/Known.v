@@ -192,7 +192,7 @@ Section Trans.
 
       (FromList xs \subset Γ) ->
       trans (x |: Γ) k k' ->
-      trans Γ (A0.Econstr x t xs k) (A1.Econstr x wc t xs k')
+      trans Γ (A0.Econstr x t xs k) (A1.Econstr x w_constr t xs k')
 
   | Trans_proj :
     forall {x y k k' n},
@@ -201,21 +201,21 @@ Section Trans.
 
       (y \in Γ) ->
       trans (x |: Γ) k k' ->
-      trans Γ (A0.Eproj x n y k) (A1.Eproj x wc n y k')
+      trans Γ (A0.Eproj x n y k) (A1.Eproj x w_constr n y k')
 
   | Trans_case_nil :
     forall {x},
       K ! x = None ->
       (x \in Γ) ->
-      trans Γ (A0.Ecase x []) (A1.Ecase x wc [])
+      trans Γ (A0.Ecase x []) (A1.Ecase x w_constr [])
 
   | Trans_case_cons :
     forall {x e e' t cl cl'},
       K ! x = None ->
       (x \in Γ) ->
       trans Γ e e' ->
-      trans Γ (A0.Ecase x cl) (A1.Ecase x wc cl') ->
-      trans Γ (A0.Ecase x ((t, e) :: cl)) (A1.Ecase x wc ((t, e') :: cl')).
+      trans Γ (A0.Ecase x cl) (A1.Ecase x w_constr cl') ->
+      trans Γ (A0.Ecase x ((t, e) :: cl)) (A1.Ecase x w_constr ((t, e') :: cl')).
 
   Hint Constructors trans : core.
 
@@ -365,7 +365,7 @@ Module VKnownM <: VAnn.
     (K : web_map) (v1 : A0.val) (w2 : web) (v2 : A1.val) : Prop :=
     match v1, v2 with
     | A0.Vconstr c1 vs1, A1.Vconstr c2 vs2 =>
-        w2 = wc /\
+        w2 = w_constr /\
           exposed (Tag w2 v2) /\
           c1 = c2 /\
           length vs1 = length vs2
@@ -385,7 +385,7 @@ Module VKnownM <: VAnn.
     match v1, v2 with
     | A0.Vconstr c1 vs1, A1.Vconstr c2 vs2 =>
         (* data constructors are all exposed *)
-        w2 = wc /\
+        w2 = w_constr /\
         exposed (Tag w2 v2) /\
         c1 = c2 /\
         Forall2 (V' i0) vs1 vs2
@@ -1076,7 +1076,7 @@ Section Compat.
 
     (FromList xs \subset Γ) ->
     trans_correct (x |: Γ) k k' ->
-    trans_correct Γ (A0.Econstr x t xs k) (A1.Econstr x wc t xs k').
+    trans_correct Γ (A0.Econstr x t xs k) (A1.Econstr x w_constr t xs k').
   Proof.
     unfold trans_correct, E, E'.
     intros.
@@ -1086,14 +1086,14 @@ Section Compat.
       destruct (G_get_list H4 xs vs) as [vs' [Heqvs' Hvs]]; auto.
       + eapply A1.free_constr_xs_subset; eauto.
       + inv Hvs.
-        assert (Hwf : wf_val (Tag wc (A1.Vconstr t vs'))).
+        assert (Hwf : wf_val (Tag w_constr (A1.Vconstr t vs'))).
         {
           apply wf_val_Vconstr; auto.
           eapply V_wf_val_Forall_r; eauto.
         }
 
-        pose proof w_constr_exposed as Hexwc.
-        assert (exposed (Tag wc (A1.Vconstr t vs'))) by eauto.
+        pose proof w_constr_exposed as Hexw_constr.
+        assert (exposed (Tag w_constr (A1.Vconstr t vs'))) by eauto.
 
         assert (length vs = length vs').
         {
@@ -1102,11 +1102,11 @@ Section Compat.
           rewrite <- (get_list_length_eq _ _ _ Heqvs'); auto.
         }
 
-        edestruct (H2 i (M.set x (A0.Vconstr t vs) ρ1) (M.set x (Tag wc (A1.Vconstr t vs')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk' Rr]]]; eauto; try lia.
-        * eapply G_subset with (Γ2 := (x |: (A1.occurs_free (A1.Econstr x wc t xs k')))).
+        edestruct (H2 i (M.set x (A0.Vconstr t vs) ρ1) (M.set x (Tag w_constr (A1.Vconstr t vs')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk' Rr]]]; eauto; try lia.
+        * eapply G_subset with (Γ2 := (x |: (A1.occurs_free (A1.Econstr x w_constr t xs k')))).
           eapply G_set; eauto.
           -- destruct i; simpl;
-               destruct (exposed_reflect wc); try contradiction;
+               destruct (exposed_reflect w_constr); try contradiction;
                repeat (split; eauto).
              eapply V_mono_Forall; eauto; lia.
           -- eapply binding_inv_exposed; eauto.
@@ -1125,7 +1125,7 @@ Section Compat.
 
     (y \in Γ) ->
     trans_correct (x |: Γ) e e' ->
-    trans_correct Γ (A0.Eproj x i y e) (A1.Eproj x wc i y e').
+    trans_correct Γ (A0.Eproj x i y e) (A1.Eproj x w_constr i y e').
   Proof.
     unfold trans_correct, E, E'.
     intros.
@@ -1147,7 +1147,7 @@ Section Compat.
       destruct HV as [Hex [Heqw [Heqt HFvs]]]; subst.
       destruct (Forall2_nth_error H14 HFvs) as [v' [Heqv' HFv]].
       edestruct (H2 i0 (M.set x v ρ1) (M.set x v' ρ2)) with (j1 := c) as [j2 [r2 [He' HR]]]; eauto; try lia.
-      + eapply G_subset with (Γ2 := (x |: (A1.occurs_free (A1.Eproj x wc i y e')))).
+      + eapply G_subset with (Γ2 := (x |: (A1.occurs_free (A1.Eproj x w_constr i y e')))).
         eapply G_set; eauto.
         eapply G_mono with (S i0); eauto; try lia.
         eapply V_mono; eauto; lia.
@@ -1165,7 +1165,7 @@ Section Compat.
   Lemma case_nil_compat Γ x:
     K ! x = None ->
     (x \in Γ) ->
-    trans_correct Γ (A0.Ecase x []) (A1.Ecase x wc []).
+    trans_correct Γ (A0.Ecase x []) (A1.Ecase x w_constr []).
   Proof.
     unfold trans_correct, E, E'.
     intros.
@@ -1176,8 +1176,8 @@ Section Compat.
     K ! x = None ->
     (x \in Γ) ->
     trans_correct Γ e e' ->
-    trans_correct Γ (A0.Ecase x cl) (A1.Ecase x wc cl') ->
-    trans_correct Γ (A0.Ecase x ((t, e) :: cl)) (A1.Ecase x wc ((t, e') :: cl')).
+    trans_correct Γ (A0.Ecase x cl) (A1.Ecase x w_constr cl') ->
+    trans_correct Γ (A0.Ecase x ((t, e) :: cl)) (A1.Ecase x w_constr ((t, e') :: cl')).
   Proof.
     unfold trans_correct, E, E'.
     intros.
@@ -1198,7 +1198,7 @@ Section Compat.
 
       inv H10.
       + edestruct (H1 i ρ1 ρ2) with (j1 := c) as [j2 [r2 [He' HR]]]; eauto; try lia.
-        eapply G_subset with (Γ2 := (A1.occurs_free (A1.Ecase x wc ((c0, e') :: cl')))); eauto.
+        eapply G_subset with (Γ2 := (A1.occurs_free (A1.Ecase x w_constr ((c0, e') :: cl')))); eauto.
         eapply G_mono; eauto.
         apply Included_refl.
         apply A1.free_case_hd_subset.

@@ -60,30 +60,30 @@ Inductive trans (Γ : vars) : A0.exp -> A1.exp -> Prop :=
 | Trans_constr :
   forall {x t xs k k'},
     (FromList xs \subset Γ) ->
-    (wc \in Exposed) ->
+    (w_constr \in Exposed) ->
     trans (x |: Γ) k k' ->
-    trans Γ (A0.Econstr x t xs k) (A1.Econstr x wc t xs k')
+    trans Γ (A0.Econstr x t xs k) (A1.Econstr x w_constr t xs k')
 
 | Trans_proj :
   forall {x y k k' n},
     (y \in Γ) ->
-    (wc \in Exposed) ->
+    (w_constr \in Exposed) ->
     trans (x |: Γ) k k' ->
-    trans Γ (A0.Eproj x n y k) (A1.Eproj x wc n y k')
+    trans Γ (A0.Eproj x n y k) (A1.Eproj x w_constr n y k')
 
 | Trans_case_nil :
   forall {x},
     (x \in Γ) ->
-    (wc \in Exposed) ->
-    trans Γ (A0.Ecase x []) (A1.Ecase x wc [])
+    (w_constr \in Exposed) ->
+    trans Γ (A0.Ecase x []) (A1.Ecase x w_constr [])
 
 | Trans_case_cons :
   forall {x e e' t cl cl'},
     (x \in Γ) ->
-    (wc \in Exposed) ->
+    (w_constr \in Exposed) ->
     trans Γ e e' ->
-    trans Γ (A0.Ecase x cl) (A1.Ecase x wc cl') ->
-    trans Γ (A0.Ecase x ((t, e) :: cl)) (A1.Ecase x wc ((t, e') :: cl')).
+    trans Γ (A0.Ecase x cl) (A1.Ecase x w_constr cl') ->
+    trans Γ (A0.Ecase x ((t, e) :: cl)) (A1.Ecase x w_constr ((t, e') :: cl')).
 
 Hint Constructors trans : core.
 
