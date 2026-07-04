@@ -219,65 +219,6 @@ Section Trans.
 
   Hint Constructors trans : core.
 
-  (*
-  Lemma known_fun_trans e :
-    known_map_inv K ->
-    known_fun (Dom_map K) e ->
-    forall Γ,
-      (A0.occurs_free e) \subset Γ ->
-      exists e', trans Γ e e'.
-  Proof.
-    unfold known_map_inv.
-    intros HK H.
-    induction H; simpl; intros.
-    - exists (A1.Eret x); auto.
-    - destruct (K ! f) eqn:HKf.
-      + exists (A1.Eapp f w ys); econstructor; eauto.
-        eapply A0.free_app_xs_inv; eauto.
-      + exists (A1.Eapp f (arity_to_web (length ys)) ys); eapply Trans_app_unknown; eauto.
-        eapply A0.free_app_xs_inv; eauto.
-    - destruct (IHknown_fun (x |: Γ)) as [e' He']; auto.
-      eapply A0.free_letapp_k_inv; eauto.
-      destruct (K ! f) eqn:HKf.
-      + exists (A1.Eletapp x f w ys e'); econstructor; eauto.
-        eapply A0.free_letapp_xs_inv; eauto.
-      + exists (A1.Eletapp x f w0 ys e'); eapply Trans_letapp_unknown; eauto.
-        eapply A0.free_letapp_xs_inv; eauto.
-    - destruct (IHknown_fun1 (FromList xs :|: (f |: Γ))) as [e' He']; auto.
-      eapply A0.free_fun_e_inv; eauto.
-      destruct (IHknown_fun2 (f |: Γ)) as [k' Hk']; auto.
-      eapply A0.free_fun_k_inv; eauto.
-      destruct (K ! f) eqn:Hkf.
-      + exists (A1.Efun f w xs e' k'); econstructor; eauto.
-      + exists (A1.Efun f w0 xs e' k'); eapply Trans_fun_unknown; eauto.
-    - destruct (IHknown_fun (x |: Γ)) as [e' He']; auto.
-      eapply A0.free_constr_k_inv; eauto.
-      exists (A1.Econstr x w0 ct ys e'); econstructor; eauto.
-      eapply A0.free_constr_xs_inv; eauto.
-    - destruct (IHknown_fun (x |: Γ)) as [e' He']; auto.
-      eapply A0.free_proj_k_inv; eauto.
-      exists (A1.Eproj x w0 n y e'); econstructor; eauto.
-    - exists (A1.Ecase x w0 []); econstructor; eauto.
-    - destruct (IHknown_fun1 Γ) as [e' He']; auto.
-      eapply A0.free_case_hd_inv; eauto.
-      destruct (IHknown_fun2 Γ) as [c' Hc']; auto.
-      eapply A0.free_case_tl_inv; eauto.
-      inv Hc'.
-      + exists (A1.Ecase x w0 [(c, e')]); econstructor; eauto.
-      + exists (A1.Ecase x w0 ((c, e') :: (t, e'0) :: cl')); econstructor; eauto.
-  Qed.
-
-  Theorem trans_total e :
-    known_map_inv K ->
-    analysis_spec K e ->
-    exists e', trans (A0.occurs_free e) e e'.
-  Proof.
-    intros.
-    eapply known_fun_trans; eauto.
-    apply Included_refl.
-  Qed.
-   *)
-
   Lemma trans_exp_inv {Γ e e'} :
     trans Γ e e' ->
     (A1.occurs_free e') \subset (A0.occurs_free e).

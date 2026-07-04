@@ -9,7 +9,8 @@ From Hammer Require Import Hammer Tactics Reflect.
 From Common Require Import Util RelComp.
 From LambdaANF Require Import ANF Comp.
 From Comp Require Import TrivialComp.
-From LambdaWeb Require Import UniqueExposed ANF Comp Erase.
+From LambdaWeb Require Import UniqueExposed ANF Comp.
+From Erase Require Import Erase Comp.
 
 (* Compositionality of The Cross-language Pipeline with Erase
 
@@ -30,6 +31,7 @@ Module C0 := LambdaANF.Comp.
 Module C1 := LambdaWeb.Comp.
 
 Module C := TrivialComp.
+Module EC := Erase.Comp.
 
 Section Comp_n.
 
@@ -108,7 +110,7 @@ Section Adequacy.
     edestruct (C.Top_n_adequcy _ _ _ _ HC0) with (ρ2 := ρ1') as [j1' [r1' [Hstep1' HRn0]]]; eauto.
     eapply C.G_n_wf_env; eauto.
 
-    edestruct (Erase.adequacy _ _ HA) with (ρ2 := ρ2') as [j2' [r2' [Hstep2' HAR]]]; eauto.
+    edestruct (EC.adequacy _ _ HA) with (ρ2 := ρ2') as [j2' [r2' [Hstep2' HAR]]]; eauto.
     - eapply C.G_n_wf_env; eauto.
     - intros.
       specialize (HAG k).
@@ -145,7 +147,7 @@ End Adequacy.
 
 Section Refinement.
 
-  Definition val_ref := Cross (Cross C.val_ref Erase.val_ref) C0.val_ref.
+  Definition val_ref := Cross (Cross C.val_ref EC.val_ref) C0.val_ref.
 
   Lemma R_n_res_val_ref {n m p v1 v2} :
     R_n n m p (A0.Res v1) (A0.Res v2) ->
@@ -160,7 +162,7 @@ Section Refinement.
     eapply C0.R_n_res_val_ref in HC1; eauto.
     eexists; split; eauto.
     eexists; split; eauto.
-    eapply Erase.V_val_ref; eauto.
+    eapply EC.V_val_ref; eauto.
     eapply C.V_n_wf_val_r; eauto.
     eapply C.val_ref_exposed; eauto.
   Qed.
@@ -200,7 +202,7 @@ Section Linking.
     destruct Exposed_nonempty as [w0 Hw].
 
     eapply (C.Top_n_preserves_linking f w0 x n n') in HC0; eauto.
-    eapply (Erase.preserves_linking f w0 x e4 e3 e4' e3') in HA1; eauto.
+    eapply (EC.preserves_linking f w0 x e4 e3 e4' e3') in HA1; eauto.
     eapply (C0.Top_n_preserves_linking f x p p') in HC1; eauto.
   Qed.
 

@@ -8,7 +8,8 @@ From Hammer Require Import Hammer Tactics Reflect.
 
 From Common Require Import Util.
 From LambdaANF Require Import ANF.
-From LambdaWeb Require Import ANF UniqueExposed Erase.
+From LambdaWeb Require Import ANF UniqueExposed.
+From Erase Require Import Erase.
 
 (* Known Function Analysis With A Single Exposed Web Id *)
 

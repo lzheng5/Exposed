@@ -9,7 +9,8 @@ From Hammer Require Import Hammer Tactics Reflect.
 From Common Require Import Util RelComp.
 From LambdaANF Require Import ANF Comp.
 From Comp Require Import SemComp.
-From LambdaWeb Require Import UniqueExposed ANF Comp Erase.
+From LambdaWeb Require Import UniqueExposed ANF Comp.
+From Erase Require Import Erase Comp.
 
 (* Compositionality of The Cross-language Pipeline with Erase
 
@@ -32,6 +33,7 @@ Module C0 := LambdaANF.Comp.
 Module C1 := LambdaWeb.Comp.
 
 Module C := SemComp.
+Module EC := Erase.Comp.
 
 Section Comp_n.
 
@@ -209,7 +211,7 @@ Section Linking.
     destruct Exposed_nonempty as [w0 Hw].
 
     eapply (C.Top_n_preserves_linking f w0 x n n') in HC0; eauto.
-    eapply (Erase.preserves_linking f w0 x e4 e3 e4' e3') in HA1; eauto.
+    eapply (EC.preserves_linking f w0 x e4 e3 e4' e3') in HA1; eauto.
     eapply (C0.Top_n_preserves_linking f x p p') in HC1; eauto.
   Qed.
 

@@ -24,7 +24,6 @@ theories/LambdaWeb/SemSubstDPE.v
 #theories/LambdaWeb/SemSubstDefunc.v
 theories/LambdaWeb/SemSubst1.v
 theories/LambdaWeb/SemSubst2.v
-theories/LambdaWeb/Erase.v
 theories/LambdaWeb/IdComp.v
 theories/LambdaWeb/Comp.v
 
@@ -56,6 +55,10 @@ theories/SemAnnotate/Checking.v
 theories/SemAnnotate/Reify.v
 theories/SemAnnotate/Comp.v
 theories/SemAnnotate/CompAttempt.v
+
+-Q theories/Erase Erase
+theories/Erase/Erase.v
+theories/Erase/Comp.v
 
 -Q theories/Comp Comp
 theories/Comp/TrivialComp.v
