@@ -47,7 +47,7 @@ theories/Annotate/SemCompAttempt.v
 theories/ArityAnnotate/Base.v
 theories/ArityAnnotate/ArityAttempt.v
 theories/ArityAnnotate/Annotate.v
-#theories/ArityAnnotate/Arity.v
+theories/ArityAnnotate/Arity.v
 theories/ArityAnnotate/ArityAnnotate.v
 #theories/ArityAnnotate/Known.v
 #theories/ArityAnnotate/AnnotateComp.v

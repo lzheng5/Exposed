@@ -3,7 +3,10 @@ From CertiCoq.Libraries Require Import maps_util.
 From CertiCoq.LambdaANF Require Import Ensembles_util map_util tactics.
 Require Import Lia.
 
-(* The generalized version that requires both arguments *)
+Tactic Notation "intross" ident_list(xs) :=
+  intros xs; intros.
+
+(* The generalized version that reqduires both arguments *)
 Ltac rewrite_by t T :=
   let H := fresh "Hrewrite" in
   assert (H : t) by T;
