@@ -29,11 +29,9 @@ theories/LambdaWeb/IdComp.v
 theories/LambdaWeb/Comp.v
 
 -Q theories/Annotate Annotate
-# The Annotate Functor
 theories/Annotate/Annotate.v
 theories/Annotate/Trivial.v
 theories/Annotate/Known.v
-theories/Annotate/KnownAnnotate.v
 theories/Annotate/AnnotateComp.v
 
 # Semantic Analysis Framework
@@ -43,6 +41,14 @@ theories/Annotate/Checking.v
 theories/Annotate/Reify.v
 theories/Annotate/SemComp.v
 theories/Annotate/SemCompAttempt.v
+
+-Q theories/ArityAnnotate ArityAnnotate
+theories/ArityAnnotate/ArityAttempt.v
+theories/ArityAnnotate/ArityAnnotate.v
+#theories/ArityAnnotate/Annotate.v
+#theories/ArityAnnotate/Trivial.v
+#theories/ArityAnnotate/Known.v
+#theories/ArityAnnotate/AnnotateComp.v
 
 -Q theories/Comp Comp
 theories/Comp/AnnotateComp.v
