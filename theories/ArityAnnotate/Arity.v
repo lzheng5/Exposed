@@ -19,6 +19,8 @@ From ArityAnnotate Require Import Base Annotate.
 Module A0 := LambdaANF.ANF.
 Module A1 := LambdaWeb.ANF.
 
+(* TODO: rename wc *)
+
 (* Specification *)
 Inductive trans (Γ : vars) : A0.exp -> A1.exp -> Prop :=
 | Trans_ret :

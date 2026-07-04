@@ -37,7 +37,7 @@ theories/TrivialAnnotate/Known.v
 theories/TrivialAnnotate/KnownAnnotate.v
 theories/TrivialAnnotate/Comp.v
 
-# Annotate with Exposed Web Ids based on Function Arities
+# Annotate with Exposed Web Ids Based on Function Arities
 -Q theories/ArityAnnotate ArityAnnotate
 theories/ArityAnnotate/Base.v
 theories/ArityAnnotate/Annotate.v
@@ -45,6 +45,7 @@ theories/ArityAnnotate/Arity.v
 theories/ArityAnnotate/ArityAttempt.v
 theories/ArityAnnotate/ArityAnnotate.v
 #theories/ArityAnnotate/Known.v
+#theories/TrivialAnnotate/KnownAnnotate.v
 theories/ArityAnnotate/Comp.v
 
 # Semantic Analysis Framework
