@@ -237,7 +237,7 @@ Section Refinement.
   Proof.
     unfold val_ref.
     intros.
-    strivial use: val_ref_exposed_r unfold: AC.val_ref, Cross.
+    strivial use: val_ref_exposed_r unfold: Cross.
   Qed.
 
   (* Behavioral Refinement *)

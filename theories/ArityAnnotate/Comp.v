@@ -7,7 +7,7 @@ From Hammer Require Import Hammer Tactics Reflect.
 From Common Require Import Util.
 From LambdaANF Require Import ANF.
 From LambdaWeb Require Import ANF.
-From TrivialAnnotate Require Import Annotate.
+From ArityAnnotate Require Import Base Annotate.
 
 Module A0 := LambdaANF.ANF.
 Module A1 := LambdaWeb.ANF.
@@ -53,28 +53,30 @@ Qed.
 (* Behavioral Refinement *)
 Inductive val_ref : A0.val -> A1.wval -> Prop :=
 | Ref_Vfun :
-  forall f1 ρ1 w xs1 e1 f2 ρ2 xs2 e2,
+  forall f1 ρ1 xs1 e1 f2 ρ2 xs2 e2,
+    length xs1 = length xs2 ->
+    let w := arity_to_web (length xs2) in
     (w \in Exposed) ->
     val_ref (A0.Vfun f1 ρ1 xs1 e1) (Tag w (A1.Vfun f2 ρ2 xs2 e2))
 
 | Ref_Vconstr_nil :
-  forall w c,
-    (w \in Exposed) ->
-    val_ref (A0.Vconstr c []) (Tag w (A1.Vconstr c []))
+  forall c,
+    (wc \in Exposed) ->
+    val_ref (A0.Vconstr c []) (Tag wc (A1.Vconstr c []))
 
 | Ref_Vconstr_cons :
-  forall w c v1 v2 vs1 vs2,
-    (w \in Exposed) ->
+  forall wc c v1 v2 vs1 vs2,
+    (wc \in Exposed) ->
     val_ref v1 v2 ->
-    val_ref (A0.Vconstr c vs1) (Tag w (A1.Vconstr c vs2)) ->
-    val_ref (A0.Vconstr c (v1 :: vs1)) (Tag w (A1.Vconstr c (v2 :: vs2))).
+    val_ref (A0.Vconstr c vs1) (Tag wc (A1.Vconstr c vs2)) ->
+    val_ref (A0.Vconstr c (v1 :: vs1)) (Tag wc (A1.Vconstr c (v2 :: vs2))).
 
 Hint Constructors val_ref : core.
 
-Lemma val_ref_Vconstr c w vs1 vs2 :
-  (w \in Exposed) ->
+Lemma val_ref_Vconstr c vs1 vs2 :
+  (wc \in Exposed) ->
   Forall2 val_ref vs1 vs2 ->
-  val_ref (A0.Vconstr c vs1) (Tag w (A1.Vconstr c vs2)).
+  val_ref (A0.Vconstr c vs1) (Tag wc (A1.Vconstr c vs2)).
 Proof.
   intros.
   induction H0; simpl; auto.
@@ -91,34 +93,39 @@ Proof.
     simpl in H.
     destruct H as [Hwf HV].
     destruct (exposed_reflect w); inv HV.
-    fcrush.
+    destruct v; try contradiction.
+    simpl in *.
+    destruct H0 as [Heqw [Heqc Hlen]]; subst.
+    sauto.
   - destruct v2.
     pose proof (H 0) as H0; simpl in *.
     destruct H0 as [Hw HV].
     destruct (exposed_reflect w); inv HV.
     destruct v; try contradiction.
-    destruct H1 as [Hc Hlen]; subst.
+    simpl in *.
+    destruct H1 as [Heqw [Hc Hlen]]; subst.
 
     destruct l0; simpl in *; inv Hlen.
     inv H0.
     inv H6.
-    assert (HV' : forall i, V i v1 t /\ V i (A0.Vconstr c l) (Tag w (A1.Vconstr c l0))).
+    assert (HV' : forall i, V i v1 t /\ V i (A0.Vconstr c l) (Tag wc (A1.Vconstr c l0))).
     {
       intros.
       specialize (H (S i0)); simpl in *.
       destruct H as [_ HV]; subst.
-      destruct (exposed_reflect w); try contradiction.
-      destruct HV as [Hex [Hc HFV]]; subst; eauto.
+      destruct (exposed_reflect wc); try contradiction.
+      simpl in *.
+      destruct HV as [Hex [Heqw [Hc HFV]]]; subst; eauto.
 
       inv HFV.
       split.
       eapply V_mono; eauto; lia.
 
-      assert (He' : exposed (Tag w (A1.Vconstr c l0))) by sauto.
-      assert (Hw' : wf_val (Tag w (A1.Vconstr c l0))) by sauto.
+      assert (He' : exposed (Tag wc (A1.Vconstr c l0))) by sauto.
+      assert (Hw' : wf_val (Tag wc (A1.Vconstr c l0))) by sauto.
 
       destruct i0; unfold V; simpl in *;
-        destruct (exposed_reflect w); try contradiction;
+        destruct (exposed_reflect wc); try contradiction;
         repeat (split; auto);
         simpl in *;
         rewrite_math (i0 - i0 = 0);
@@ -127,10 +134,15 @@ Proof.
     }
 
     assert (HV0 : forall i, V i v1 t) by sauto.
-    assert (HV1 : forall i, V i (A0.Vconstr c l) (Tag w (A1.Vconstr c l0))) by sauto.
+    assert (HV1 : forall i, V i (A0.Vconstr c l) (Tag wc (A1.Vconstr c l0))) by sauto.
     auto.
   - specialize (H 0); simpl in *.
-    fcrush.
+    destruct H as [Hw HV].
+    destruct v2; try contradiction; auto.
+    destruct (exposed_reflect w); inv HV.
+    destruct v; try contradiction; auto.
+    simpl in *.
+    sauto lq: on drew: off.
 Qed.
 
 Corollary R_res_val_ref {v1 v2} :
@@ -139,9 +151,9 @@ Corollary R_res_val_ref {v1 v2} :
 Proof. intros; eapply V_val_ref; eauto. Qed.
 
 (* Linking Preservation *)
-Theorem preserves_linking f w x e1 e2 e1' e2' :
+Theorem preserves_linking f x e1 e2 e1' e2' :
+  let w := arity_to_web 0 in
   (w \in Exposed) ->
-  (forall w0, w0 \in Exposed -> w0 = w) ->
   trans_correct e1 e2 ->
   trans_correct e1' e2' ->
   trans_correct (A0.link f x e1 e1') (A1.link f w x e2 e2').

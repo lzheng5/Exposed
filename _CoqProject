@@ -45,7 +45,7 @@ theories/ArityAnnotate/Arity.v
 theories/ArityAnnotate/ArityAttempt.v
 theories/ArityAnnotate/ArityAnnotate.v
 #theories/ArityAnnotate/Known.v
-#theories/ArityAnnotate/Comp.v
+theories/ArityAnnotate/Comp.v
 
 # Semantic Analysis Framework
 -Q theories/SemAnnotate SemAnnotate
