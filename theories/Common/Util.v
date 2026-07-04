@@ -3,10 +3,16 @@ From CertiCoq.Libraries Require Import maps_util.
 From CertiCoq.LambdaANF Require Import Ensembles_util map_util tactics.
 Require Import Lia.
 
+(* The generalized version that requires both arguments *)
+Ltac rewrite_by t T :=
+  let H := fresh "Hrewrite" in
+  assert (H : t) by T;
+  rewrite H in *;
+  clear H.
+
+(* The standard version that defaults to lia *)
 Ltac rewrite_math t :=
-  let H := fresh "Hmath" in
-  assert (H : t) by lia;
-  rewrite H in *; clear H.
+  rewrite_by t lia.
 
 Ltac invc :=
   repeat match goal with

@@ -7,11 +7,12 @@ From Hammer Require Import Hammer Tactics Reflect.
 From Common Require Import Util.
 From LambdaANF Require Import ANF.
 From LambdaWeb Require Import ANF.
+From ArityAnnotate Require Import Base.
 
 Module A0 := LambdaANF.ANF.
 Module A1 := LambdaWeb.ANF.
 
-(* Annotate Functor *)
+(* Arity-based Annotate Functor *)
 
 (* Note this formulation is too abstract to be used to verify any semantic analysis. See [SemAnnotateAttempt.v].
    But this works for any syntactical analysis, such as the trivial analysis and the known function call analysis. See [Trivial.v] and [Known.v]. *)
@@ -19,14 +20,14 @@ Module A1 := LambdaWeb.ANF.
 (* Due to the functorization, it is probably more intuitive to see what's going on
    with an instantiated/concrete V relation.
 
-   Take a look at `KnownAnnotate.v` or `TrivialAnnotate.v` (TODO). *)
+   Take a look at `ArityAnnotate.v` or `KnownAnnotate.v`. *)
 
 Module AnnotateUtil.
 
-  Definition V_ex0 (v1 : A0.val) (v2 : A1.val) : Prop :=
+  Definition V_ex0 (v1 : A0.val) (w : web) (v2 : A1.val) : Prop :=
     match v1, v2 with
-    | A0.Vconstr t1 vs1, A1.Vconstr t2 vs2 => t1 = t2 /\ length vs1 = length vs2
-    | A0.Vfun f1 ρ1 xs1 e1, A1.Vfun f2 ρ2 xs2 e2 => length xs1 = length xs2
+    | A0.Vconstr t1 vs1, A1.Vconstr t2 vs2 => w = wc /\ t1 = t2 /\ length vs1 = length vs2
+    | A0.Vfun f1 ρ1 xs1 e1, A1.Vfun f2 ρ2 xs2 e2 => w = arity_to_web (length xs1) /\ length xs1 = length xs2
     | _, _ => False
     end.
 
@@ -36,10 +37,12 @@ Module AnnotateUtil.
     (i0 : nat) (v1 : A0.val) (w2 : web) (v2 : A1.val) :=
     match v1, v2 with
     | A0.Vconstr t1 vs1, A1.Vconstr t2 vs2 =>
+        w2 = wc /\
         t1 = t2 /\
         Forall2 (V' i0) vs1 vs2
 
     | A0.Vfun f1 ρ1 xs1 e1, A1.Vfun f2 ρ2 xs2 e2 =>
+        w2 = arity_to_web (length xs1) /\
         length xs1 = length xs2 /\
         forall j vs1 vs2 ρ3 ρ4,
           j <= i0 ->
@@ -52,14 +55,14 @@ Module AnnotateUtil.
     end.
 
   Lemma V_ex_V_ex0 { V E i v1 w2 v2 }:
-    V_ex V E i v1 w2 v2 -> V_ex0 v1 v2.
+    V_ex V E i v1 w2 v2 -> V_ex0 v1 w2 v2.
   Proof.
     unfold V_ex, V_ex0.
     intros.
     destruct v1; destruct v2; simpl in H; try contradiction.
     - fcrush.
-    - destruct H as [Hc HF]; subst.
-      split; auto.
+    - destruct H as [Hw [Hc HF]]; subst.
+      repeat (split; auto).
       eapply Forall2_length; eauto.
   Qed.
 
@@ -120,7 +123,7 @@ Module AnnotateV (VA : VAnn).
         match i with
         | 0 =>
             match exposedb w2 with
-            | true => exposed wv2 /\ V_ex0 v1 v2
+            | true => exposed wv2 /\ V_ex0 v1 w2 v2
             | false => V_ann0 W v1 w2 v2
             end
 
@@ -202,12 +205,12 @@ Module AnnotateV (VA : VAnn).
     intros.
     destruct v1; destruct v2; auto;
       simpl in *; try contradiction.
-    - destruct H0 as [Hlen HV].
+    - destruct H0 as [Hw [Hlen HV]]; subst.
       repeat (split; auto); intros.
       specialize (HV j0 vs1 vs2 ρ3 ρ4).
       rewrite normalize_step in *; try lia.
       eapply HV; eauto; try lia.
-    - destruct H0 as [Heqc HF];
+    - destruct H0 as [Hw [Heqc HF]]; subst;
         repeat split; auto.
       rewrite normalize_step in *; try lia.
       eapply V_mono_Forall_aux; eauto; lia.
@@ -355,19 +358,18 @@ Module AnnotateTop.
     eapply V_exposed_r; eauto.
   Qed.
 
-  Lemma Vconstr_V i t vs1 vs2 w:
-    (w \in Exposed) ->
+  Lemma Vconstr_V i t vs1 vs2:
+    (wc \in Exposed) ->
     Forall wf_val vs2 ->
     Forall2 (V i) vs1 vs2 ->
-    V i (A0.Vconstr t vs1) (Tag w (A1.Vconstr t vs2)).
+    V i (A0.Vconstr t vs1) (Tag wc (A1.Vconstr t vs2)).
   Proof.
     intros.
     induction H1.
     - destruct i; simpl; repeat (split; eauto); simpl;
-        destruct (exposed_reflect w); try contradiction;
-        eauto.
+        destruct (exposed_reflect wc); try contradiction; eauto.
     - inv H0.
-      assert (Hex : exposed (Tag w (A1.Vconstr t (y :: l')))).
+      assert (Hex : exposed (Tag wc (A1.Vconstr t (y :: l')))).
       {
         constructor; auto.
         constructor; auto.
@@ -375,7 +377,7 @@ Module AnnotateTop.
         eapply V_exposed_Forall_r; eauto.
       }
 
-      assert (Hwf : wf_val (Tag w (A1.Vconstr t (y :: l')))).
+      assert (Hwf : wf_val (Tag wc (A1.Vconstr t (y :: l')))).
       {
         eapply wf_val_Vconstr; eauto.
         inv Hex; auto.
@@ -383,11 +385,11 @@ Module AnnotateTop.
 
       destruct i; simpl.
       + split; simpl; auto.
-        destruct (exposed_reflect w); try contradiction.
+        destruct (exposed_reflect wc); try contradiction.
         repeat (split; fcrush).
       + unfold V; simpl.
         split; simpl; auto.
-        destruct (exposed_reflect w); try contradiction.
+        destruct (exposed_reflect wc); try contradiction.
         repeat (split; eauto).
         constructor.
         eapply V_mono; eauto; lia.
@@ -542,20 +544,21 @@ Module AnnotateTop.
   Qed.
 
   (* Compatibility Lemmas *)
-  Lemma Vfun_V w e e' :
+  Lemma Vfun_V e e' :
     trans_correct e e' ->
-    (w \in Exposed) ->
     forall i f xs Γ1 ρ1 ρ2,
       G i Γ1 ρ1 ρ2 ->
       A0.occurs_free e \subset (FromList xs :|: (f |: Γ1)) ->
+      let w := arity_to_web (length xs) in
+      (w \in Exposed) ->
       V i (A0.Vfun f ρ1 xs e) (Tag w (A1.Vfun f ρ2 xs e')).
   Proof.
     unfold trans_correct.
-    intros [HS He] Hw i.
+    intros [HS He] i.
 
     induction i; intros; unfold V; simpl; auto;
       assert (Hρ2 : wf_env ρ2) by (eapply G_wf_env_r; eauto);
-      destruct (exposed_reflect w); try contradiction;
+      destruct (exposed_reflect (arity_to_web (length xs))); try contradiction;
       repeat (split; auto); intros.
 
     apply (He (i - (i - j)) ρ3 ρ4); auto.
@@ -578,7 +581,8 @@ Module AnnotateTop.
     inv H1; auto.
   Qed.
 
-  Lemma fun_compat w e e' k k' f xs :
+  Lemma fun_compat e e' k k' f xs :
+    let w := arity_to_web (length xs) in
     (w \in Exposed) ->
     trans_correct e e' ->
     trans_correct k k' ->
@@ -593,9 +597,9 @@ Module AnnotateTop.
     eapply free_fun_compat; eauto.
 
     inv H5.
-    - exists 0, OOT; split; simpl; eauto.
+    - fcrush.
     - inv H6.
-      edestruct (H3 (i - 1) (M.set f (A0.Vfun f ρ1 xs e) ρ1) (M.set f (Tag w (A1.Vfun f ρ2 xs e')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+      edestruct (H3 (i - 1) (M.set f (A0.Vfun f ρ1 xs e) ρ1) (M.set f (Tag (arity_to_web (length xs)) (A1.Vfun f ρ2 xs e')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
       + eapply G_subset with (Γ1 := (f |: (A0.occurs_free (A0.Efun f xs e k)))); eauto.
         * eapply G_set; eauto.
           eapply G_mono; eauto; try lia.
@@ -621,21 +625,20 @@ Module AnnotateTop.
     inv H0; auto.
   Qed.
 
-  (* Note here we require [Exposed] to be a singleton set *)
-  Lemma letapp_compat w k k' xs x f :
+  Lemma letapp_compat k k' xs x f :
+    let w := arity_to_web (length xs) in
     (w \in Exposed) ->
-    (forall w0, w0 \in Exposed -> w0 = w) ->
     trans_correct k k' ->
     trans_correct (A0.Eletapp x f xs k) (A1.Eletapp x f w xs k').
   Proof.
     unfold trans_correct, E, VM.E, E'.
-    intros Hw HEx; intros.
+    intros HEx; intros.
     destruct H.
     split; intros.
     eapply free_letapp_compat; eauto.
 
     inv H3.
-    - exists 0, OOT; split; simpl; auto.
+    - fcrush.
     - inv H4.
       + edestruct (G_get H1) as [fv2 [Heqfv2 HVf]]; eauto.
         destruct fv2.
@@ -644,14 +647,22 @@ Module AnnotateTop.
         simpl in HVf.
         destruct HVf as [Hfv2 HV]; subst.
         destruct (exposed_reflect w); try contradiction.
-        destruct (exposed_reflect w0); inv HV.
-        assert (Heqw : w0 = w) by (eapply HEx; eauto); inv Heqw.
+        destruct HV as [Hex HVex].
         destruct v0; try contradiction.
-        destruct H4 as [Hlen HV]; subst.
+        simpl in *.
+        destruct HVex as [Heqw [Hlen HV]]; subst.
+        assert (Hlenxs' : length xs' = length xs).
+        {
+          unfold var in *.
+          erewrite (set_lists_length_eq _ _ xs' vs); eauto.
+          erewrite <- (get_list_length_eq xs vs); eauto.
+        }
+
+        rewrite_by (arity_to_web (length xs') = arity_to_web (length xs)) eauto.
         edestruct (G_get_list H1 xs) as [vs2 [Heqvs2 HVvs]]; eauto.
         eapply A0.free_letapp_xs_subset; eauto.
 
-        destruct (set_lists_length3 (M.set v0 (Tag w (Vfun v0 t l e0)) t) l vs2) as [ρ4 Heqρ4].
+        destruct (set_lists_length3 (M.set v0 (Tag (arity_to_web (length xs)) (Vfun v0 t l e0)) t) l vs2) as [ρ4 Heqρ4].
         unfold wval in *.
         rewrite <- (Forall2_length _ _ _ HVvs).
         rewrite <- (set_lists_length_eq _ _ _ _ H12); auto.
@@ -662,7 +673,7 @@ Module AnnotateTop.
         * eapply V_exposed_Forall_r; eauto.
         * eapply V_mono_Forall; eauto; lia.
         * destruct r2; simpl in HR; try contradiction.
-          edestruct (H0 (i - c0) (M.set x v ρ1) (M.set x w0 ρ2)) with (j1 := c') as [j3 [r3 [He1 HR']]]; eauto; try lia.
+          edestruct (H0 (i - c0) (M.set x v ρ1) (M.set x w ρ2)) with (j1 := c') as [j3 [r3 [He1 HR']]]; eauto; try lia.
           eapply G_subset with (Γ1 := x |: (A0.occurs_free (A0.Eletapp x f xs k))); eauto.
           eapply G_set; eauto.
           eapply G_mono; eauto; lia.
@@ -672,13 +683,13 @@ Module AnnotateTop.
              2 : { eapply R_mono; eauto; lia. }
 
              constructor; auto.
-             eapply BStep_letapp_Res with (v := w0); eauto.
-             destruct (exposed_reflect w); try contradiction; auto.
+             eapply BStep_letapp_Res with (v := w); eauto.
+             destruct (exposed_reflect (arity_to_web (length xs))); try contradiction; auto.
 
              intros.
              split; auto.
              eapply V_exposed_Forall_r; eauto.
-             assert (Hr : exposed_res (A1.Res w0)) by (eapply bstep_fuel_exposed_inv; eauto); inv Hr; auto.
+             assert (Hr : exposed_res (A1.Res w)) by (eapply bstep_fuel_exposed_inv; eauto); inv Hr; auto.
 
              eapply bstep_fuel_exposed_inv; eauto.
       + fcrush.
@@ -775,20 +786,22 @@ Module AnnotateVVTop (VA : VAnn).
     intros.
     split; intros.
     - destruct v1; destruct v2; try contradiction;
-        inv H2; split; auto; intros.
+        destruct H2 as [Hw [Hlen HV]];
+        repeat (split; auto); intros.
       + assert (He : E' V1 true (i - (i - j0)) ρ3 e ρ4 e0).
         {
-          eapply H4; eauto.
+          eapply HV; eauto.
           eapply exposed_V_relate_Forall_aux; eauto; lia.
         }
         eapply exposed_E_relate_aux with (V1 := V1); eauto; lia.
       + eapply exposed_V_relate_Forall_aux with (V1 := V1); eauto; try lia.
         fcrush.
     - destruct v1; destruct v2; try contradiction;
-        inv H2; split; auto; intros.
+        destruct H2 as [Hw [Hlen HV]];
+        repeat (split; auto); intros.
       + assert (He : E' V2 true (i - (i - j0)) ρ3 e ρ4 e0).
         {
-          eapply H4; eauto.
+          eapply HV; eauto.
           eapply exposed_V_relate_Forall_aux with (V1 := V1); eauto; lia.
         }
         eapply exposed_E_relate_aux with (V1 := V1); eauto; lia.
@@ -808,21 +821,23 @@ Module AnnotateVVTop (VA : VAnn).
     induction i using lt_wf_rec; intros.
     split; intros.
     - destruct i; simpl in *;
-        inv H1; split; auto;
+        destruct H1 as [Hv2 HV];
+        split; auto;
         destruct v2;
         destruct (exposed_reflect w); try contradiction.
       + fcrush.
       + fcrush.
-      + destruct H3 as [Hlen HV]; subst.
+      + destruct HV as [Hlen HV]; subst.
         split; auto.
         eapply exposed_V_ex_relate with (V1 := A.V W); eauto.
       + fcrush.
     - destruct i; simpl in *;
-        inv H1; split; auto;
+        destruct H1 as [Hv2 HV];
+        split; auto;
         destruct v2;
         destruct (exposed_reflect w); try contradiction.
       + fcrush.
-      + destruct H3 as [Hlen HV]; subst.
+      + destruct HV as [Hlen HV]; subst.
         split; auto.
         eapply exposed_V_ex_relate with (V1 := A.V W); eauto.
   Qed.

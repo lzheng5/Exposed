@@ -32,6 +32,7 @@ theories/LambdaWeb/Comp.v
 theories/Annotate/Annotate.v
 theories/Annotate/Trivial.v
 theories/Annotate/Known.v
+theories/Annotate/KnownAnnotate.v
 theories/Annotate/AnnotateComp.v
 
 # Semantic Analysis Framework
@@ -45,9 +46,9 @@ theories/Annotate/SemCompAttempt.v
 -Q theories/ArityAnnotate ArityAnnotate
 theories/ArityAnnotate/Base.v
 theories/ArityAnnotate/ArityAttempt.v
+theories/ArityAnnotate/Annotate.v
+#theories/ArityAnnotate/Arity.v
 theories/ArityAnnotate/ArityAnnotate.v
-#theories/ArityAnnotate/Annotate.v
-#theories/ArityAnnotate/Trivial.v
 #theories/ArityAnnotate/Known.v
 #theories/ArityAnnotate/AnnotateComp.v
 
