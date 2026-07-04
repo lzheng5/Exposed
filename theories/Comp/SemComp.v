@@ -8,7 +8,7 @@ From Hammer Require Import Hammer Tactics Reflect.
 
 From Common Require Import Util RelComp.
 From LambdaANF Require Import ANF Comp.
-From Annotate Require Import SemComp.
+From SemAnnotate Require Import Comp.
 From LambdaWeb Require Import ANF Comp.
 
 (* Compositionality of The Cross-language Pipeline with Some Semantic Analysis
@@ -27,7 +27,7 @@ Module A1 := LambdaWeb.ANF.
 Module C0 := LambdaANF.Comp.
 Module C1 := LambdaWeb.Comp.
 
-Module C := SemComp.
+Module C := SemAnnotate.Comp.
 
 Section Comp_n.
 

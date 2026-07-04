@@ -9,7 +9,7 @@ From Hammer Require Import Hammer Tactics Reflect.
 From Common Require Import Util.
 From LambdaANF Require Import ANF.
 From LambdaWeb Require Import Base.
-From Annotate Require Import LabeledANF.
+From SemAnnotate Require Import LabeledANF.
 
 Definition web_map := M.t web.
 

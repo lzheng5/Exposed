@@ -28,32 +28,38 @@ theories/LambdaWeb/Erase.v
 theories/LambdaWeb/IdComp.v
 theories/LambdaWeb/Comp.v
 
--Q theories/Annotate Annotate
-theories/Annotate/Annotate.v
-theories/Annotate/Trivial.v
-theories/Annotate/Known.v
-theories/Annotate/KnownAnnotate.v
-theories/Annotate/AnnotateComp.v
+# Syntactic Analysis Framework
+# Annotate with Single Unique Exposed Web Id
+-Q theories/TrivialAnnotate TrivialAnnotate
+theories/TrivialAnnotate/Annotate.v
+theories/TrivialAnnotate/Trivial.v
+theories/TrivialAnnotate/Known.v
+theories/TrivialAnnotate/KnownAnnotate.v
+theories/TrivialAnnotate/Comp.v
 
-# Semantic Analysis Framework
-theories/Annotate/LabeledANF.v
-theories/Annotate/Label.v
-theories/Annotate/Checking.v
-theories/Annotate/Reify.v
-theories/Annotate/SemComp.v
-theories/Annotate/SemCompAttempt.v
-
+# Annotate with Exposed Web Ids based on Function Arities
 -Q theories/ArityAnnotate ArityAnnotate
 theories/ArityAnnotate/Base.v
-theories/ArityAnnotate/ArityAttempt.v
 theories/ArityAnnotate/Annotate.v
 theories/ArityAnnotate/Arity.v
+theories/ArityAnnotate/ArityAttempt.v
 theories/ArityAnnotate/ArityAnnotate.v
 #theories/ArityAnnotate/Known.v
-#theories/ArityAnnotate/AnnotateComp.v
+#theories/ArityAnnotate/Comp.v
+
+# Semantic Analysis Framework
+-Q theories/SemAnnotate SemAnnotate
+theories/SemAnnotate/LabeledANF.v
+theories/SemAnnotate/Label.v
+theories/SemAnnotate/Checking.v
+theories/SemAnnotate/Reify.v
+theories/SemAnnotate/Comp.v
+theories/SemAnnotate/CompAttempt.v
 
 -Q theories/Comp Comp
-theories/Comp/AnnotateComp.v
-theories/Comp/AnnotateCompTop.v
+theories/Comp/TrivialComp.v
+theories/Comp/TrivialCompTop.v
+#theories/Comp/ArityComp.v
+#theories/Comp/ArityCompTop.v
 theories/Comp/SemComp.v
 theories/Comp/SemCompTop.v

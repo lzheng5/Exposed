@@ -7,7 +7,7 @@ From Hammer Require Import Hammer Tactics Reflect.
 From Common Require Import Util.
 From LambdaANF Require Import ANF.
 From LambdaWeb Require Import ANF.
-From Annotate Require Import Annotate.
+From TrivialAnnotate Require Import Annotate.
 
 Module A0 := LambdaANF.ANF.
 Module A1 := LambdaWeb.ANF.

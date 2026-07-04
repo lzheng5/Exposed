@@ -7,7 +7,7 @@ Require Import Lia.
 From Hammer Require Import Hammer Tactics Reflect.
 
 From Common Require Import Util.
-From Annotate Require Import LabeledANF Checking.
+From SemAnnotate Require Import LabeledANF Checking.
 From LambdaWeb Require Import ANF.
 
 Module AS := LabeledANF.

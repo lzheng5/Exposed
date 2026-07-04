@@ -8,7 +8,7 @@ From Hammer Require Import Hammer Tactics Reflect.
 
 From Common Require Import Base Util.
 From LambdaANF Require Import ANF.
-From Annotate Require Import LabeledANF.
+From SemAnnotate Require Import LabeledANF.
 
 Module A0 := LambdaANF.ANF.
 Module A1 := LabeledANF.

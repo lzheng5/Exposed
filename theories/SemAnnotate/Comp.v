@@ -8,13 +8,13 @@ From Hammer Require Import Hammer Tactics Reflect.
 
 From Common Require Import Util RelComp.
 From LambdaANF Require Import ANF.
-From Annotate Require Import LabeledANF Label Checking Reify.
+From SemAnnotate Require Import LabeledANF Label Checking Reify.
 From LambdaWeb Require Import ANF.
 
 (* Compositionality of The Semantic Analysis Component *)
 
 Module AS := LambdaANF.ANF.
-Module AI := Annotate.LabeledANF.
+Module AI := SemAnnotate.LabeledANF.
 Module AT := LambdaWeb.ANF.
 
 Module L := Label.

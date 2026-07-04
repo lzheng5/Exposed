@@ -9,7 +9,7 @@ From Hammer Require Import Hammer Tactics Reflect.
 From Common Require Import Util.
 From LambdaANF Require Import ANF.
 From LambdaWeb Require Import ANF.
-From Annotate Require Import Annotate.
+From TrivialAnnotate Require Import Annotate.
 From ArityAnnotate Require Import Base.
 
 (* This file is used to illustrate that the trivial annotate functor is insufficient for arity-based annotations. *)
