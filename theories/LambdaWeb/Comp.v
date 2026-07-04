@@ -160,7 +160,7 @@ End ReflComp.
 
 Section Adequacy.
 
-  Lemma Top_n_R_n n e1 e2:
+  Lemma Top_n_adequcy n e1 e2:
     Top_n n e1 e2 ->
     forall ρ1 ρ2,
       wf_env ρ1 ->
@@ -216,7 +216,7 @@ Section Adequacy.
           V_n n v1 v2.
   Proof.
     intros.
-    edestruct Top_n_R_n with (ρ1 := ρ1) as [j2 [r2 [Hr2 HR]]]; eauto.
+    edestruct Top_n_adequcy with (ρ1 := ρ1) as [j2 [r2 [Hr2 HR]]]; eauto.
     inv H3.
     inv H5.
     assert (wf_val v1) by (eapply bstep_wf_res in H4; eauto; inv H4; auto).
@@ -479,7 +479,7 @@ Section Refinement.
           val_ref v1 v2.
   Proof.
     intros.
-    edestruct Top_n_R_n with (ρ1 := ρ1) as [j2 [r2 [Hr2 HR]]]; eauto.
+    edestruct Top_n_adequcy with (ρ1 := ρ1) as [j2 [r2 [Hr2 HR]]]; eauto.
     inv H3.
     inv H5.
     assert (wf_val v1) by (eapply bstep_wf_res in H4; eauto; inv H4; auto).

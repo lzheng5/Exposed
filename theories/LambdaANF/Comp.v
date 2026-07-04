@@ -129,7 +129,7 @@ End Refl0Comp.
 
 Section Adequacy.
 
-  Lemma Top_n_R_n n e1 e2:
+  Lemma Top_n_adequcy n e1 e2:
     Top_n n e1 e2 ->
     forall ρ1 ρ2,
       G_n n (occurs_free e1) (occurs_free e2) ρ1 ρ2 ->
@@ -179,7 +179,7 @@ Section Adequacy.
           V_n n v1 v2.
   Proof.
     intros.
-    edestruct Top_n_R_n with (ρ1 := ρ1) as [j2 [r2 [Hr2 HR]]]; eauto.
+    edestruct Top_n_adequcy with (ρ1 := ρ1) as [j2 [r2 [Hr2 HR]]]; eauto.
     edestruct R_n_Res_inv as [v2 [Heq HVn]]; eauto; subst.
     eexists; eexists; split; eauto.
   Qed.
@@ -310,7 +310,7 @@ Section Refinement.
           val_ref v1 v2.
   Proof.
     intros.
-    edestruct Top_n_R_n with (ρ1 := ρ1) as [j2 [r2 [Hr2 HR]]]; eauto.
+    edestruct Top_n_adequcy with (ρ1 := ρ1) as [j2 [r2 [Hr2 HR]]]; eauto.
     edestruct R_n_Res_inv as [v2 [Heq HVn]]; eauto; subst.
     eexists; eexists; split; eauto.
     eapply R_n_res_val_ref; eauto.

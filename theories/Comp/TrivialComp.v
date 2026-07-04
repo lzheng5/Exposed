@@ -148,7 +148,7 @@ End Comp_n.
 
 Section Adequacy.
 
-  Lemma Top_n_R_n n m e1 e2:
+  Lemma Top_n_adequcy n m e1 e2:
     Top_n n m e1 e2 ->
     forall ρ1 ρ2,
       wf_env ρ2 ->
@@ -165,7 +165,7 @@ Section Adequacy.
     intros.
 
     destruct H0 as [ρ2' [[ρ1' [HG0 HAG]] HG1]].
-    edestruct (C0.Top_n_R_n _ _ _ HC0) with (ρ2 := ρ1') as [j1' [r1' [Hstep1' HRn0]]]; eauto.
+    edestruct (C0.Top_n_adequcy _ _ _ HC0) with (ρ2 := ρ1') as [j1' [r1' [Hstep1' HRn0]]]; eauto.
 
     assert (wf_env ρ2').
     {
@@ -177,7 +177,7 @@ Section Adequacy.
     - intros.
       eapply AM.G_subset; eauto.
       eapply C0.Top_n_subset; eauto.
-    - edestruct (C1.Top_n_R_n _ _ _ HC1) with (ρ2 := ρ2) as [j2 [r2 [Hstep2 HRn1]]]; eauto.
+    - edestruct (C1.Top_n_adequcy _ _ _ HC1) with (ρ2 := ρ2) as [j2 [r2 [Hstep2 HRn1]]]; eauto.
       + eapply C1.G_n_subset; eauto.
         * eapply AM.trans_correct_subset in HA; eauto.
           eapply Included_trans; eauto.
@@ -199,7 +199,7 @@ Section Adequacy.
             V_n n m v1 v2.
   Proof.
     intros.
-    edestruct Top_n_R_n with (ρ1 := ρ1) as [j2 [r2 [Hr2 HR]]]; eauto.
+    edestruct Top_n_adequcy with (ρ1 := ρ1) as [j2 [r2 [Hr2 HR]]]; eauto.
     edestruct R_n_Res_inv as [v2 [Heq HVn]]; eauto; subst.
     eexists; eexists; split; eauto.
   Qed.
@@ -253,7 +253,7 @@ Section Refinement.
             val_ref v1 v2.
   Proof.
     intros.
-    edestruct Top_n_R_n with (ρ1 := ρ1) as [j2 [r2 [Hr2 HR]]]; eauto.
+    edestruct Top_n_adequcy with (ρ1 := ρ1) as [j2 [r2 [Hr2 HR]]]; eauto.
     edestruct R_n_Res_inv as [v2 [Heq HVn]]; eauto; subst.
     eexists; eexists; split; eauto.
     eapply R_n_res_val_ref; eauto.
