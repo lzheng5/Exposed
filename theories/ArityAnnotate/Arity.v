@@ -54,27 +54,23 @@ Inductive trans (Γ : vars) : A0.exp -> A1.exp -> Prop :=
 | Trans_constr :
   forall {x t xs k k'},
     (FromList xs \subset Γ) ->
-    (w_constr \in Exposed) ->
     trans (x |: Γ) k k' ->
     trans Γ (A0.Econstr x t xs k) (A1.Econstr x w_constr t xs k')
 
 | Trans_proj :
   forall {x y k k' n},
     (y \in Γ) ->
-    (w_constr \in Exposed) ->
     trans (x |: Γ) k k' ->
     trans Γ (A0.Eproj x n y k) (A1.Eproj x w_constr n y k')
 
 | Trans_case_nil :
   forall {x},
     (x \in Γ) ->
-    (w_constr \in Exposed) ->
     trans Γ (A0.Ecase x []) (A1.Ecase x w_constr [])
 
 | Trans_case_cons :
   forall {x e e' t cl cl'},
     (x \in Γ) ->
-    (w_constr \in Exposed) ->
     trans Γ e e' ->
     trans Γ (A0.Ecase x cl) (A1.Ecase x w_constr cl') ->
     trans Γ (A0.Ecase x ((t, e) :: cl)) (A1.Ecase x w_constr ((t, e') :: cl')).
@@ -92,10 +88,10 @@ Proof.
   - inv H2; auto.
   - inv H2; auto.
   - inv H3; auto.
-  - inv H2; auto.
-  - inv H2; auto.
   - inv H1; auto.
-  - inv H3; auto.
+  - inv H1; auto.
+  - inv H0; auto.
+  - inv H2; auto.
 Qed.
 
 Lemma trans_exp_weaken {Γ Γ' e e'} :
@@ -170,13 +166,12 @@ Section Compat.
   Qed.
 
   Lemma constr_compat Γ x t xs k k' :
-    (w_constr \in Exposed) ->
     (FromList xs \subset Γ) ->
     trans_correct (x |: Γ) k k' ->
     trans_correct Γ (A0.Econstr x t xs k) (A1.Econstr x w_constr t xs k').
   Proof.
     unfold trans_correct, E, AM.E, AM.VM.E, E'.
-    intross Hw.
+    intros.
     inv H3.
     - fcrush.
     - inv H4.
@@ -191,6 +186,7 @@ Section Compat.
         edestruct (H0 ex i (M.set x (A0.Vconstr t vs) ρ1) (M.set x (Tag w_constr (A1.Vconstr t vs')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk' Rr]]]; eauto; try lia.
         * eapply AM.G_set; eauto.
           -- eapply AM.Vconstr_V; eauto.
+             eapply w_constr_exposed; eauto.
              eapply V_wf_val_Forall_r; eauto.
         * exists (S j2), r2; split; eauto.
           -- econstructor.
@@ -348,15 +344,14 @@ Section Compat.
   Qed.
 
   Lemma proj_compat Γ x i y e e' :
-    (w_constr \in Exposed) ->
     (y \in Γ) ->
     trans_correct (x |: Γ) e e' ->
     trans_correct Γ (A0.Eproj x i y e) (A1.Eproj x w_constr i y e').
   Proof.
     unfold trans_correct, E, AM.E, AM.VM.E, E'.
-    intross Hw.
+    intros.
     inv H3.
-    - exists 0, A1.OOT; split; simpl; auto.
+    - fcrush.
     - inv H4.
       edestruct (AM.G_get H1 y) as [v2 [Heqv2 HV]]; eauto.
       destruct i0.
@@ -383,24 +378,22 @@ Section Compat.
   Qed.
 
   Lemma case_nil_compat Γ x:
-    (w_constr \in Exposed) ->
     (x \in Γ) ->
     trans_correct Γ (A0.Ecase x []) (A1.Ecase x w_constr []).
   Proof.
     unfold trans_correct, E, AM.E, AM.VM.E, E'.
-    intross Hw.
+    intros.
     inv H2; fcrush.
   Qed.
 
   Lemma case_cons_compat Γ x t e e' cl cl':
-    (w_constr \in Exposed) ->
     (x \in Γ) ->
     trans_correct Γ e e' ->
     trans_correct Γ (A0.Ecase x cl) (A1.Ecase x w_constr cl') ->
     trans_correct Γ (A0.Ecase x ((t, e) :: cl)) (A1.Ecase x w_constr ((t, e') :: cl')).
   Proof.
     unfold trans_correct, E, AM.E, AM.VM.E, E'.
-    intross Hw.
+    intros.
     inv H4.
     - fcrush.
     - inv H5.
