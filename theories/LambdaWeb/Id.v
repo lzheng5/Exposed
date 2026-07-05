@@ -507,7 +507,7 @@ Definition trans_correct_top etop etop' :=
     G_top i (occurs_free etop) ρ1 ρ2 ->
     E true i ρ1 etop ρ2 etop'.
 
-Theorem top' etop etop':
+Theorem top etop etop':
   trans (occurs_free etop) etop etop' ->
   trans_correct_top etop etop'.
 Proof.
@@ -606,7 +606,7 @@ Section AlterTop.
       weak_G_top i (occurs_free etop) ρ1 (occurs_free etop') ρ2 ->
       E true i ρ1 etop ρ2 etop'.
 
-  Theorem top etop etop':
+  Theorem top' etop etop':
     trans (occurs_free etop) etop etop' ->
     strong_trans_correct_top etop etop'.
   Proof.
