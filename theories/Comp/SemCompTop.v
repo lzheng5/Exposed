@@ -43,7 +43,7 @@ Section Comp_n.
 
   Definition R_n n m p := Cross (Cross (C.R_n n m) (fun v1 v2 => forall k, Erase.R k v1 v2)) (C0.R_n p).
 
-  Definition G_n n m p Γ1 Γ2 := Cross (Cross (C.G_n n m Γ1 Γ2) (fun ρ1 ρ2 => forall k, Erase.G_top k Γ1 ρ1 Γ2 ρ2)) (C0.G_n p Γ1 Γ2).
+  Definition G_n n m p Γ1 := Cross (Cross (C.G_n n m Γ1) (fun ρ1 ρ2 => forall k, Erase.G_top k Γ1 ρ1 ρ2)) (C0.G_n p Γ1).
 
   Lemma R_n_V_n n m p v1 v2:
     R_n n m p (A0.Res v1) (A0.Res v2) ->

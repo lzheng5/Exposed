@@ -41,7 +41,7 @@ Section Comp_n.
 
   Definition R_n n m p := Cross (Cross (C.R_n n m) (fun v1 v2 => forall k, Erase.R k v1 v2)) (C0.R_n p).
 
-  Definition G_n n m p Γ1 Γ2 := Cross (Cross (C.G_n n m Γ1 Γ2) (fun ρ1 ρ2 => forall k, Erase.G_top k Γ1 ρ1 Γ2 ρ2)) (C0.G_n p Γ1 Γ2).
+  Definition G_n n m p Γ1 := Cross (Cross (C.G_n n m Γ1) (fun ρ1 ρ2 => forall k, Erase.G_top k Γ1 ρ1 ρ2)) (C0.G_n p Γ1).
 
   Lemma R_n_V_n n m p v1 v2:
     R_n n m p (A0.Res v1) (A0.Res v2) ->
@@ -94,7 +94,7 @@ Section Adequacy.
   Lemma Top_n_adequcy n m p e1 e2:
     Top_n n m p e1 e2 ->
     forall ρ1 ρ2,
-      G_n n m p (A0.occurs_free e1) (A0.occurs_free e2) ρ1 ρ2 ->
+      G_n n m p (A0.occurs_free e1) ρ1 ρ2 ->
       forall j1 r1,
         A0.bstep_fuel ρ1 e1 j1 r1 ->
         exists j2 r2,
@@ -116,21 +116,19 @@ Section Adequacy.
       specialize (HAG k).
       eapply Erase.G_top_subset; eauto.
       eapply C.Top_n_subset; eauto.
-      eapply Erase.trans_correct_top_subset; eauto.
     - edestruct (C0.Top_n_adequcy _ _ _ HC1) with (ρ2 := ρ2) as [j2 [r2 [Hstep2 HRn1]]]; eauto.
       eapply C0.G_n_subset; eauto.
       + eapply Erase.trans_correct_top_subset in HA; eauto.
         eapply Included_trans; eauto.
         eapply C.Top_n_subset; eauto.
-      + eapply C0.Top_n_subset; eauto.
-      + eexists; eexists; split; eauto.
+      + fcrush.
   Qed.
 
   (* Termination Preservation *)
   Theorem Top_n_preserves_termination n m p e1 e2 :
     Top_n n m p e1 e2 ->
     forall ρ1 ρ2,
-      G_n n m p (A0.occurs_free e1) (A0.occurs_free e2) ρ1 ρ2 ->
+      G_n n m p (A0.occurs_free e1) ρ1 ρ2 ->
       forall j1 v1,
         A0.bstep_fuel ρ1 e1 j1 (A0.Res v1) ->
         exists j2 v2,
@@ -171,7 +169,7 @@ Section Refinement.
   Theorem Top_n_val_ref n m p e1 e2 :
     Top_n n m p e1 e2 ->
     forall ρ1 ρ2,
-      G_n n m p (A0.occurs_free e1) (A0.occurs_free e2) ρ1 ρ2 ->
+      G_n n m p (A0.occurs_free e1) ρ1 ρ2 ->
       forall j1 v1,
         A0.bstep_fuel ρ1 e1 j1 (A0.Res v1) ->
         exists j2 v2,

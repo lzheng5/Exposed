@@ -2953,7 +2953,7 @@ Definition G_top i Γ1 ρ1 ρ2 :=
       exists v1 v2,
         M.get x ρ1 = Some v1 /\
           M.get x ρ2 = Some v2 /\
-          to_exposed v2 /\
+          to_exposed v2 /\ (* TODO: remove *)
           V_top i v1 v2.
 
 Lemma G_top_wf_env_l i Γ1 ρ1 ρ2 :
@@ -3040,6 +3040,7 @@ Proof.
   eapply refine_env_set; eauto.
   eapply V_top_refine_val; eauto.
 
+  (* TODO: simplify *)
   intros.
   destruct (M.elt_eq x0 x); subst.
   - repeat rewrite M.gss.

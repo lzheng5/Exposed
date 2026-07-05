@@ -38,7 +38,7 @@ Section Comp_n.
 
   Definition R_n n m := Cross (Cross (C0.R_n n) (fun v1 v2 => forall k, AM.R k v1 v2)) (C1.R_n m).
 
-  Definition G_n n m Γ1 Γ2 := Cross (Cross (C0.G_n n Γ1 Γ2) (fun ρ1 ρ2 => forall k, AM.G k Γ1 ρ1 ρ2)) (C1.G_n m Γ1 Γ2).
+  Definition G_n n m Γ1 := Cross (Cross (C0.G_n n Γ1) (fun ρ1 ρ2 => forall k, AM.G k Γ1 ρ1 ρ2)) (C1.G_n m Γ1).
 
   Lemma V_n_wf_val_r n m v1 v2:
     V_n n m v1 v2 ->
@@ -112,8 +112,8 @@ Section Comp_n.
     eapply Included_trans; eauto.
   Qed.
 
-  Lemma G_n_wf_env { n m Γ1 Γ2 ρ1 ρ2 } :
-    G_n n m Γ1 Γ2 ρ1 ρ2 ->
+  Lemma G_n_wf_env { n m Γ1 ρ1 ρ2 } :
+    G_n n m Γ1 ρ1 ρ2 ->
     wf_env ρ2.
   Proof.
     unfold G_n, Cross.
@@ -124,11 +124,10 @@ Section Comp_n.
     eapply (C1.G_n_wf_env HC1); eauto.
   Qed.
 
-  Lemma G_n_subset n m Γ1 Γ2 ρ1 Γ3 Γ4 ρ2 :
-    G_n n m Γ1 Γ2 ρ1 ρ2 ->
-    Γ3 \subset Γ1 ->
-    Γ4 \subset Γ3 ->
-    G_n n m Γ3 Γ4 ρ1 ρ2.
+  Lemma G_n_subset n m Γ1 Γ2 ρ1 ρ2 :
+    G_n n m Γ1 ρ1 ρ2 ->
+    Γ2 \subset Γ1 ->
+    G_n n m Γ2 ρ1 ρ2.
   Proof.
     unfold G_n, Cross.
     intros H.
@@ -152,7 +151,7 @@ Section Adequacy.
     Top_n n m e1 e2 ->
     forall ρ1 ρ2,
       wf_env ρ2 ->
-      G_n n m (A0.occurs_free e1) (A1.occurs_free e2) ρ1 ρ2 ->
+      G_n n m (A0.occurs_free e1) ρ1 ρ2 ->
       forall j1 r1,
         A0.bstep_fuel ρ1 e1 j1 r1 ->
         exists j2 r2,
@@ -182,7 +181,6 @@ Section Adequacy.
         * eapply AM.trans_correct_subset in HA; eauto.
           eapply Included_trans; eauto.
           eapply C0.Top_n_subset; eauto.
-        * eapply C1.Top_n_subset; eauto.
       + eexists; eexists; split; eauto.
   Qed.
 
@@ -191,7 +189,7 @@ Section Adequacy.
     Top_n n m e1 e2 ->
     forall ρ1 ρ2,
       wf_env ρ2 ->
-      G_n n m (A0.occurs_free e1) (A1.occurs_free e2) ρ1 ρ2 ->
+      G_n n m (A0.occurs_free e1) ρ1 ρ2 ->
       forall j1 v1,
         A0.bstep_fuel ρ1 e1 j1 (A0.Res v1) ->
         exists j2 v2,
@@ -245,7 +243,7 @@ Section Refinement.
     Top_n n m e1 e2 ->
     forall ρ1 ρ2,
       wf_env ρ2 ->
-      G_n n m (A0.occurs_free e1) (A1.occurs_free e2) ρ1 ρ2 ->
+      G_n n m (A0.occurs_free e1) ρ1 ρ2 ->
       forall j1 v1,
         A0.bstep_fuel ρ1 e1 j1 (A0.Res v1) ->
         exists j2 v2,

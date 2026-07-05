@@ -22,7 +22,7 @@ Section Refl0Comp.
 
   Definition R_n := Comp (fun r1 r2 => forall k, R k r1 r2).
 
-  Definition G_n n Γ1 (Γ2 : vars) := Comp (fun ρ1 ρ2 => forall k, G_top k Γ1 ρ1 ρ2) n.
+  Definition G_n n Γ1 := Comp (fun ρ1 ρ2 => forall k, G_top k Γ1 ρ1 ρ2) n.
 
   Lemma V_n_refl n v :
     V_n n v v.
@@ -109,14 +109,12 @@ Section Refl0Comp.
     eapply G_subset; eauto.
   Qed.
 
-  Lemma G_n_subset n Γ1 Γ2 ρ1 Γ3 Γ4 ρ2 :
-    G_n n Γ1 Γ2 ρ1 ρ2 ->
-    Γ3 \subset Γ1 ->
-    Γ4 \subset Γ3 ->
-    G_n n Γ3 Γ4 ρ1 ρ2.
+  Lemma G_n_subset n Γ1 Γ2 ρ1 ρ2 :
+    G_n n Γ1 ρ1 ρ2 ->
+    Γ2 \subset Γ1 ->
+    G_n n Γ2 ρ1 ρ2.
   Proof.
     intros H.
-    revert Γ3 Γ4.
     induction H; simpl; intros.
     - constructor.
     - econstructor.
@@ -132,7 +130,7 @@ Section Adequacy.
   Lemma Top_n_adequcy n e1 e2:
     Top_n n e1 e2 ->
     forall ρ1 ρ2,
-      G_n n (occurs_free e1) (occurs_free e2) ρ1 ρ2 ->
+      G_n n (occurs_free e1) ρ1 ρ2 ->
       forall j1 r1,
         bstep_fuel ρ1 e1 j1 r1 ->
         exists j2 r2,
@@ -154,8 +152,7 @@ Section Adequacy.
 
       edestruct (H0 j1 ρ1 ρ1') with (j1 := j1) as [j2 [r2 [Hr2 HR]]]; eauto.
       edestruct (IHHrel ρ1' ρ2) as [j3 [r3 [Hr3 HR']]]; eauto.
-      eapply G_n_subset with (Γ2 := occurs_free c3) (Γ4 := occurs_free c3); eauto.
-      eapply Top_n_subset; eauto.
+      eapply G_n_subset; eauto.
 
       eexists; eexists; split; eauto.
       econstructor; eauto.
@@ -171,7 +168,7 @@ Section Adequacy.
   Theorem Top_n_preserves_termination n e1 e2 :
     Top_n n e1 e2 ->
     forall ρ1 ρ2,
-      G_n n (occurs_free e1) (occurs_free e2) ρ1 ρ2 ->
+      G_n n (occurs_free e1) ρ1 ρ2 ->
       forall j1 v1,
         bstep_fuel ρ1 e1 j1 (Res v1) ->
         exists j2 v2,
@@ -302,7 +299,7 @@ Section Refinement.
   Theorem Top_n_val_ref n e1 e2 :
     Top_n n e1 e2 ->
     forall ρ1 ρ2,
-      G_n n (occurs_free e1) (occurs_free e2) ρ1 ρ2 ->
+      G_n n (occurs_free e1) ρ1 ρ2 ->
       forall j1 v1,
         bstep_fuel ρ1 e1 j1 (Res v1) ->
         exists j2 v2,

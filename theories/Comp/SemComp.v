@@ -37,7 +37,7 @@ Section Comp_n.
 
   Definition R_n n m := Cross (Cross (C0.R_n n) C.R) (C1.R_n m).
 
-  Definition G_n n m Γ1 Γ2 := Cross (Cross (C0.G_n n Γ1 Γ2) (C.G Γ1)) (C1.G_n m Γ1 Γ2).
+  Definition G_n n m Γ1 := Cross (Cross (C0.G_n n Γ1) (C.G Γ1)) (C1.G_n m Γ1).
 
   Lemma V_n_wf_val_r n m v1 v2:
     V_n n m v1 v2 ->
@@ -97,8 +97,8 @@ Section Comp_n.
     eapply Included_trans; eauto.
   Qed.
 
-  Lemma G_n_wf_env { n m Γ1 Γ2 ρ1 ρ2 } :
-    G_n n m Γ1 Γ2 ρ1 ρ2 ->
+  Lemma G_n_wf_env { n m Γ1 ρ1 ρ2 } :
+    G_n n m Γ1 ρ1 ρ2 ->
     wf_env ρ2.
   Proof.
     unfold G_n, Cross.
@@ -108,11 +108,10 @@ Section Comp_n.
     eapply (C1.G_n_wf_env HC1); eauto.
   Qed.
 
-  Lemma G_n_subset n m Γ1 Γ2 ρ1 Γ3 Γ4 ρ2 :
-    G_n n m Γ1 Γ2 ρ1 ρ2 ->
-    Γ3 \subset Γ1 ->
-    Γ4 \subset Γ3 ->
-    G_n n m Γ3 Γ4 ρ1 ρ2.
+  Lemma G_n_subset n m Γ1 Γ2 ρ1 ρ2 :
+    G_n n m Γ1 ρ1 ρ2 ->
+    Γ2 \subset Γ1 ->
+    G_n n m Γ2 ρ1 ρ2.
   Proof.
     unfold G_n, Cross.
     intros H.
