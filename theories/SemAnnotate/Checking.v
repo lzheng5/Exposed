@@ -2953,7 +2953,6 @@ Definition G_top i Γ1 ρ1 ρ2 :=
       exists v1 v2,
         M.get x ρ1 = Some v1 /\
           M.get x ρ2 = Some v2 /\
-          to_exposed v2 /\ (* TODO: remove *)
           V_top i v1 v2.
 
 Lemma G_top_wf_env_l i Γ1 ρ1 ρ2 :
@@ -3040,15 +3039,12 @@ Proof.
   eapply refine_env_set; eauto.
   eapply V_top_refine_val; eauto.
 
-  (* TODO: simplify *)
   intros.
   destruct (M.elt_eq x0 x); subst.
   - repeat rewrite M.gss.
-    eexists; eexists; repeat split; eauto.
-    eapply V_top_exposed_r; eauto.
+    fcrush.
   - repeat (rewrite M.gso; auto).
-    assert (x0 \in Γ1) by fcrush.
-    edestruct (HG x0) as [v1' [v2' [Heqv1' [Heqv2' HV]]]]; eauto.
+    fcrush.
 Qed.
 
 Lemma G_top_set_lists {i Γ1 ρ1 ρ2}:
@@ -3063,7 +3059,7 @@ Proof.
   induction xs; simpl; intros.
   - destruct vs1; try discriminate.
     destruct vs2; try discriminate.
-    inv H0; inv H1.
+    invc.
     eapply G_top_subset; eauto; normalize_sets;
       rewrite Union_Empty_set_neut_l; eauto;
       apply Included_refl.
@@ -3071,7 +3067,7 @@ Proof.
     destruct vs2; try discriminate.
     destruct (set_lists xs vs1 ρ1) eqn:Heq1; try discriminate.
     destruct (set_lists xs vs2 ρ2) eqn:Heq2; try discriminate.
-    inv H; inv H0; inv H1.
+    inv H; invc.
     eapply G_top_subset with (Γ1 := (a |: (FromList xs :|: Γ1))); eauto;
       try (normalize_sets;
            rewrite Union_assoc;
@@ -3089,7 +3085,11 @@ Proof.
   intros.
   destruct H as [Hwf1 [Hwf2 [Href HG]]].
   unfold Ensembles.Included, Ensembles.In, Dom_map in *.
-  hauto lq: on use: V_V_top.
+  repeat (split; eauto); intros.
+  edestruct HG as [v1 [v2 [Heqv1 [Heqv2 HV]]]]; eauto.
+  eexists; eexists; repeat (split; eauto).
+  eapply V_V_top; eauto.
+  eapply V_top_exposed_r; eauto.
 Qed.
 
 Lemma G_G_top i Γ1 ρ1 ρ2 :
@@ -3161,7 +3161,7 @@ Proof.
   intros.
   destruct H as [Hwf1 [Hwf2 [Href HG]]].
   repeat (split; eauto); intros.
-  edestruct HG as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; eauto.
+  edestruct HG as [v1 [v2 [Heqv1 [Heqv2 HV]]]]; eauto.
   eexists; eexists; repeat (split; eauto).
   apply V_top_mono with i; eauto.
 Qed.
