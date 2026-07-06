@@ -162,6 +162,8 @@ Module Top (LM : LSig) (VT : VTrans LM).
 
 End Top.
 
+(* TODO: refactor the top-level further *)
+
 Module IdTop.
 
   (* Relate Id to Id at the top level *)
@@ -170,29 +172,27 @@ Module IdTop.
   Import M.
 
   Lemma G_top_relate {i Γ1 ρ1 ρ2}:
-    Refl.G_top i Γ1 ρ1 ρ2 ->
-    Id.G_top i Γ1 ρ1 ρ2.
+    Refl.G_top i Γ1 ρ1 ρ2 <-> Id.G_top i Γ1 ρ1 ρ2.
   Proof.
-    unfold Id.G_top, Id.G_top, Ensembles.Included, Ensembles.In, Dom_map.
-    intros.
-    destruct H as [Hr1 [Hr2 HG]].
-    repeat (split; auto); intros.
-    destruct (HG x) as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; auto.
-    eexists; eexists; repeat (split; eauto); intros.
-    apply exposed_V_relate; auto.
+    unfold Refl.G_top, Id.G_top, Ensembles.Included, Ensembles.In, Dom_map.
+    split; intros;
+      destruct H as [Hr1 [Hr2 HG]];
+      repeat (split; auto); intros;
+      destruct (HG x) as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; auto;
+      eexists; eexists; repeat (split; eauto); intros;
+      apply exposed_V_relate; auto.
   Qed.
 
   Theorem top_relate {etop etop'} :
-    Id.trans_correct_top etop etop' ->
-    Refl.related_top etop etop'.
+    Id.trans_correct_top etop etop' <-> Refl.related_top etop etop'.
   Proof.
     unfold Id.trans_correct_top, Refl.related_top.
-    intros.
-    inv H.
-    split; auto; intros.
-    eapply exposed_E_relate; eauto.
-    eapply H1; eauto.
-    eapply G_top_relate; eauto.
+    split; intros H;
+      inv H;
+      split; auto; intros;
+      eapply exposed_E_relate; eauto;
+      eapply H1; eauto;
+      eapply G_top_relate; eauto.
   Qed.
 
   Theorem top {etop etop'} :
@@ -213,31 +213,28 @@ Module DPETop.
   Module M := Top DPE.LM DPE.VTransM.
   Import M.
 
-  Lemma G_top_relate {i Γ1 ρ1 Γ2 ρ2}:
-    Refl.G_top i Γ1 ρ1 ρ2 ->
-    DPE.G_top i Γ1 ρ1 Γ2 ρ2.
+  Lemma G_top_relate {i Γ1 ρ1 ρ2}:
+    Refl.G_top i Γ1 ρ1 ρ2 <-> DPE.G_top i Γ1 ρ1 ρ2.
   Proof.
-    unfold DPE.G_top, Id.G_top, Ensembles.Included, Ensembles.In, Dom_map.
-    intros.
-    destruct H as [Hr1 [Hr2 HG]].
-    repeat (split; auto); intros.
-    destruct (HG x) as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; auto.
-    eexists; repeat split; eauto; intros.
-    eexists; split; eauto.
-    apply exposed_V_relate; auto.
+    unfold Refl.G_top, DPE.G_top, Ensembles.Included, Ensembles.In, Dom_map.
+    split; intros;
+      destruct H as [Hr1 [Hr2 HG]];
+      repeat (split; auto); intros;
+      destruct (HG x) as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; auto;
+      eexists; eexists; repeat (split; eauto); intros;
+      apply exposed_V_relate; auto.
   Qed.
 
   Theorem top_relate {etop etop'} :
-    DPE.trans_correct_top etop etop' ->
-    Refl.related_top etop etop'.
+    DPE.trans_correct_top etop etop' <-> Refl.related_top etop etop'.
   Proof.
     unfold DPE.trans_correct_top, Refl.related_top.
-    intros.
-    inv H.
-    split; auto; intros.
-    eapply exposed_E_relate; eauto.
-    eapply H1; eauto.
-    eapply G_top_relate; eauto.
+    split; intros H;
+      inv H;
+      split; auto; intros;
+      eapply exposed_E_relate; eauto;
+      eapply H1; eauto;
+      eapply G_top_relate; eauto.
   Qed.
 
   Theorem top {etop etop'} :
@@ -258,31 +255,28 @@ Module DefuncTop.
   Module M := Top Defunc.LM Defunc.VTransM.
   Import M.
 
-  Lemma G_top_relate {i Γ1 ρ1 Γ2 ρ2}:
-    Refl.G_top i Γ1 ρ1 ρ2 ->
-    Defunc.G_top i Γ1 ρ1 Γ2 ρ2.
+  Lemma G_top_relate {i Γ1 ρ1 ρ2}:
+    Refl.G_top i Γ1 ρ1 ρ2 <-> Defunc.G_top i Γ1 ρ1 ρ2.
   Proof.
-    unfold Defunc.G_top, Refl.G_top, Ensembles.Included, Ensembles.In, Dom_map.
-    intros.
-    destruct H as [Hr1 [Hr2 HG]].
-    repeat (split; auto); intros.
-    destruct (HG x) as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; auto.
-    eexists; repeat split; eauto; intros.
-    eexists; split; eauto.
-    apply exposed_V_relate; auto.
+    unfold Refl.G_top, Defunc.G_top, Ensembles.Included, Ensembles.In, Dom_map.
+    split; intros;
+      destruct H as [Hr1 [Hr2 HG]];
+      repeat (split; auto); intros;
+      destruct (HG x) as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; auto;
+      eexists; eexists; repeat (split; eauto); intros;
+      apply exposed_V_relate; auto.
   Qed.
 
   Theorem top_relate {etop etop'} :
-    Defunc.trans_correct_top etop etop' ->
-    Refl.related_top etop etop'.
+    Defunc.trans_correct_top etop etop' <-> Refl.related_top etop etop'.
   Proof.
     unfold Defunc.trans_correct_top, Refl.related_top.
-    intros.
-    inv H.
-    split; auto; intros.
-    eapply exposed_E_relate; eauto.
-    eapply H1; eauto.
-    eapply G_top_relate; eauto.
+    split; intros H;
+      inv H;
+      split; auto; intros;
+      eapply exposed_E_relate; eauto;
+      eapply H1; eauto;
+      eapply G_top_relate; eauto.
   Qed.
 
   Theorem top {etop etop'} :
@@ -303,31 +297,28 @@ Module ConstPropTop.
   Module M := Top ConstProp.LM ConstProp.VTransM.
   Import M.
 
-  Lemma G_top_relate {i Γ1 ρ1 Γ2 ρ2}:
-    Refl.G_top i Γ1 ρ1 ρ2 ->
-    ConstProp.G_top i Γ1 ρ1 Γ2 ρ2.
+  Lemma G_top_relate {i Γ1 ρ1 ρ2}:
+    Refl.G_top i Γ1 ρ1 ρ2 <-> ConstProp.G_top i Γ1 ρ1 ρ2.
   Proof.
-    unfold ConstProp.G_top, Refl.G_top, Ensembles.Included, Ensembles.In, Dom_map.
-    intros.
-    destruct H as [Hr1 [Hr2 HG]].
-    repeat (split; auto); intros.
-    destruct (HG x) as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; auto.
-    eexists; repeat split; eauto; intros.
-    eexists; split; eauto.
-    apply exposed_V_relate; auto.
+    unfold Refl.G_top, ConstProp.G_top, Ensembles.Included, Ensembles.In, Dom_map.
+    split; intros;
+      destruct H as [Hr1 [Hr2 HG]];
+      repeat (split; auto); intros;
+      destruct (HG x) as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; auto;
+      eexists; eexists; repeat (split; eauto); intros;
+      apply exposed_V_relate; auto.
   Qed.
 
   Theorem top_relate {etop etop'} :
-    ConstProp.trans_correct_top etop etop' ->
-    Refl.related_top etop etop'.
+    ConstProp.trans_correct_top etop etop' <-> Refl.related_top etop etop'.
   Proof.
     unfold ConstProp.trans_correct_top, Refl.related_top.
-    intros.
-    inv H.
-    split; auto; intros.
-    eapply exposed_E_relate; eauto.
-    eapply H1; eauto.
-    eapply G_top_relate; eauto.
+    split; intros H;
+      inv H;
+      split; auto; intros;
+      eapply exposed_E_relate; eauto;
+      eapply H1; eauto;
+      eapply G_top_relate; eauto.
   Qed.
 
   Theorem top {etop etop'} :

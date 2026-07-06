@@ -4,6 +4,7 @@ From CertiCoq.LambdaANF Require Import Ensembles_util map_util set_util List_uti
 From CertiCoq.Libraries Require Import maps_util.
 Import ListNotations.
 Require Import Lia.
+From Hammer Require Import Hammer Tactics Reflect.
 
 From Common Require Import Util.
 From LambdaWeb Require Import ANF Exposed.
@@ -1345,30 +1346,28 @@ Proof.
 Qed.
 
 (* Top Level *)
-Definition G_top i Γ1 ρ1 Γ2 ρ2 :=
+Definition G_top i Γ1 ρ1 ρ2 :=
   wf_env ρ1 /\
   wf_env ρ2 /\
-  forall x,
-    (x \in Γ1) ->
-    exists v1,
-      M.get x ρ1 = Some v1 /\
-      exposed v1 /\
-      ((x \in Γ2) ->
-       exists v2,
-         M.get x ρ2 = Some v2 /\
-         V i v1 v2).
+  (forall x,
+    (x \in Γ1 ->
+     exists v1 v2,
+       M.get x ρ1 = Some v1 /\
+       M.get x ρ2 = Some v2 /\
+       exposed v1 /\
+       V i v1 v2)).
 
 Lemma G_top_G : forall {i Γ1 ρ1 Γ2 ρ2},
-    G_top i Γ1 ρ1 Γ2 ρ2 ->
+    G_top i Γ1 ρ1 ρ2 ->
+    Γ2 \subset Γ1 ->
     G i Γ1 ρ1 Γ2 ρ2.
 Proof.
   unfold G_top, G.
   intros.
   destruct H as [Hr1 [Hr2 HG]].
   repeat (split; auto); intros.
-  edestruct HG as [v1' [Heqv1' [Hexv1' Hv2]]]; eauto.
-  rewrite Heqv1' in H0; inv H0.
-  destruct Hv2 as [v2 [Heqv2 HV]]; eauto.
+  edestruct HG as [v1' [v2 [Heqv1' [Heqv2 [Hexv1' Hv2]]]]]; eauto; invc.
+  fcrush.
 Qed.
 
 Definition C_inv_top Γ :=
@@ -1379,16 +1378,12 @@ Definition C_inv_top Γ :=
 Lemma C_inv_top_C_inv Γ ρ :
   C_inv_top Γ ->
   C_inv Γ ρ.
-Proof.
-  unfold C_inv_top, C_inv.
-  intros.
-  rewrite (H _ H1) in H0; inv H0.
-Qed.
+Proof. unfold C_inv_top, C_inv; fcrush. Qed.
 
 Definition trans_correct_top etop etop' :=
   (occurs_free etop') \subset (occurs_free etop) /\
   forall i ρ1 ρ2,
-    G_top i (occurs_free etop) ρ1 (occurs_free etop') ρ2 ->
+    G_top i (occurs_free etop) ρ1 ρ2 ->
     E true i ρ1 etop ρ2 etop'.
 
 Theorem top etop etop' :
@@ -1405,4 +1400,5 @@ Proof.
   eapply H1; auto.
   - eapply C_inv_top_C_inv; eauto.
   - eapply G_top_G; eauto.
+    eapply trans_exp_inv; eauto.
 Qed.
