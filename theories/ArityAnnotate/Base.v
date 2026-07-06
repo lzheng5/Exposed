@@ -9,7 +9,6 @@ Definition arity_to_web (n : nat) : web := Pos.of_nat n.
 (* We annotate constructor values with a single Exposed web id, since the sum and prod types get merged together in the language definition. But this matches with CertiCoq. *)
 (* Annotate constructor values with `wc`.
    This works since closure and constructor values live in different web universes. *)
-(* TODO: rename *)
 Definition w_constr := arity_to_web 0.
 
 Parameter w_constr_exposed : (w_constr \in Exposed).

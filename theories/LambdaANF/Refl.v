@@ -734,18 +734,10 @@ Proof.
 Qed.
 
 (* Top Level *)
-Definition G_top i Γ1 ρ1 ρ2 :=
-  G i Γ1 ρ1 ρ2.
-
-Lemma G_top_G : forall {i Γ1 ρ1 ρ2},
-    G_top i Γ1 ρ1 ρ2 ->
-    G i Γ1 ρ1 ρ2.
-Proof. unfold G_top. intros; auto. Qed.
-
 Definition related_top etop etop' :=
   occurs_free etop' \subset occurs_free etop /\
   forall i ρ1 ρ2,
-    G_top i (occurs_free etop) ρ1 ρ2 ->
+    G i (occurs_free etop) ρ1 ρ2 ->
     E i ρ1 etop ρ2 etop'.
 
 Theorem top {etop}:
@@ -780,7 +772,7 @@ Theorem trans_related_top :
   Transitive related_top.
 Proof.
   intros e1 e2 e3.
-  unfold related_top, G_top.
+  unfold related_top.
   intros.
   destruct H.
   destruct H0.
@@ -789,7 +781,5 @@ Proof.
   - eapply trans_E; eauto.
     intros.
     eapply H2; eauto.
-    repeat (split; auto); intros.
-    unfold Ensembles.Included, Ensembles.In in *.
     eapply refl_G; eauto.
 Qed.

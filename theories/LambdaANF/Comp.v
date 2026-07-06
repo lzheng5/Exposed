@@ -22,7 +22,7 @@ Section Refl0Comp.
 
   Definition R_n := Comp (fun r1 r2 => forall k, R k r1 r2).
 
-  Definition G_n n Γ1 := Comp (fun ρ1 ρ2 => forall k, G_top k Γ1 ρ1 ρ2) n.
+  Definition G_n n Γ1 := Comp (fun ρ1 ρ2 => forall k, G k Γ1 ρ1 ρ2) n.
 
   Lemma V_n_refl n v :
     V_n n v v.
@@ -98,17 +98,6 @@ Section Refl0Comp.
       eapply Included_trans; eauto.
   Qed.
 
-  Lemma G_top_subset i Γ1 ρ1 Γ2 ρ2:
-    G_top i Γ1 ρ1 ρ2 ->
-    Γ2 \subset Γ1 ->
-    G_top i Γ2 ρ1 ρ2.
-  Proof.
-    unfold G_top.
-    intros.
-    repeat (split; auto).
-    eapply G_subset; eauto.
-  Qed.
-
   Lemma G_n_subset n Γ1 Γ2 ρ1 ρ2 :
     G_n n Γ1 ρ1 ρ2 ->
     Γ2 \subset Γ1 ->
@@ -119,7 +108,7 @@ Section Refl0Comp.
     - constructor.
     - econstructor.
       + intros.
-        eapply G_top_subset; eauto.
+        eapply G_subset; eauto.
       + eapply IHComp; eauto.
   Qed.
 
@@ -345,14 +334,6 @@ Section Linking.
     unfold related_top, related.
     intros.
     split; auto; intros.
-  Qed.
-
-  Lemma G_G_top i Γ1 ρ1 ρ2 :
-    G i Γ1 ρ1 ρ2 ->
-    G_top i Γ1 ρ1 ρ2.
-  Proof.
-    unfold G, G_top.
-    intros; auto.
   Qed.
 
   Lemma related_top_related e1 e2 :
