@@ -498,43 +498,48 @@ Section Linking.
      Print link.
    *)
 
-  (* Environment Lemmas *)
-  Lemma G_top_get_list {i Γ1 ρ1 ρ2} :
-    G_top i Γ1 ρ1 ρ2 ->
-    forall xs,
-      (FromList xs) \subset Γ1 ->
-      exists vs1 vs2,
-        get_list xs ρ1 = Some vs1 /\
-        get_list xs ρ2 = Some vs2 /\
-        Forall2 (V i) vs1 vs2.
+  Lemma G_top_get {i Γ ρ1 ρ2}:
+    G_top i Γ ρ1 ρ2 ->
+    forall x v1,
+      (x \in Γ) ->
+      M.get x ρ1 = Some v1 ->
+      exists v2,
+        M.get x ρ2 = Some v2 /\
+          exposed v1 /\
+          V i v1 v2.
   Proof.
     unfold G_top.
-    intros HG xs.
+    intros HG; intros.
     destruct HG as [Hr1 [Hr2 HG]].
-    induction xs; simpl; intros.
-    - eexists; eexists; repeat split; eauto.
-    - rewrite FromList_cons in H.
-      edestruct IHxs as [vs1 [vs2 [Heqvs1 [Heqvs2 HVs]]]].
-      eapply Included_trans; eauto.
-      apply Included_Union_r.
-
-      destruct (HG a) as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]].
-      unfold Ensembles.Included, Ensembles.In, FromList in *.
-      eapply H; eauto.
-      apply Union_introl; auto.
-
-      rewrite Heqv1.
-      rewrite Heqvs1.
-      rewrite Heqv2.
-      rewrite Heqvs2.
-      exists (v1 :: vs1), (v2 :: vs2); split; auto.
+    edestruct HG as [v1' [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; eauto; invc.
+    fcrush.
   Qed.
 
-  Lemma G_top_set {i Γ1 ρ1 ρ2}:
+  Lemma G_top_get_list {i Γ1 ρ1 ρ2} :
+    G_top i Γ1 ρ1 ρ2 ->
+    forall xs vs1,
+      (FromList xs) \subset Γ1 ->
+      get_list xs ρ1 = Some vs1 ->
+      exists vs2,
+        get_list xs ρ2 = Some vs2 /\
+          Forall exposed vs1 /\
+          Forall2 (V i) vs1 vs2.
+  Proof.
+    intros HG xs.
+    induction xs; simpl; intros.
+    - fcrush.
+    - destruct (ρ1 ! a) eqn:Heq1; try discriminate.
+      destruct (get_list xs ρ1) eqn:Heq3; try discriminate.
+      inv H0.
+      unfold Ensembles.Included, Ensembles.In in *.
+      edestruct (G_top_get HG) as [v2 [Heqv2 [Hex HV]]]; eauto.
+      eapply (H a); fcrush.
+      edestruct IHxs as [vs2 [Heqvs2 Vvs]]; eauto; fcrush.
+  Qed.
+
+  Lemma G_top_set i Γ1 ρ1 ρ2:
     G_top i Γ1 ρ1 ρ2 ->
     forall {x v1 v2},
-      wf_val v1 ->
-      wf_val v2 ->
       exposed v1 ->
       V i v1 v2 ->
       G_top i (x |: Γ1) (M.set x v1 ρ1) (M.set x v2 ρ2).
@@ -544,68 +549,45 @@ Section Linking.
     destruct H as [Hr1 [Hr2 HG]].
     split.
     eapply wf_env_set; eauto.
+    eapply V_wf_val_l; eauto.
 
     split.
     eapply wf_env_set; eauto.
+    eapply V_wf_val_r; eauto.
 
     intros.
     destruct (M.elt_eq x0 x); subst.
     - repeat rewrite M.gss.
-      eexists; repeat split; eauto.
+      fcrush.
     - repeat (rewrite M.gso; auto).
-      inv H.
-      inv H4; contradiction.
-      eapply HG; eauto.
+      fcrush.
   Qed.
 
   Lemma G_top_set_lists {i Γ1 ρ1 ρ2}:
     G_top i Γ1 ρ1 ρ2 ->
-    forall {xs vs1 vs2 ρ3 ρ4 w},
-      Forall2 (V i) vs1 vs2 ->
-      (w \in Exposed) ->
+    forall xs vs1 vs2 ρ3 ρ4,
       Forall exposed vs1 ->
-      Forall exposed vs2 ->
+      Forall2 (V i) vs1 vs2 ->
       set_lists xs vs1 ρ1 = Some ρ3 ->
       set_lists xs vs2 ρ2 = Some ρ4 ->
       G_top i (FromList xs :|: Γ1) ρ3 ρ4.
   Proof.
-    unfold G_top.
     intros HG xs.
     induction xs; simpl; intros.
     - destruct vs1; try discriminate.
       destruct vs2; try discriminate.
-      inv H3; inv H4.
-      destruct HG as [Hr1 [Hr2 HG]].
-      repeat (split; auto); intros.
-      inv H3.
-      inv H4.
-      eapply HG; eauto.
+      invc.
+      fcrush.
     - destruct vs1; try discriminate.
       destruct vs2; try discriminate.
       destruct (set_lists xs vs1 ρ1) eqn:Heq1; try discriminate.
       destruct (set_lists xs vs2 ρ2) eqn:Heq2; try discriminate.
-      inv H; inv H1; inv H2; inv H3; inv H4.
-      destruct HG as [Hr1 [Hr2 HG]].
-
-      split.
-      eapply wf_env_set; eauto.
-      eapply (wf_env_set_lists _ Hr1 vs1 xs); eauto.
-      eapply V_wf_val_Forall_l; eauto.
-      eapply V_wf_val_l; eauto.
-
-      split.
-      eapply wf_env_set; eauto.
-      eapply (wf_env_set_lists _ Hr2 vs2 xs); eauto.
-      eapply V_wf_val_Forall_r; eauto.
-      eapply V_wf_val_r; eauto.
-
-      intros.
-      destruct (M.elt_eq x a); subst.
-      + repeat rewrite M.gss in *; eauto.
-        eexists; eexists; split; eauto.
-      + repeat (rewrite M.gso in *; auto).
-        edestruct IHxs as [v1' [v2' [Heqv1' [Heqv2' [Hex HV']]]]]; eauto.
-        eapply not_In_cons_Union; eauto.
+      inv H; inv H0; invc.
+      eapply G_top_subset; eauto.
+      eapply G_top_set; eauto.
+      normalize_sets.
+      rewrite Union_assoc; eauto.
+      fcrush.
   Qed.
 
   (* Monotonicity Lemma *)
@@ -617,7 +599,7 @@ Section Linking.
     unfold G_top.
     intros.
     destruct H as [Hr1 [Hr2 HG]].
-    repeat (split; auto); intros.
+    repeat (split; eauto); intros.
     edestruct HG as [v1 [v2 [Heqv1 [Heqv2 [Hex HV]]]]]; eauto.
     eexists; eexists; repeat split; eauto.
     apply V_mono with i; eauto.
@@ -645,7 +627,7 @@ Section Linking.
 
     apply (He (i - (i - j)) ρ3 ρ4); auto.
     eapply G_top_subset with (Γ1 := FromList xs :|: (f |: Γ1)); eauto.
-    eapply G_top_set_lists; eauto.
+    eapply G_top_set_lists with (xs := xs) (vs1 := vs1); eauto.
     eapply G_top_set; eauto.
     eapply G_top_mono; eauto; try lia.
     apply V_mono with i; try lia.
@@ -703,8 +685,7 @@ Section Linking.
     inv H4.
     - exists 0, OOT; split; simpl; auto.
     - inv H2.
-      + edestruct (HG' f) as [fv1 [fv2 [Heqfv1 [Heqfv2 [Hexfv HVf]]]]]; eauto.
-        rewrite Heqfv1 in H10; inv H10.
+      + edestruct (G_top_get HG f) as [fv2 [Heqfv2 [Hexfv HVf]]]; eauto.
         destruct fv2.
         destruct i.
         inv H3.
@@ -716,10 +697,8 @@ Section Linking.
         destruct v0; try contradiction.
         destruct HV as [Hlen HV].
 
-        edestruct (G_top_get_list HG xs) as [vs1 [vs2 [Heqvs1 [Heqvs2 HVvs]]]].
+        edestruct (G_top_get_list HG xs) as [vs2 [Heqvs2 [Hexvs HVvs]]]; eauto.
         eapply free_letapp_xs_subset; eauto.
-
-        rewrite Heqvs1 in H11; inv H11.
 
         destruct (set_lists_length3 (M.set v0 (Tag w0 (Vfun v0 t l e0)) t) l vs2) as [ρ4 Heqρ4].
         unfold wval in *.
@@ -728,28 +707,14 @@ Section Linking.
 
         unfold E' in HV.
         edestruct (HV i vs vs2 ρ'' ρ4) with (j1 := c0) as [j2 [r2 [He0 HR]]]; eauto; try lia.
-        * fcrush.
         * intros.
           eapply V_exposed_Forall; eauto.
-          fcrush.
         * eapply V_mono_Forall; eauto; lia.
         * destruct r2; simpl in HR; try contradiction.
           edestruct (H1 (i - c0) (M.set x v ρ1) (M.set x w ρ2)) with (j1 := c') as [j3 [r3 [He1 HR']]]; eauto; try lia.
           eapply G_top_subset with (Γ1 := x |: (occurs_free (Eletapp x f w0 xs k))); eauto.
           eapply G_top_set; eauto.
           eapply G_top_mono; eauto; lia.
-          -- eapply bstep_fuel_wf_res in H15; eauto; inv H15; auto.
-             eapply (wf_env_set_lists (M.set f' (Tag w0 (Vfun f' ρ' xs' e)) ρ')) with (xs := xs') (vs := vs); eauto.
-             eapply wf_env_set; eauto.
-             inv Hfv1.
-             inv H9; auto.
-             eapply V_wf_val_Forall_l; eauto.
-          -- eapply bstep_fuel_wf_res in He0; eauto; inv He0; auto.
-             eapply (wf_env_set_lists (M.set v0 (Tag w0 (Vfun v0 t l e0)) t)) with (xs := l) (vs := vs2); eauto.
-             eapply wf_env_set; eauto.
-             inv Hfv2.
-             inv H9; auto.
-             eapply V_wf_val_Forall_r; eauto.
           -- destruct H16; auto.
           -- eapply V_mono; eauto; try lia.
           -- eapply free_letapp_k_subset; eauto.
@@ -764,7 +729,7 @@ Section Linking.
              eapply V_exposed_Forall; eauto.
              eapply V_exposed; eauto.
              inv He1; auto.
-      + eexists; exists OOT; split; simpl; eauto.
+      + fcrush.
   Qed.
 
   (* Linking Preservation for [related_top] *)
