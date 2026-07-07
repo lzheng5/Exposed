@@ -7,9 +7,9 @@ Require Import Lia.
 From Hammer Require Import Hammer Tactics Reflect.
 
 From Common Require Import Util RelComp.
-From LambdaANF Require Import ANF Comp.
-From Comp Require Import TrivialComp.
-From LambdaWeb Require Import UniqueExposed ANF Comp.
+From LambdaANF Require Import ANF CompLex.
+From Comp Require Import ArityComp.
+From LambdaWeb Require Import ANF Comp.
 From Erase Require Import Erase Comp.
 
 (* Compositionality of The Cross-language Pipeline with Erase
@@ -30,7 +30,7 @@ Module A1 := LambdaWeb.ANF.
 Module C0 := LambdaANF.Comp.
 Module C1 := LambdaWeb.Comp.
 
-Module C := TrivialComp.
+Module C := ArityComp.
 Module EC := Erase.Comp.
 
 Section Comp_n.
@@ -121,7 +121,7 @@ Section Adequacy.
       + eapply Erase.trans_correct_top_subset in HA; eauto.
         eapply Included_trans; eauto.
         eapply C.Top_n_subset; eauto.
-      + fcrush.
+      + eexists; eexists; split; eauto.
   Qed.
 
   (* Termination Preservation *)
@@ -138,7 +138,7 @@ Section Adequacy.
     intros.
     edestruct Top_n_adequacy with (ρ1 := ρ1) as [j2 [r2 [Hr2 HR]]]; eauto.
     edestruct R_n_Res_inv as [v2 [Heq HVn]]; eauto; subst.
-    eexists; eexists; split; eauto.
+    fcrush.
   Qed.
 
 End Adequacy.
@@ -197,11 +197,11 @@ Section Linking.
     intros.
     destruct H as [e3 [[e4 [HC0 HA1]] HC1]].
     destruct H0 as [e3' [[e4' [HC0' HA1']] HC1']].
-    destruct Exposed_nonempty as [w0 Hw].
 
-    eapply (C.Top_n_preserves_linking f w0 x n n') in HC0; eauto.
-    eapply (EC.preserves_linking f w0 x e4 e3 e4' e3') in HA1; eauto.
+    eapply (C.Top_n_preserves_linking f x n n') in HC0; eauto.
+    eapply (EC.preserves_linking f AC.w_link x e4 e3 e4' e3') in HA1; eauto.
     eapply (C0.Top_n_preserves_linking f x p p') in HC1; eauto.
+    eapply AC.w_link_exposed; eauto.
   Qed.
 
   Corollary Top_n_preserves_linking_l f x n n' m p e1 e2 e1' e2' :

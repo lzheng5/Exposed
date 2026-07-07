@@ -8,6 +8,12 @@ theories/LambdaANF/ANF.v
 theories/LambdaANF/Refl.v
 theories/LambdaANF/Comp.v
 
+theories/LambdaANF/Tactics.v
+theories/LambdaANF/Util.v
+theories/LambdaANF/ANFLex.v
+theories/LambdaANF/ReflLex.v
+theories/LambdaANF/CompLex.v
+
 -Q theories/LambdaWeb LambdaWeb
 theories/LambdaWeb/Base.v
 theories/LambdaWeb/UniqueExposed.v
@@ -27,6 +33,10 @@ theories/LambdaWeb/SemSubst2.v
 theories/LambdaWeb/IdComp.v
 theories/LambdaWeb/Comp.v
 
+-Q theories/Erase Erase
+theories/Erase/Erase.v
+theories/Erase/Comp.v
+
 # Syntactic Analysis Framework
 # Annotate with Single Unique Exposed Web Id
 -Q theories/TrivialAnnotate TrivialAnnotate
@@ -44,7 +54,6 @@ theories/ArityAnnotate/Arity.v
 theories/ArityAnnotate/ArityAttempt.v
 theories/ArityAnnotate/ArityAnnotate.v
 #theories/ArityAnnotate/Known.v
-#theories/TrivialAnnotate/KnownAnnotate.v
 theories/ArityAnnotate/Comp.v
 
 # Semantic Analysis Framework
@@ -56,13 +65,11 @@ theories/SemAnnotate/Reify.v
 theories/SemAnnotate/Comp.v
 theories/SemAnnotate/CompAttempt.v
 
--Q theories/Erase Erase
-theories/Erase/Erase.v
-theories/Erase/Comp.v
-
 -Q theories/Comp Comp
 theories/Comp/TrivialComp.v
 theories/Comp/TrivialCompTop.v
+theories/Comp/ArityCompLex.v
+theories/Comp/ArityCompLexTop.v
 theories/Comp/ArityComp.v
 theories/Comp/ArityCompTop.v
 theories/Comp/SemComp.v

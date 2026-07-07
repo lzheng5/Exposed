@@ -7,7 +7,7 @@ Require Import Lia.
 From Hammer Require Import Hammer Tactics Reflect.
 
 From Common Require Import Util RelComp.
-From LambdaANF Require Import ANF Comp.
+From LambdaANF Require Import ANF CompLex.
 From ArityAnnotate Require Import Comp.
 From LambdaWeb Require Import ANF Comp.
 
@@ -24,7 +24,7 @@ From LambdaWeb Require Import ANF Comp.
 Module A0 := LambdaANF.ANF.
 Module A1 := LambdaWeb.ANF.
 
-Module C0 := LambdaANF.Comp.
+Module C0 := LambdaANF.CompLex.
 Module C1 := LambdaWeb.Comp.
 
 Module AC := ArityAnnotate.Comp.
