@@ -4,6 +4,7 @@ From CertiCoq.LambdaANF Require Import Ensembles_util map_util set_util List_uti
 From CertiCoq.Libraries Require Import maps_util.
 Import ListNotations.
 Require Import Lia.
+From Hammer Require Import Hammer Tactics Reflect.
 
 From Common Require Import Util.
 From LambdaANF Require Import ANF.
@@ -734,10 +735,75 @@ Proof.
 Qed.
 
 (* Top Level *)
+(* λANF's top-level environment relation presented in the paper *)
+Definition G_top' i Γ ρ1 ρ2 :=
+  G i Γ ρ1 ρ2 /\ (Γ \subset (Dom_map ρ1)).
+
+Lemma G_top'_G i Γ ρ1 ρ2 :
+  G_top' i Γ ρ1 ρ2 ->
+  G i Γ ρ1 ρ2.
+Proof. unfold G_top'; tauto. Qed.
+
+Lemma refl_G_top' i Γ ρ :
+  (Γ \subset (Dom_map ρ)) ->
+  G_top' i Γ ρ ρ.
+Proof.
+  unfold G_top'.
+  intros; split; auto.
+  eapply refl_G; eauto.
+Qed.
+
+(* But we will actually use the following alternative definition. *)
+Definition G_top i Γ ρ1 ρ2 :=
+  forall x,
+    (x \in Γ) ->
+    exists v1 v2,
+      M.get x ρ1 = Some v1 /\
+        M.get x ρ2 = Some v2 /\
+        V i v1 v2.
+
+Lemma G_top_subset i Γ1 ρ1 Γ2 ρ2:
+  G_top i Γ1 ρ1 ρ2 ->
+  Γ2 \subset Γ1 ->
+  G_top i Γ2 ρ1 ρ2.
+Proof. unfold G_top. fcrush. Qed.
+
+Lemma G_top_G {i Γ1 ρ1 ρ2} :
+  G_top i Γ1 ρ1 ρ2 ->
+  G i Γ1 ρ1 ρ2.
+Proof.
+  unfold G_top, G.
+  intros.
+  edestruct (H x) as [v1' [v2 [Heqv1' [Heqv2 HV]]]]; eauto; invc; fcrush.
+Qed.
+
+(* G_top' and G_top are equivalent! *)
+Lemma G_top_G_top' i Γ ρ1 ρ2 :
+  G_top i Γ ρ1 ρ2 ->
+  G_top' i Γ ρ1 ρ2.
+Proof.
+  unfold G_top'.
+  intros.
+  split.
+  eapply G_top_G; eauto.
+  unfold G_top, Ensembles.Included, Ensembles.In, Dom_map in *.
+  fcrush.
+Qed.
+
+Lemma G_top'_G_top i Γ ρ1 ρ2 :
+  G_top' i Γ ρ1 ρ2 ->
+  G_top i Γ ρ1 ρ2.
+Proof.
+  unfold G_top, G_top', G.
+  intros [HG HS]; intros.
+  unfold Ensembles.Included, Ensembles.In, Dom_map in *.
+  fcrush.
+Qed.
+
 Definition related_top etop etop' :=
   occurs_free etop' \subset occurs_free etop /\
   forall i ρ1 ρ2,
-    G i (occurs_free etop) ρ1 ρ2 ->
+    G_top i (occurs_free etop) ρ1 ρ2 ->
     E i ρ1 etop ρ2 etop'.
 
 Theorem top {etop}:
@@ -750,6 +816,7 @@ Proof.
   split; intros.
   apply Included_refl.
   eapply H; eauto.
+  eapply G_top_G; eauto.
 Qed.
 
 (* Reflexivity of [related_top] *)
@@ -765,6 +832,7 @@ Proof.
     unfold related.
   intros.
   eapply H0; eauto.
+  eapply G_top_G; eauto.
 Qed.
 
 (* Transitivity of [related_top] *)
@@ -772,7 +840,7 @@ Theorem trans_related_top :
   Transitive related_top.
 Proof.
   intros e1 e2 e3.
-  unfold related_top.
+  unfold related_top, G_top.
   intros.
   destruct H.
   destruct H0.
@@ -781,5 +849,9 @@ Proof.
   - eapply trans_E; eauto.
     intros.
     eapply H2; eauto.
-    eapply refl_G; eauto.
+    intros.
+    unfold Ensembles.Included, Ensembles.In in *.
+    edestruct (H3 x) as [v1 [v2 [Heqv1 [Heqv2 HV]]]]; eauto.
+    eexists; eexists; repeat (split; eauto).
+    eapply refl_V; eauto.
 Qed.
