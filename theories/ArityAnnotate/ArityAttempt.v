@@ -21,16 +21,16 @@ From ArityAnnotate Require Import Base.
 
 (* Note this is basically annotating with `fun_tag`s in CertiCoq, but there are no internal webs. *)
 
-Module A0 := LambdaANF.ANF.
-Module A1 := LambdaWeb.ANF.
+Module AS := LambdaANF.ANF.
+Module AT := LambdaWeb.ANF.
 Module AM := AnnotateTop.
 
 (* Specification *)
-Inductive trans (Γ : vars) : A0.exp -> A1.exp -> Prop :=
+Inductive trans (Γ : vars) : AS.exp -> AT.exp -> Prop :=
 | Trans_ret :
   forall {x},
     (x \in Γ) ->
-    trans Γ (A0.Eret x) (A1.Eret x)
+    trans Γ (AS.Eret x) (AT.Eret x)
 
 | Trans_fun :
   forall {f xs e k e' k'},
@@ -38,7 +38,7 @@ Inductive trans (Γ : vars) : A0.exp -> A1.exp -> Prop :=
     (w \in Exposed) ->
     trans (FromList xs :|: (f |: Γ)) e e' ->
     trans (f |: Γ) k k' ->
-    trans Γ (A0.Efun f xs e k) (A1.Efun f w xs e' k')
+    trans Γ (AS.Efun f xs e k) (AT.Efun f w xs e' k')
 
 | Trans_app :
   forall {f xs},
@@ -46,7 +46,7 @@ Inductive trans (Γ : vars) : A0.exp -> A1.exp -> Prop :=
     (FromList xs \subset Γ) ->
     let w := arity_to_web (length xs) in
     (w \in Exposed) ->
-    trans Γ (A0.Eapp f xs) (A1.Eapp f w xs)
+    trans Γ (AS.Eapp f xs) (AT.Eapp f w xs)
 
 | Trans_letapp :
   forall {x f xs k k'},
@@ -55,37 +55,37 @@ Inductive trans (Γ : vars) : A0.exp -> A1.exp -> Prop :=
     let w := arity_to_web (length xs) in
     (w \in Exposed) ->
     trans (x |: Γ) k k' ->
-    trans Γ (A0.Eletapp x f xs k) (A1.Eletapp x f w xs k')
+    trans Γ (AS.Eletapp x f xs k) (AT.Eletapp x f w xs k')
 
 | Trans_constr :
   forall {x t xs k k'},
     (FromList xs \subset Γ) ->
     trans (x |: Γ) k k' ->
-    trans Γ (A0.Econstr x t xs k) (A1.Econstr x w_constr t xs k')
+    trans Γ (AS.Econstr x t xs k) (AT.Econstr x w_constr t xs k')
 
 | Trans_proj :
   forall {x y k k' n},
     (y \in Γ) ->
     trans (x |: Γ) k k' ->
-    trans Γ (A0.Eproj x n y k) (A1.Eproj x w_constr n y k')
+    trans Γ (AS.Eproj x n y k) (AT.Eproj x w_constr n y k')
 
 | Trans_case_nil :
   forall {x},
     (x \in Γ) ->
-    trans Γ (A0.Ecase x []) (A1.Ecase x w_constr [])
+    trans Γ (AS.Ecase x []) (AT.Ecase x w_constr [])
 
 | Trans_case_cons :
   forall {x e e' t cl cl'},
     (x \in Γ) ->
     trans Γ e e' ->
-    trans Γ (A0.Ecase x cl) (A1.Ecase x w_constr cl') ->
-    trans Γ (A0.Ecase x ((t, e) :: cl)) (A1.Ecase x w_constr ((t, e') :: cl')).
+    trans Γ (AS.Ecase x cl) (AT.Ecase x w_constr cl') ->
+    trans Γ (AS.Ecase x ((t, e) :: cl)) (AT.Ecase x w_constr ((t, e') :: cl')).
 
 Hint Constructors trans : core.
 
 Lemma trans_exp_inv {Γ e e'} :
   trans Γ e e' ->
-  (A1.occurs_free e') \subset (A0.occurs_free e).
+  (AT.occurs_free e') \subset (AS.occurs_free e).
 Proof.
   unfold Ensembles.Included, Ensembles.In.
   intros H.
@@ -152,7 +152,7 @@ Definition trans_correct Γ e1 e2 :=
 
 Lemma ret_compat Γ x :
   (x \in Γ) ->
-  trans_correct Γ (A0.Eret x) (A1.Eret x).
+  trans_correct Γ (AS.Eret x) (AT.Eret x).
 Proof.
   unfold trans_correct, E, AM.E, AM.VM.E, E'.
   intros.
@@ -160,7 +160,7 @@ Proof.
   - fcrush.
   - inv H3.
     edestruct (AM.G_get H0) as [v2 [Heqv2 HV]]; eauto.
-    exists 1, (A1.Res v2); split; auto.
+    exists 1, (AT.Res v2); split; auto.
     + constructor.
       * constructor; auto.
       * eapply AM.V_exposed_res_r; eauto.
@@ -174,7 +174,7 @@ Lemma Vfun_V Γ1 f xs e e' :
     G i Γ1 ρ1 ρ2 ->
     let w := arity_to_web (length xs) in
     (w \in Exposed) ->
-    V i (A0.Vfun f ρ1 xs e) (Tag w (A1.Vfun f ρ2 xs e')).
+    V i (AS.Vfun f ρ1 xs e) (Tag w (AT.Vfun f ρ2 xs e')).
 Proof.
   unfold trans_correct.
   intros He i.
@@ -199,14 +199,14 @@ Lemma fun_compat Γ e e' k k' f xs :
   (w \in Exposed) ->
   trans_correct (FromList xs :|: (f |: Γ)) e e' ->
   trans_correct (f |: Γ) k k' ->
-  trans_correct Γ (A0.Efun f xs e k) (A1.Efun f w xs e' k').
+  trans_correct Γ (AS.Efun f xs e k) (AT.Efun f w xs e' k').
 Proof.
   unfold trans_correct, E, AM.E, AM.VM.E, E'.
   intros.
   inv H4.
-  - exists 0, A1.OOT; split; simpl; eauto.
+  - exists 0, AT.OOT; split; simpl; eauto.
   - inv H5.
-    edestruct (H1 (i - 1) (M.set f (A0.Vfun f ρ1 xs e) ρ1) (M.set f (Tag (arity_to_web (length xs)) (A1.Vfun f ρ2 xs e')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+    edestruct (H1 (i - 1) (M.set f (AS.Vfun f ρ1 xs e) ρ1) (M.set f (Tag (arity_to_web (length xs)) (AT.Vfun f ρ2 xs e')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
     + eapply AM.G_set; eauto.
       apply AM.G_mono with i; eauto; lia.
       * eapply Vfun_V; eauto.
@@ -224,12 +224,12 @@ Lemma app_compat Γ xs f :
   (FromList xs \subset Γ) ->
   let w := arity_to_web (length xs) in
   (w \in Exposed) ->
-  trans_correct Γ (A0.Eapp f xs) (A1.Eapp f w xs).
+  trans_correct Γ (AS.Eapp f xs) (AT.Eapp f w xs).
 Proof.
   unfold trans_correct, G, E, AM.E, AM.VM.E, E'.
   intros.
   inv H4.
-  - exists 0, A1.OOT; split; simpl; auto.
+  - exists 0, AT.OOT; split; simpl; auto.
   - inv H5.
     edestruct (AM.G_get H2 f) as [fv2 [Heqfv2 HV]]; eauto.
     destruct i.

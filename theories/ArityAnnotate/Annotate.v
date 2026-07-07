@@ -9,8 +9,8 @@ From LambdaANF Require Import ANF.
 From LambdaWeb Require Import ANF.
 From ArityAnnotate Require Import Base.
 
-Module A0 := LambdaANF.ANF.
-Module A1 := LambdaWeb.ANF.
+Module AS := LambdaANF.ANF.
+Module AT := LambdaWeb.ANF.
 
 (* Arity-based Annotate Functor *)
 
@@ -24,32 +24,32 @@ Module A1 := LambdaWeb.ANF.
 
 Module AnnotateUtil.
 
-  Definition V_ex0 (v1 : A0.val) (w : web) (v2 : A1.val) : Prop :=
+  Definition V_ex0 (v1 : AS.val) (w : web) (v2 : AT.val) : Prop :=
     match v1, v2 with
-    | A0.Vconstr t1 vs1, A1.Vconstr t2 vs2 => w = w_constr /\ t1 = t2 /\ length vs1 = length vs2
-    | A0.Vfun f1 ρ1 xs1 e1, A1.Vfun f2 ρ2 xs2 e2 => w = arity_to_web (length xs1) /\ length xs1 = length xs2
+    | AS.Vconstr t1 vs1, AT.Vconstr t2 vs2 => w = w_constr /\ t1 = t2 /\ length vs1 = length vs2
+    | AS.Vfun f1 ρ1 xs1 e1, AT.Vfun f2 ρ2 xs2 e2 => w = arity_to_web (length xs1) /\ length xs1 = length xs2
     | _, _ => False
     end.
 
   Definition V_ex
-    (V' : nat -> A0.val -> A1.wval -> Prop)
-    (E' : nat -> A0.env -> A0.exp -> A1.env -> A1.exp -> Prop)
-    (i0 : nat) (v1 : A0.val) (w2 : web) (v2 : A1.val) :=
+    (V' : nat -> AS.val -> AT.wval -> Prop)
+    (E' : nat -> AS.env -> AS.exp -> AT.env -> AT.exp -> Prop)
+    (i0 : nat) (v1 : AS.val) (w2 : web) (v2 : AT.val) :=
     match v1, v2 with
-    | A0.Vconstr t1 vs1, A1.Vconstr t2 vs2 =>
+    | AS.Vconstr t1 vs1, AT.Vconstr t2 vs2 =>
         w2 = w_constr /\
         t1 = t2 /\
         Forall2 (V' i0) vs1 vs2
 
-    | A0.Vfun f1 ρ1 xs1 e1, A1.Vfun f2 ρ2 xs2 e2 =>
+    | AS.Vfun f1 ρ1 xs1 e1, AT.Vfun f2 ρ2 xs2 e2 =>
         w2 = arity_to_web (length xs1) /\
         length xs1 = length xs2 /\
         forall j vs1 vs2 ρ3 ρ4,
           j <= i0 ->
           Forall exposed vs2 ->
           Forall2 (V' j) vs1 vs2 ->
-          set_lists xs1 vs1 (M.set f1 (A0.Vfun f1 ρ1 xs1 e1) ρ1) = Some ρ3 ->
-          set_lists xs2 vs2 (M.set f2 (Tag w2 (A1.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
+          set_lists xs1 vs1 (M.set f1 (AS.Vfun f1 ρ1 xs1 e1) ρ1) = Some ρ3 ->
+          set_lists xs2 vs2 (M.set f2 (Tag w2 (AT.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
           E' j ρ3 e1 ρ4 e2
     | _, _ => False
     end.
@@ -66,19 +66,19 @@ Module AnnotateUtil.
       eapply Forall2_length; eauto.
   Qed.
 
-  Definition R' (P : nat -> A0.val -> A1.wval -> Prop) (i : nat) (r1 : A0.res) (r2 : A1.res) :=
+  Definition R' (P : nat -> AS.val -> AT.wval -> Prop) (i : nat) (r1 : AS.res) (r2 : AT.res) :=
     match r1, r2 with
-    | A0.OOT, A1.OOT => True
-    | A0.Res v1, A1.Res v2 => P i v1 v2
+    | AS.OOT, AT.OOT => True
+    | AS.Res v1, AT.Res v2 => P i v1 v2
     | _, _ => False
     end.
 
-  Definition E' (P : nat -> A0.val -> A1.wval -> Prop) (ex : bool) (i : nat) (ρ1 : A0.env) (e1 :A0.exp) (ρ2 : A1.env) (e2 : A1.exp) : Prop :=
+  Definition E' (P : nat -> AS.val -> AT.wval -> Prop) (ex : bool) (i : nat) (ρ1 : AS.env) (e1 :AS.exp) (ρ2 : AT.env) (e2 : AT.exp) : Prop :=
     forall j1 r1,
       j1 <= i ->
-      A0.bstep_fuel ρ1 e1 j1 r1 ->
+      AS.bstep_fuel ρ1 e1 j1 r1 ->
       exists j2 r2,
-        A1.bstep_fuel ex ρ2 e2 j2 r2 /\
+        AT.bstep_fuel ex ρ2 e2 j2 r2 /\
         R' P (i - j1) r1 r2.
 
 End AnnotateUtil.
@@ -88,11 +88,11 @@ Module Type VAnn.
   (* Analysis result type *)
   Parameter web_map : Type.
 
-  Parameter V_ann0 : web_map -> A0.val -> web -> A1.val -> Prop.
+  Parameter V_ann0 : web_map -> AS.val -> web -> AT.val -> Prop.
 
-  Parameter V_ann : (nat -> A0.val -> A1.wval -> Prop) ->
-                    (bool -> nat -> A0.env -> A0.exp -> A1.env -> A1.exp -> Prop) ->
-                    web_map -> nat -> A0.val -> web -> A1.val -> Prop.
+  Parameter V_ann : (nat -> AS.val -> AT.wval -> Prop) ->
+                    (bool -> nat -> AS.env -> AS.exp -> AT.env -> AT.exp -> Prop) ->
+                    web_map -> nat -> AS.val -> web -> AT.val -> Prop.
 
   Parameter V_ann_V_ann0 :
     forall V E W i v1 w2 v2,
@@ -103,7 +103,7 @@ Module Type VAnn.
     forall V E W i j v1 w2 v2,
       (forall k : nat,
           k < S i ->
-          forall (j : nat) (v1 : A0.val) (v2 : A1.wval), V k v1 v2 -> j <= k -> V j v1 v2) ->
+          forall (j : nat) (v1 : AS.val) (v2 : AT.wval), V k v1 v2 -> j <= k -> V j v1 v2) ->
       V_ann (fun i' => V (i - (i - i'))) (fun b i' => E b (i - (i - i'))) W i v1 w2 v2 ->
       j <= i ->
       V_ann (fun j' => V (j - (j - j'))) (fun b j' => E b (j - (j - j'))) W j v1 w2 v2.
@@ -116,10 +116,10 @@ Module AnnotateV (VA : VAnn).
   Export AnnotateUtil.
 
   (* Cross-language Logical Relations *)
-  Fixpoint V (W : web_map) (i : nat) (v1 : A0.val) (wv2 : A1.wval) {struct i} : Prop :=
+  Fixpoint V (W : web_map) (i : nat) (v1 : AS.val) (wv2 : AT.wval) {struct i} : Prop :=
     wf_val wv2 /\
     match wv2 with
-    | A1.TAG _ w2 v2 =>
+    | AT.TAG _ w2 v2 =>
         match i with
         | 0 =>
             match exposedb w2 with
@@ -183,8 +183,8 @@ Module AnnotateV (VA : VAnn).
 
   (* Inversion Lemmas *)
   Lemma R_res_inv_l W i v1 r2 :
-    R W i (A0.Res v1) r2 ->
-    exists v2, r2 = A1.Res v2 /\ V W i v1 v2.
+    R W i (AS.Res v1) r2 ->
+    exists v2, r2 = AT.Res v2 /\ V W i v1 v2.
   Proof.
     intros.
     destruct r2; simpl in *; try contradiction.
@@ -196,7 +196,7 @@ Module AnnotateV (VA : VAnn).
     forall i V E j v1 w2 v2,
       (forall k : nat,
           k < S i ->
-          forall (j : nat) (v1 : A0.val) (v2 : wval), V k v1 v2 -> j <= k -> V j v1 v2) ->
+          forall (j : nat) (v1 : AS.val) (v2 : wval), V k v1 v2 -> j <= k -> V j v1 v2) ->
       V_ex (fun i' => V (i - (i - i'))) (fun i' => E (i - (i - i'))) i v1 w2 v2 ->
       j <= i ->
       V_ex (fun j' => V (j - (j - j'))) (fun j' => E (j - (j - j'))) j v1 w2 v2.
@@ -287,12 +287,12 @@ Module AnnotateTop.
 
     Definition web_map := unit.
 
-    Definition V_ann0 (_ : web_map) (v1 : A0.val) (w2 : web) (v2 : A1.val) : Prop := False.
+    Definition V_ann0 (_ : web_map) (v1 : AS.val) (w2 : web) (v2 : AT.val) : Prop := False.
 
     Definition V_ann
-      (V' : nat -> A0.val -> A1.wval -> Prop)
-      (E' : bool -> nat -> A0.env -> A0.exp -> A1.env -> A1.exp -> Prop)
-      (_ : web_map) (i0 : nat) (v1 : A0.val) (w2 : web) (v2 : A1.val) := False.
+      (V' : nat -> AS.val -> AT.wval -> Prop)
+      (E' : bool -> nat -> AS.env -> AS.exp -> AT.env -> AT.exp -> Prop)
+      (_ : web_map) (i0 : nat) (v1 : AS.val) (w2 : web) (v2 : AT.val) := False.
 
     Lemma V_ann_V_ann0 :
       forall V E W i v1 w2 v2,
@@ -303,7 +303,7 @@ Module AnnotateTop.
     Lemma V_ann_mono V E W i j v1 w2 v2 :
       (forall k : nat,
           k < S i ->
-          forall (j : nat) (v1 : A0.val) (v2 : A1.wval), V k v1 v2 -> j <= k -> V j v1 v2) ->
+          forall (j : nat) (v1 : AS.val) (v2 : AT.wval), V k v1 v2 -> j <= k -> V j v1 v2) ->
       V_ann (fun i' => V (i - (i - i'))) (fun b i' => E b (i - (i - i'))) W i v1 w2 v2 ->
       j <= i ->
       V_ann (fun j' => V (j - (j - j'))) (fun b j' => E b (j - (j - j'))) W j v1 w2 v2.
@@ -362,14 +362,14 @@ Module AnnotateTop.
     (w_constr \in Exposed) ->
     Forall wf_val vs2 ->
     Forall2 (V i) vs1 vs2 ->
-    V i (A0.Vconstr t vs1) (Tag w_constr (A1.Vconstr t vs2)).
+    V i (AS.Vconstr t vs1) (Tag w_constr (AT.Vconstr t vs2)).
   Proof.
     intros.
     induction H1.
     - destruct i; simpl; repeat (split; eauto); simpl;
         destruct (exposed_reflect w_constr); try contradiction; eauto.
     - inv H0.
-      assert (Hex : exposed (Tag w_constr (A1.Vconstr t (y :: l')))).
+      assert (Hex : exposed (Tag w_constr (AT.Vconstr t (y :: l')))).
       {
         constructor; auto.
         constructor; auto.
@@ -377,7 +377,7 @@ Module AnnotateTop.
         eapply V_exposed_Forall_r; eauto.
       }
 
-      assert (Hwf : wf_val (Tag w_constr (A1.Vconstr t (y :: l')))).
+      assert (Hwf : wf_val (Tag w_constr (AT.Vconstr t (y :: l')))).
       {
         eapply wf_val_Vconstr; eauto.
         inv Hex; auto.
@@ -439,14 +439,14 @@ Module AnnotateTop.
 
   (* Top-level Relation *)
   Definition trans_correct etop etop' :=
-    A1.occurs_free etop' \subset A0.occurs_free etop /\
+    AT.occurs_free etop' \subset AS.occurs_free etop /\
     forall i ρ1 ρ2,
-      G i (A0.occurs_free etop) ρ1 ρ2 ->
+      G i (AS.occurs_free etop) ρ1 ρ2 ->
       E true i ρ1 etop ρ2 etop'.
 
   Lemma trans_correct_subset e1 e2 :
     trans_correct e1 e2 ->
-    A1.occurs_free e2 \subset A0.occurs_free e1.
+    AT.occurs_free e2 \subset AS.occurs_free e1.
   Proof.
     unfold trans_correct.
     intros.
@@ -548,10 +548,10 @@ Module AnnotateTop.
     trans_correct e e' ->
     forall i f xs Γ1 ρ1 ρ2,
       G i Γ1 ρ1 ρ2 ->
-      A0.occurs_free e \subset (FromList xs :|: (f |: Γ1)) ->
+      AS.occurs_free e \subset (FromList xs :|: (f |: Γ1)) ->
       let w := arity_to_web (length xs) in
       (w \in Exposed) ->
-      V i (A0.Vfun f ρ1 xs e) (Tag w (A1.Vfun f ρ2 xs e')).
+      V i (AS.Vfun f ρ1 xs e) (Tag w (AT.Vfun f ρ2 xs e')).
   Proof.
     unfold trans_correct.
     intros [HS He] i.
@@ -572,9 +572,9 @@ Module AnnotateTop.
   Qed.
 
   Lemma free_fun_compat e e' w f k k' xs :
-    A1.occurs_free e' \subset A0.occurs_free e ->
-    A1.occurs_free k' \subset A0.occurs_free k ->
-    A1.occurs_free (A1.Efun f w xs e' k') \subset A0.occurs_free (A0.Efun f xs e k).
+    AT.occurs_free e' \subset AS.occurs_free e ->
+    AT.occurs_free k' \subset AS.occurs_free k ->
+    AT.occurs_free (AT.Efun f w xs e' k') \subset AS.occurs_free (AS.Efun f xs e k).
   Proof.
     unfold Ensembles.Included, Ensembles.In.
     intros.
@@ -586,7 +586,7 @@ Module AnnotateTop.
     (w \in Exposed) ->
     trans_correct e e' ->
     trans_correct k k' ->
-    trans_correct (A0.Efun f xs e k) (Efun f w xs e' k').
+    trans_correct (AS.Efun f xs e k) (Efun f w xs e' k').
   Proof.
     unfold trans_correct, E, VM.E, E'.
     intro Hw; intros.
@@ -599,17 +599,17 @@ Module AnnotateTop.
     inv H5.
     - fcrush.
     - inv H6.
-      edestruct (H3 (i - 1) (M.set f (A0.Vfun f ρ1 xs e) ρ1) (M.set f (Tag (arity_to_web (length xs)) (A1.Vfun f ρ2 xs e')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
-      + eapply G_subset with (Γ1 := (f |: (A0.occurs_free (A0.Efun f xs e k)))); eauto.
+      edestruct (H3 (i - 1) (M.set f (AS.Vfun f ρ1 xs e) ρ1) (M.set f (Tag (arity_to_web (length xs)) (AT.Vfun f ρ2 xs e')) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+      + eapply G_subset with (Γ1 := (f |: (AS.occurs_free (AS.Efun f xs e k)))); eauto.
         * eapply G_set; eauto.
           eapply G_mono; eauto; try lia.
 
-          eapply Vfun_V with (Γ1 := (A0.occurs_free (A0.Efun f xs e k))); eauto.
+          eapply Vfun_V with (Γ1 := (AS.occurs_free (AS.Efun f xs e k))); eauto.
           -- unfold trans_correct.
              split; auto.
           -- eapply G_mono; eauto; try lia.
-          -- eapply A0.free_fun_e_subset; eauto.
-        * eapply A0.free_fun_k_subset; eauto.
+          -- eapply AS.free_fun_e_subset; eauto.
+        * eapply AS.free_fun_k_subset; eauto.
       + exists (S j2), r2; split; auto.
         * constructor; auto.
           eapply bstep_fuel_exposed_inv; eauto.
@@ -617,8 +617,8 @@ Module AnnotateTop.
   Qed.
 
   Lemma free_letapp_compat w k k' f x xs :
-    A1.occurs_free k' \subset A0.occurs_free k ->
-    A1.occurs_free (A1.Eletapp x f w xs k') \subset A0.occurs_free (A0.Eletapp x f xs k).
+    AT.occurs_free k' \subset AS.occurs_free k ->
+    AT.occurs_free (AT.Eletapp x f w xs k') \subset AS.occurs_free (AS.Eletapp x f xs k).
   Proof.
     unfold Ensembles.Included, Ensembles.In.
     intros.
@@ -629,7 +629,7 @@ Module AnnotateTop.
     let w := arity_to_web (length xs) in
     (w \in Exposed) ->
     trans_correct k k' ->
-    trans_correct (A0.Eletapp x f xs k) (A1.Eletapp x f w xs k').
+    trans_correct (AS.Eletapp x f xs k) (AT.Eletapp x f w xs k').
   Proof.
     unfold trans_correct, E, VM.E, E'.
     intros HEx; intros.
@@ -660,7 +660,7 @@ Module AnnotateTop.
 
         rewrite_by (arity_to_web (length xs') = arity_to_web (length xs)) eauto.
         edestruct (G_get_list H1 xs) as [vs2 [Heqvs2 HVvs]]; eauto.
-        eapply A0.free_letapp_xs_subset; eauto.
+        eapply AS.free_letapp_xs_subset; eauto.
 
         destruct (set_lists_length3 (M.set v0 (Tag (arity_to_web (length xs)) (Vfun v0 t l e0)) t) l vs2) as [ρ4 Heqρ4].
         unfold wval in *.
@@ -674,11 +674,11 @@ Module AnnotateTop.
         * eapply V_mono_Forall; eauto; lia.
         * destruct r2; simpl in HR; try contradiction.
           edestruct (H0 (i - c0) (M.set x v ρ1) (M.set x w ρ2)) with (j1 := c') as [j3 [r3 [He1 HR']]]; eauto; try lia.
-          eapply G_subset with (Γ1 := x |: (A0.occurs_free (A0.Eletapp x f xs k))); eauto.
+          eapply G_subset with (Γ1 := x |: (AS.occurs_free (AS.Eletapp x f xs k))); eauto.
           eapply G_set; eauto.
           eapply G_mono; eauto; lia.
           -- eapply V_mono; eauto; try lia.
-          -- eapply A0.free_letapp_k_subset; eauto.
+          -- eapply AS.free_letapp_k_subset; eauto.
           -- exists (S (j2 + j3)), r3; split; eauto.
              2 : { eapply R_mono; eauto; lia. }
 
@@ -689,7 +689,7 @@ Module AnnotateTop.
              intros.
              split; auto.
              eapply V_exposed_Forall_r; eauto.
-             assert (Hr : exposed_res (A1.Res w)) by (eapply bstep_fuel_exposed_inv; eauto); inv Hr; auto.
+             assert (Hr : exposed_res (AT.Res w)) by (eapply bstep_fuel_exposed_inv; eauto); inv Hr; auto.
 
              eapply bstep_fuel_exposed_inv; eauto.
       + fcrush.
@@ -704,7 +704,7 @@ Module AnnotateVVTop (VA : VAnn).
   Import AnnotateUtil.
 
   Lemma exposed_V_relate_Forall_aux :
-    forall i (V1 V2 : nat -> A0.val -> A1.wval -> Prop),
+    forall i (V1 V2 : nat -> AS.val -> AT.wval -> Prop),
       (forall m : nat,
           m < S i ->
           forall v1 v2,

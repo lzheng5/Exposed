@@ -9,8 +9,8 @@ From LambdaANF Require Import ANF.
 From LambdaWeb Require Import ANF.
 From ArityAnnotate Require Import Base Annotate.
 
-Module A0 := LambdaANF.ANF.
-Module A1 := LambdaWeb.ANF.
+Module AS := LambdaANF.ANF.
+Module AT := LambdaWeb.ANF.
 
 Module AM := AnnotateTop.
 Import AM.
@@ -22,11 +22,11 @@ Theorem adequacy e1 e2:
   trans_correct e1 e2 ->
   forall ρ1 ρ2,
     wf_env ρ2 ->
-    (forall k, G k (A0.occurs_free e1) ρ1 ρ2) ->
+    (forall k, G k (AS.occurs_free e1) ρ1 ρ2) ->
     forall j1 r1,
-      A0.bstep_fuel ρ1 e1 j1 r1 ->
+      AS.bstep_fuel ρ1 e1 j1 r1 ->
       exists j2 r2,
-        A1.bstep_fuel true ρ2 e2 j2 r2 /\
+        AT.bstep_fuel true ρ2 e2 j2 r2 /\
         (forall k, R k r1 r2).
 Proof.
   intros.
@@ -47,36 +47,36 @@ Proof.
   destruct r2; destruct r2'; destruct r1;
     simpl in *; auto; try contradiction.
 
-  edestruct (A1.bstep_fuel_deterministic w w0 Hstep2 Hstep2'); subst; eauto.
+  edestruct (AT.bstep_fuel_deterministic w w0 Hstep2 Hstep2'); subst; eauto.
 Qed.
 
 (* Behavioral Refinement *)
-Inductive val_ref : A0.val -> A1.wval -> Prop :=
+Inductive val_ref : AS.val -> AT.wval -> Prop :=
 | Ref_Vfun :
   forall f1 ρ1 xs1 e1 f2 ρ2 xs2 e2,
     length xs1 = length xs2 ->
     let w := arity_to_web (length xs2) in
     (w \in Exposed) ->
-    val_ref (A0.Vfun f1 ρ1 xs1 e1) (Tag w (A1.Vfun f2 ρ2 xs2 e2))
+    val_ref (AS.Vfun f1 ρ1 xs1 e1) (Tag w (AT.Vfun f2 ρ2 xs2 e2))
 
 | Ref_Vconstr_nil :
   forall c,
     (w_constr \in Exposed) ->
-    val_ref (A0.Vconstr c []) (Tag w_constr (A1.Vconstr c []))
+    val_ref (AS.Vconstr c []) (Tag w_constr (AT.Vconstr c []))
 
 | Ref_Vconstr_cons :
   forall c v1 v2 vs1 vs2,
     (w_constr \in Exposed) ->
     val_ref v1 v2 ->
-    val_ref (A0.Vconstr c vs1) (Tag w_constr (A1.Vconstr c vs2)) ->
-    val_ref (A0.Vconstr c (v1 :: vs1)) (Tag w_constr (A1.Vconstr c (v2 :: vs2))).
+    val_ref (AS.Vconstr c vs1) (Tag w_constr (AT.Vconstr c vs2)) ->
+    val_ref (AS.Vconstr c (v1 :: vs1)) (Tag w_constr (AT.Vconstr c (v2 :: vs2))).
 
 Hint Constructors val_ref : core.
 
 Lemma val_ref_Vconstr c vs1 vs2 :
   (w_constr \in Exposed) ->
   Forall2 val_ref vs1 vs2 ->
-  val_ref (A0.Vconstr c vs1) (Tag w_constr (A1.Vconstr c vs2)).
+  val_ref (AS.Vconstr c vs1) (Tag w_constr (AT.Vconstr c vs2)).
 Proof.
   intros.
   induction H0; simpl; auto.
@@ -108,7 +108,7 @@ Proof.
     destruct l0; simpl in *; inv Hlen.
     inv H0.
     inv H6.
-    assert (HV' : forall i, V i v1 t /\ V i (A0.Vconstr c l) (Tag w_constr (A1.Vconstr c l0))).
+    assert (HV' : forall i, V i v1 t /\ V i (AS.Vconstr c l) (Tag w_constr (AT.Vconstr c l0))).
     {
       intros.
       specialize (H (S i0)); simpl in *.
@@ -121,8 +121,8 @@ Proof.
       split.
       eapply V_mono; eauto; lia.
 
-      assert (He' : exposed (Tag w_constr (A1.Vconstr c l0))) by sauto.
-      assert (Hw' : wf_val (Tag w_constr (A1.Vconstr c l0))) by sauto.
+      assert (He' : exposed (Tag w_constr (AT.Vconstr c l0))) by sauto.
+      assert (Hw' : wf_val (Tag w_constr (AT.Vconstr c l0))) by sauto.
 
       destruct i0; unfold V; simpl in *;
         destruct (exposed_reflect w_constr); try contradiction;
@@ -134,7 +134,7 @@ Proof.
     }
 
     assert (HV0 : forall i, V i v1 t) by sauto.
-    assert (HV1 : forall i, V i (A0.Vconstr c l) (Tag w_constr (A1.Vconstr c l0))) by sauto.
+    assert (HV1 : forall i, V i (AS.Vconstr c l) (Tag w_constr (AT.Vconstr c l0))) by sauto.
     auto.
   - specialize (H 0); simpl in *.
     destruct H as [Hw HV].
@@ -146,7 +146,7 @@ Proof.
 Qed.
 
 Corollary R_res_val_ref {v1 v2} :
-  (forall i, R i (A0.Res v1) (A1.Res v2)) ->
+  (forall i, R i (AS.Res v1) (AT.Res v2)) ->
   val_ref v1 v2.
 Proof. intros; eapply V_val_ref; eauto. Qed.
 
@@ -159,9 +159,9 @@ Parameter w_link_exposed : w_link \in Exposed.
 Theorem preserves_linking f x e1 e2 e1' e2' :
   trans_correct e1 e2 ->
   trans_correct e1' e2' ->
-  trans_correct (A0.link f x e1 e1') (A1.link f w_link x e2 e2').
+  trans_correct (AS.link f x e1 e1') (AT.link f w_link x e2 e2').
 Proof.
-  unfold A0.link, A1.link.
+  unfold AS.link, AT.link.
   intros.
   eapply fun_compat; eauto.
   eapply w_link_exposed; eauto.
