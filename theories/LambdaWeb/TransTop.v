@@ -28,7 +28,7 @@ Proof.
               apply IHForall; auto ].
 Qed.
 
-Module Top (LM : LSig) (VT : VTrans LM).
+Module Top (LM : WebSelSig) (VT : VTrans LM).
 
   (* Relate any logical relation derivable by ExposedV to Refl at the top level *)
 

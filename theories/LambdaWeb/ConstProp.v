@@ -16,8 +16,8 @@ Definition info_t : Type := ctor_tag * web.
 Parameter C : M.t info_t.
 
 (* Web Map *)
-Module LT <: Exposed.LTy. Definition t := list (option info_t). End LT.
-Module LM := Exposed.DefaultL LT.
+Module LT <: Exposed.WebSelInfo. Definition t := list (option info_t). End LT.
+Module LM := Exposed.DefaultWebSel LT.
 Import LM.
 
 (* Apply bit mask to argument list *)

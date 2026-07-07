@@ -59,8 +59,8 @@ End WrapUtils.
 Module SemSubstV (WM : WrapSig).
 
   Export WM.
-  Module LT <: Exposed.LTy. Definition t : Type := (trans_info_t * wrapper_info_t * web). End LT.
-  Module LM := Exposed.DefaultL LT.
+  Module LT <: Exposed.WebSelInfo. Definition t : Type := (trans_info_t * wrapper_info_t * web). End LT.
+  Module LM := Exposed.DefaultWebSel LT.
   Export LM.
 
   (* Logical Relations *)

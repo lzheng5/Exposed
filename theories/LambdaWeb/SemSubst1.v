@@ -105,8 +105,8 @@ in h [w_h] f
 (* Map from web identifier to transformation specific information and worker web *)
 Definition trans_info_t := list bool.
 
-Module LT <: Exposed.LTy. Definition t : Type := (trans_info_t * web). End LT.
-Module LM := Exposed.DefaultL LT.
+Module LT <: Exposed.WebSelInfo. Definition t : Type := (trans_info_t * web). End LT.
+Module LM := Exposed.DefaultWebSel LT.
 Export LM.
 
 Definition wrapper_info_t := list var.

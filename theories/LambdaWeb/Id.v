@@ -123,10 +123,11 @@ Proof.
 Qed.
 
 (* Logical Relations *)
-Module LM <: Exposed.LSig.
+Module LM <: Exposed.WebSelSig.
 
   Definition elt := unit.
 
+  (* Everything is reflexively related. *)
   Definition L := M.empty elt.
 
   Lemma L_inv_None : forall w, w \in Exposed -> L ! w = None.

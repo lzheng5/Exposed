@@ -81,9 +81,15 @@ Module ExposedUtil.
 
 End ExposedUtil.
 
-(* The web selector which selects internal webs that we would like to preserve the behaviors. *)
+(* The web selector which selects *non-exposed* webs that we would like to preserve the behaviors.
 
-Module Type LSig.
+   This is handy for instance a transformation (say DPE) only modifies function webs and leave the data webs intact.
+
+   An direct advantage of this is that the compatibility lemmas (for the trivial/reflexive cases) can be *directly* instantiated.
+
+   So we case split on (L ! w) instead of (exposedb w) in the definition of V. *)
+
+Module Type WebSelSig.
 
   Parameter elt : Type.
 
@@ -93,27 +99,33 @@ Module Type LSig.
 
   Parameter L_inv_Some : forall w d, L ! w = Some d -> (~ (w \in Exposed)).
 
-End LSig.
+End WebSelSig.
 
-Module Type LTy.
+(* The web selector is essentially a finite map,
+   which takes the web and maps it to be some web specific information for the transformation. *)
+
+Module Type WebSelInfo.
 
   Parameter t : Type.
 
-End LTy.
+End WebSelInfo.
 
-Module DefaultL (LT : LTy) <: Exposed.LSig.
+(* By default, we simply postulate an appropriate web selector exists.
+
+   For instance, an actual algorithm would be able to pin it down. *)
+Module DefaultWebSel (LT : WebSelInfo) <: Exposed.WebSelSig.
 
   Definition elt := LT.t.
 
   Parameter L : M.t elt.
 
-  Axiom L_inv_None : forall w, w \in Exposed -> L ! w = None.
+  Parameter L_inv_None : forall w, w \in Exposed -> L ! w = None.
 
-  Axiom L_inv_Some : forall w d, L ! w = Some d -> (~ (w \in Exposed)).
+  Parameter L_inv_Some : forall w d, L ! w = Some d -> (~ (w \in Exposed)).
 
-End DefaultL.
+End DefaultWebSel.
 
-Module Type VTrans (LM : LSig).
+Module Type VTrans (LM : WebSelSig).
 
   Parameter V_trans : (nat -> wval -> wval -> Prop) ->
                       (nat -> env -> exp -> env -> exp -> Prop) ->
@@ -130,7 +142,7 @@ Module Type VTrans (LM : LSig).
 
 End VTrans.
 
-Module ExposedV (LM : LSig) (VT : VTrans LM).
+Module ExposedV (LM : WebSelSig) (VT : VTrans LM).
 
   Import VT.
   Import LM.
@@ -379,7 +391,7 @@ Module ExposedV (LM : LSig) (VT : VTrans LM).
 
 End ExposedV.
 
-Module ExposedVG (LM : LSig) (VT : VTrans LM).
+Module ExposedVG (LM : WebSelSig) (VT : VTrans LM).
 
   Module EV := ExposedV LM VT.
   Export EV.
@@ -596,7 +608,7 @@ Module ExposedVG (LM : LSig) (VT : VTrans LM).
 
 End ExposedVG.
 
-Module Exposed (LM : LSig) (VT : VTrans LM).
+Module Exposed (LM : WebSelSig) (VT : VTrans LM).
 
   Module EG := ExposedVG LM VT.
   Export EG.

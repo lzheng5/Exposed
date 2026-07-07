@@ -12,8 +12,8 @@ From LambdaWeb Require Import ANF Exposed.
 (* Dead Parameter Elimination *)
 
 (* Map from web identifier to the live parameter list *)
-Module LT <: Exposed.LTy. Definition t := (list bool). End LT.
-Module LM := Exposed.DefaultL LT.
+Module LT <: Exposed.WebSelInfo. Definition t := (list bool). End LT.
+Module LM := Exposed.DefaultWebSel LT.
 Import LM.
 
 (* Apply bit mask to argument list *)

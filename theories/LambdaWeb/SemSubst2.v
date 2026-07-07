@@ -58,8 +58,8 @@ Definition trans_info_t := list bool.
 
 Definition wrapper_info_t := list var.
 
-Module LT <: Exposed.LTy. Definition t : Type := (trans_info_t * wrapper_info_t * web). End LT.
-Module LM := Exposed.DefaultL LT.
+Module LT <: Exposed.WebSelInfo. Definition t : Type := (trans_info_t * wrapper_info_t * web). End LT.
+Module LM := Exposed.DefaultWebSel LT.
 Export LM.
 
 (* Apply bit mask to argument list *)

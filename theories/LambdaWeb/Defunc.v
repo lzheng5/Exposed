@@ -17,8 +17,8 @@ Definition ctor_map := M.t web.
 
 (* Web Map *)
 (* This map takes an existing call web id and returns a constructor map that describes how to turn the call web into a data web and how to create the new call web *)
-Module LT <: Exposed.LTy. Definition t := ctor_map. End LT.
-Module LM := Exposed.DefaultL LT.
+Module LT <: Exposed.WebSelInfo. Definition t := ctor_map. End LT.
+Module LM := Exposed.DefaultWebSel LT.
 Import LM.
 
 Definition ctor_map_web_inv (C : ctor_map) :=

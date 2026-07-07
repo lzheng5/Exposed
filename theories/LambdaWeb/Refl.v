@@ -14,8 +14,8 @@ From LambdaWeb Require Import ANF Id Exposed.
 (* Logical Relations *)
 
 (* Set up the internal web selector so that every internal webs will be related to False. *)
-Module LT <: Exposed.LTy. Definition t := unit. End LT.
-Module LM := Exposed.DefaultL LT.
+Module LT <: Exposed.WebSelInfo. Definition t := unit. End LT.
+Module LM := Exposed.DefaultWebSel LT.
 Import LM.
 
 Module VTransM <: Exposed.VTrans LM.
