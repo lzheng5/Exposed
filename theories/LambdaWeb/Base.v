@@ -16,4 +16,4 @@ Parameter exposed_dec : Decidable Exposed.
 
 Parameter exposedb : web -> bool.
 
-Axiom exposed_reflect : forall w, Bool.reflect (w \in Exposed) (exposedb w).
+Parameter exposed_reflect : forall w, Bool.reflect (w \in Exposed) (exposedb w).

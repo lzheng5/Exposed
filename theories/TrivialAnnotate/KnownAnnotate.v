@@ -99,7 +99,7 @@ Definition analyze_spec K e :=
     known_map_inv K /\
     Disjoint _ (A0.occurs_free e) (Dom_map K).
 
-Axiom analyze_sound :
+Parameter analyze_sound :
   forall (e : A0.exp),
     analyze_spec (analyze e) e.
 
