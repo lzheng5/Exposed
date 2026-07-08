@@ -13,6 +13,7 @@ theories/LambdaANF/Util.v
 theories/LambdaANF/ANFLex.v
 theories/LambdaANF/ReflLex.v
 theories/LambdaANF/CompLex.v
+theories/LambdaANF/ReflRelate.v
 
 -Q theories/LambdaWeb LambdaWeb
 theories/LambdaWeb/Base.v
