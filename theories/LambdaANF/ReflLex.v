@@ -7,7 +7,7 @@ Require Import Lia.
 From Hammer Require Import Hammer Tactics Reflect.
 
 From Common Require Import Util.
-From LambdaANF Require Import Util Tactics ANF ANFLex.
+From LambdaANF Require Import Util Tactics ANF ValInd.
 
 (* Logical Relations *)
 Definition R' (P : nat -> val -> val -> Prop) (i : nat) (r1 : res) (r2 : res) :=

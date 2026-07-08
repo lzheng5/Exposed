@@ -7,7 +7,7 @@ Require Import Lia.
 From Hammer Require Import Hammer Tactics Reflect.
 
 From Common Require Import Util RelComp.
-From LambdaANF Require Import ANF ANFLex Util Tactics ReflLex.
+From LambdaANF Require Import ANF ValInd Util Tactics ReflLex.
 
 (* Compositionality of The Reflexive Pipeline Based on [related_top] *)
 

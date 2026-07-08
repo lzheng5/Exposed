@@ -19,8 +19,8 @@ From LambdaANF Require Import ANF Refl ReflLex.
    Thus, choosing different V relations doesn't really matter from the top-level pipeline's perspective.
    In other words, CertiCoq's top-level composition approach has completely segregated the pipeline componenents.
 
-   Therefor, we found in general the simplier Refl.V style (with direct induction with the step index) is a lot easier to work with than the lexicographic induction, ReflLex.v.
-   They are especially easier when it comes to 1. functorization and 2. extra layering of logical relations. *)
+   Therefore, we have found in general the simplier Refl.V style (with direct induction with the step index) is a lot easier to work with than the lexicographic induction, ReflLex.v.
+   They are especially easier when it comes to 1. functorization and 2. designing extra layering of logical relations. *)
 
 Module R0 := Refl.
 Module R1 := ReflLex.
@@ -373,8 +373,7 @@ Proof.
 Qed.
 
 (* ==========================================================================
-   Independence, direction 2  (Open):
-        ReflLex.V is not stronger than Refl.V.
+   ReflLex.V is not stronger than Refl.V.
 
    This is the mirror of [not_V0_stronger_V1].
         not_V0_stronger_V1  :  exists x y,     R0.V 0 x y /\ ~ R1.V 0 x y      (PROVED)

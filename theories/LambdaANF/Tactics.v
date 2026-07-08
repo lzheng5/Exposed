@@ -5,28 +5,6 @@ From CertiCoq.LambdaANF Require Import Ensembles_util map_util set_util List_uti
 From CertiCoq.Libraries Require Import maps_util.
 Import ListNotations.
 
-
-Ltac invc :=
-  repeat match goal with
-  (* 1. Rewrite between different names for the same term *)
-  | H1 : ?f = ?C ?x,
-    H2 : ?f = ?C ?y |- _ =>
-      rewrite H1 in H2; inversion H2; clear H2; subst
-
-  (* 2. Enhanced: Invert any equality of the same constructor (any arity) *)
-  | H : ?lhs = ?rhs |- _ =>
-      (* Check if both sides are applications of the same constructor *)
-      first [
-        injection H as ?; subst; clear H
-        | discriminate H (* Handle different constructors *)
-      ]
-  end.
-
-Ltac rewrite_math t :=
-  let H := fresh "Hmath" in
-  assert (H : t) by lia;
-  rewrite H in *; clear H.
-
 Ltac try_eq_rewrites :=
   match goal with
   | [H : _ = true |- _] => try rewrite H in *

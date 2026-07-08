@@ -10,7 +10,7 @@ theories/LambdaANF/Comp.v
 
 theories/LambdaANF/Tactics.v
 theories/LambdaANF/Util.v
-theories/LambdaANF/ANFLex.v
+theories/LambdaANF/ValInd.v
 theories/LambdaANF/ReflLex.v
 theories/LambdaANF/CompLex.v
 theories/LambdaANF/ReflRelate.v
