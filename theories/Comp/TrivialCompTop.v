@@ -165,6 +165,42 @@ Section Refinement.
     eapply C.val_ref_exposed; eauto.
   Qed.
 
+
+  Lemma Erase_val_ref b w :
+    C1.val_ref b w ->
+    forall v, EC.val_ref w v -> EC.val_ref b v.
+  Proof.
+    intros H.
+    induction H using C1.val_ref_mut with
+      (P0 := fun w1 w2 (_ : C1.val_ref' w1 w2) =>
+               forall v, EC.val_ref' w2 v -> EC.val_ref' w1 v);
+      intros vres Hev; inv Hev; econstructor; eauto.
+  Qed.
+
+  Lemma Annotate_Erase_val_ref a b :
+    C.AC.val_ref a b ->
+    forall v, EC.val_ref b v -> C0.val_ref a v.
+  Proof.
+    intros H.
+    induction H; intros vres Hev; inv Hev;
+      match goal with
+      | [ H : EC.val_ref' _ _ |- _ ] => inv H
+      end;
+      econstructor; eauto.
+  Qed.
+
+  Lemma val_ref_same v1 v2 :
+    val_ref v1 v2 -> C0.val_ref v1 v2.
+  Proof.
+    unfold val_ref, C.val_ref, Cross.
+    intros H.
+    destruct H as [y [[z [[w [[u [Hc0u Hacw]] Hc1z]] Hecy]] Hc0v2]].
+    eapply Erase_val_ref in Hecy; eauto.
+    eapply Annotate_Erase_val_ref in Hecy; eauto.
+    eapply C0.val_ref_trans; eauto.
+    eapply C0.val_ref_trans; eauto.
+  Qed.
+
   (* Behavioral Refinement *)
   Theorem Top_n_val_ref n m p e1 e2 :
     Top_n n m p e1 e2 ->
@@ -174,12 +210,13 @@ Section Refinement.
         A0.bstep_fuel ρ1 e1 j1 (A0.Res v1) ->
         exists j2 v2,
           A0.bstep_fuel ρ2 e2 j2 (A0.Res v2) /\
-            val_ref v1 v2.
+            C0.val_ref v1 v2.
   Proof.
     intros.
     edestruct Top_n_adequacy with (ρ1 := ρ1) as [j2 [r2 [Hr2 HR]]]; eauto.
     edestruct R_n_Res_inv as [v2 [Heq HVn]]; eauto; subst.
     eexists; eexists; split; eauto.
+    eapply val_ref_same; eauto.
     eapply R_n_res_val_ref; eauto.
   Qed.
 
