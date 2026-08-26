@@ -3393,6 +3393,39 @@ Proof.
     eapply V_top_val_eqv; eauto.
 Qed.
 
+(* Exposed Top Env *)
+Definition to_exposed_cenv Γ (ρ : cenv) : Prop :=
+  forall x cv,
+    (x \in Γ) ->
+    ρ ! x = Some cv ->
+    to_exposed cv.
+
+Lemma G_top_to_exposed_cenv i Γ1 ρ1 ρ2 :
+  G_top i Γ1 ρ1 ρ2 ->
+  to_exposed_cenv Γ1 ρ2.
+Proof.
+  unfold G_top, to_exposed_cenv.
+  hauto use: @V_top_exposed_r unfold: Ensembles.In, var, PTree.elt.
+Qed.
+
+Lemma to_exposed_cenv_subset Γ1 Γ2 ρ :
+  to_exposed_cenv Γ1 ρ ->
+  Γ2 \subset Γ1 ->
+  to_exposed_cenv Γ2 ρ.
+Proof. unfold to_exposed_cenv. fcrush. Qed.
+
+Lemma to_exposed_cenv_set Γ ρ x v :
+  to_exposed_cenv Γ ρ ->
+  to_exposed v ->
+  to_exposed_cenv (x |: Γ) (M.set x v ρ).
+Proof.
+  unfold to_exposed_cenv.
+  intros.
+  destruct (M.elt_eq x0 x); subst.
+  - rewrite M.gss in *; fcrush.
+  - rewrite M.gso in *; fcrush.
+Qed.
+
 (* W is sound for *every* program trace of an open program e *)
 Definition web_map_sound_top e e' :=
   forall i ρ1 ρ2 r1,
@@ -3400,20 +3433,23 @@ Definition web_map_sound_top e e' :=
     refine_env (occurs_free e) ρ1 ρ2 ->
     wf_env (occurs_free e) ρ1 ->
     wf_cenv ρ2 ->
+    to_exposed_cenv (occurs_free e) ρ2 ->
     exists r2,
       cbstep_top_fuel ρ2 e' i r2 /\
-        refine_res r1 r2.
+        refine_res r1 r2 /\
+        to_exposed_cres r2.
 
 Lemma web_map_sound_top_web_map_sound W e :
   web_map_sound_top e (CEexp W e) ->
   forall ρ1 ρ2,
     wf_env (occurs_free e) ρ1 ->
     wf_cenv ρ2 ->
+    to_exposed_cenv (occurs_free e) ρ2 ->
     web_map_sound W (occurs_free e) true ρ1 ρ2 e.
 Proof.
   unfold web_map_sound_top, web_map_sound.
   intros.
-  edestruct H as [r2 [Hcbstep_top Href]]; eauto.
+  edestruct H as [r2 [Hcbstep_top [Href Hex]]]; eauto.
   eexists; split; eauto.
   eapply cbstep_top_fuel_cbstep_fuel; eauto.
 Qed.
@@ -3422,14 +3458,16 @@ Lemma web_map_sound_web_map_sound_top W e :
   (forall ρ1 ρ2,
       wf_env (occurs_free e) ρ1 ->
       wf_cenv ρ2 ->
+      to_exposed_cenv (occurs_free e) ρ2 ->
       web_map_sound W (occurs_free e) true ρ1 ρ2 e) ->
   web_map_sound_top e (CEexp W e).
 Proof.
   unfold web_map_sound_top, web_map_sound.
   intros.
   edestruct H as [r2 [Hcbstep_top Href]]; eauto.
-  eexists; split; eauto.
+  eexists; repeat split; eauto.
   eapply cbstep_fuel_cbstep_top_fuel; eauto.
+  eapply cbstep_fuel_exposed_inv; eauto.
 Qed.
 
 Definition trans_correct_top e e' :=
@@ -3459,6 +3497,7 @@ Proof.
   eapply web_map_sound_top_web_map_sound; eauto.
   eapply G_top_wf_env_l; eauto.
   eapply G_top_wf_cenv_r; eauto.
+  eapply G_top_to_exposed_cenv; eauto.
   eapply G_top_G; eauto.
 Qed.
 
@@ -3494,7 +3533,7 @@ Proof.
   intros Hfx Hf1 Hf2 Hf1' Hf2' H1 H2.
   unfold link, link.
   unfold web_map_sound_top in *.
-  intros i ρ1 ρ2 r1 Hbstep Href Hwfρ1 Hwfρ2.
+  intros i ρ1 ρ2 r1 Hbstep Href Hwfρ1 Hwfρ2 Hex.
   inv Hbstep.
   { exists COOT; split; eauto. }
   match goal with
@@ -3504,8 +3543,7 @@ Proof.
   | [ H : bstep_fuel _ (Eletapp _ _ _ _ _) _ _ |- _ ] => inv H
   end.
   { (* trivially-OOT Eletapp: source fuel = 1 *)
-    exists COOT; split; [|constructor].
-    apply CbstepTF_Step; [apply Cbstep_link_top_trivial | constructor]. }
+    exists COOT; split; [|constructor]; eauto.  }
   match goal with
   | [ H : bstep _ (Eletapp _ _ _ _ _) _ _ |- _ ] => inv H
   end;
@@ -3539,9 +3577,10 @@ Proof.
     edestruct (bstep_fuel_drop_unused Hf1 HSe1 Hwfρ1 Hbody) as [r1' [Hbstep_e1 Hsub']]; eauto.
     inv Hsub'.
 
-    edestruct H1 as [r2 [Hcbstep_e1' Href']]; eauto.
+    edestruct H1 as [r2 [Hcbstep_e1' [Href' Hex']]]; eauto.
     eapply refine_env_subset; eauto.
     eapply wf_env_subset; eauto.
+    eapply to_exposed_cenv_subset; eauto.
 
     inv Href'.
 
@@ -3589,7 +3628,7 @@ Proof.
     edestruct @bstep_fuel_env_eqv_l with (Γ := occurs_free e2) as [r2'' [Hbstep_e2' Hsub2'']]; eauto.
     fcrush.
 
-    edestruct (H2 c' (M.set x v2 ρ1) (M.set x v' ρ2)) as [r2''' [Hcbstep_e2' Href'']]; eauto.
+    edestruct (H2 c' (M.set x v2 ρ1) (M.set x v' ρ2)) as [r2''' [Hcbstep_e2' [Href'' Hex'']]]; eauto.
     eapply refine_env_subset; eauto.
     eapply refine_env_set; eauto.
     eapply wf_env_subset; eauto.
@@ -3607,10 +3646,11 @@ Proof.
     }
     inv Hwfv'; auto.
 
-    exists r2'''; split; eauto.
-    econstructor; eauto.
-    inv Hcbstep_e2'; auto.
+    eapply to_exposed_cenv_subset; eauto.
+    eapply to_exposed_cenv_set; eauto.
+    hauto lq: on inv: to_exposed_cres.
 
+    exists r2'''; repeat split; eauto.
     assert (Hres_eqv : res_eqv r1 r2'') by eauto using res_eqv_trans.
 
     eapply refine_res_res_eqv; eauto.
@@ -3631,14 +3671,14 @@ Proof.
     edestruct (bstep_fuel_drop_unused Hf1 HSe1 Hwfρ1 Hbody) as [r1' [Hbstep_e1 Hsub']]; eauto.
     inv Hsub'.
 
-    edestruct H1 as [r2 [Hcbstep_e1' Href']]; eauto.
+    edestruct H1 as [r2 [Hcbstep_e1' [Href' Hex']]]; eauto.
     eapply refine_env_subset; eauto.
     eapply wf_env_subset; eauto.
 
+    eapply to_exposed_cenv_subset; eauto.
     inv Href'.
 
-    exists COOT; split; [|constructor].
-    apply CbstepTF_Step; [apply Cbstep_link_top_OOT; eauto | constructor].
+    exists COOT; split; eauto.
 Qed.
 
 Lemma preserves_linking f x e1 e1' e2 e2' :
