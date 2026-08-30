@@ -10,7 +10,7 @@ From Common Require Import Util.
 From SemAnnotate Require Import LabeledANF.
 From LambdaWeb Require Import Base.
 
-(* Colored Collecting Semantics *)
+(* Colored Checking Semantics *)
 
 Inductive color : Type :=
 | Blue : color (* current program context *)
@@ -50,7 +50,7 @@ Inductive cres : Type :=
 
 Hint Constructors cres : core.
 
-(* Collecting Semantics *)
+(* Colored Checking Semantics *)
 (* `L` is the collected output label set by stepping the collecting big-step semantics. *)
 (* We color the term depending on the current context we are in. *)
 Inductive cbstep (L : clabel_set) (c : color) (ρ : cenv) : exp -> fuel -> cres -> Prop :=
@@ -254,7 +254,7 @@ Inductive blue_equiv (L : clabel_set) : label -> label -> Prop :=
 Hint Constructors blue_equiv : core.
 
 (* W is a valid web map for the colored label set L. *)
-Inductive label_set_to_web_map (L : clabel_set) (W : web_map) : Prop :=
+Inductive clabel_set_to_web_map (L : clabel_set) (W : web_map) : Prop :=
 | LS_to_WM :
     (* (1) Totality: every blue label of L is mapped by W. *)
     (forall l,
@@ -288,6 +288,6 @@ Inductive label_set_to_web_map (L : clabel_set) (W : web_map) : Prop :=
         W ! l1 = Some w ->
         W ! l2 = Some w ->
         blue_equiv L l1 l2) ->
-    label_set_to_web_map L W.
+    clabel_set_to_web_map L W.
 
-Hint Constructors label_set_to_web_map : core.
+Hint Constructors clabel_set_to_web_map : core.
