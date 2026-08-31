@@ -12,16 +12,16 @@ From LambdaWeb Require Import Base.
 
 (* Colored Checking Semantics *)
 
-Inductive color : Type :=
-| Blue : color (* current program context *)
-| Red : color. (* external program context *)
+(* Color *)
+Definition color := nat.
+Definition colors := Ensemble nat.
 
-Hint Constructors color : core.
-
+(* Colored Label *)
 Definition clabel : Type := (color * label).
+Definition clabels : Type := Ensemble clabel.
 
-(* Label Sets *)
-Definition clabel_set := Ensemble (clabel * clabel).
+(* Colored Label Pair Sets *)
+Definition clabel_pairs := Ensemble (clabel * clabel). (* intro x elim *)
 
 (* Tagged Value *)
 Inductive ctag A : Type :=
@@ -53,7 +53,7 @@ Hint Constructors cres : core.
 (* Colored Checking Semantics *)
 (* `L` is the collected output label set by stepping the collecting big-step semantics. *)
 (* We color the term depending on the current context we are in. *)
-Inductive cbstep (L : clabel_set) (c : color) (ρ : cenv) : exp -> fuel -> cres -> Prop :=
+Inductive cbstep (L : clabel_pairs) (c : color) (ρ : cenv) : exp -> fuel -> cres -> Prop :=
 | Cbstep_ret :
   forall {x v},
     M.get x ρ = Some v ->
@@ -114,7 +114,7 @@ Inductive cbstep (L : clabel_set) (c : color) (ρ : cenv) : exp -> fuel -> cres 
     cbstep_fuel L c ρ e i r ->
     cbstep L c ρ (Ecase x l cl) i r
 
-with cbstep_fuel (L : clabel_set) (c : color) (ρ : cenv) : exp -> fuel -> cres -> Prop :=
+with cbstep_fuel (L : clabel_pairs) (c : color) (ρ : cenv) : exp -> fuel -> cres -> Prop :=
 | CbstepF_OOT :
   forall {e},
     cbstep_fuel L c ρ e 0 COOT
@@ -199,22 +199,189 @@ Theorem cbstep_fuel_deterministic v v' {L c ρ e i i'}:
   (v = v' /\ i = i').
 Proof. srun eauto using cbstep_fuel_deterministic_aux. Qed.
 
-Definition web_map := M.t web.
+(* Value Refinement *)
+Inductive refine_val : wval -> clval -> Prop :=
+| Refine_wval :
+  forall l c v v',
+    refine_val' v v' ->
+    refine_val (Tag l v) (CTag c l v')
 
-(* Converting [clabel_set] to [web_map] *)
+with refine_val' : val -> cval -> Prop :=
+| Refine_fun :
+  forall Γ f ρ ρ' xs e,
+    (occurs_free e) \subset (FromList xs :|: (f |: Γ)) ->
+    refine_env Γ ρ ρ' ->
+    refine_val' (Vfun f ρ xs e) (CVfun f ρ' xs e)
 
-(* Labels of a given color appearing on either side of a pair in L. *)
-Definition labels_of_color (L : clabel_set) (c : color) : labels :=
-  fun l => exists cl, (((c, l), cl) \in L) \/ ((cl, (c, l)) \in L).
+| Refine_constr_nil :
+  forall c,
+    refine_val' (Vconstr c []) (CVconstr c [])
+
+| Refine_constr :
+  forall c v vs v' vs',
+    refine_val v v' ->
+    refine_val' (Vconstr c vs) (CVconstr c vs') ->
+    refine_val' (Vconstr c (v :: vs)) (CVconstr c (v' :: vs'))
+
+with refine_env : vars -> env -> cenv -> Prop :=
+| Refine_env :
+  forall Γ ρ ρ',
+    (forall x,
+        (x \in Γ) ->
+        exists v1 v2,
+          M.get x ρ = Some v1 /\
+          M.get x ρ' = Some v2 /\
+          refine_val v1 v2) ->
+    refine_env Γ ρ ρ'.
+
+Hint Constructors refine_val : core.
+Hint Constructors refine_val' : core.
+Hint Constructors refine_env : core.
+
+Scheme refine_val_mut := Induction for refine_val Sort Prop
+with refine_val'_mut := Induction for refine_val' Sort Prop
+with refine_env_mut := Induction for refine_env Sort Prop.
+
+Inductive refine_res : res -> cres -> Prop :=
+| Refine_COOT :
+  refine_res OOT COOT
+
+| Refine_CRes :
+  forall v v',
+    refine_val v v' ->
+    refine_res (Res v) (CRes v').
+
+Hint Constructors refine_res : core.
+
+(* Valid `clabel_pairs` Specification *)
+Definition cintro (L : clabel_pairs) (cl1 : clabel) : Prop :=
+  exists cl2, ((cl1, cl2) \in L).
+
+Definition celim (L : clabel_pairs) (cl1 : clabel) : Prop :=
+  exists cl2, ((cl2, cl1) \in L).
+
+Inductive valid_clabel_pairs (L : clabel_pairs) (c : color) (Γ : vars) : exp -> Prop :=
+| Valid_Clabel_Pairs_ret :
+  forall x,
+    (x \in Γ) ->
+    valid_clabel_pairs L c Γ (Eret x)
+
+| Valid_Clabel_Pairs_fun :
+  forall {f l xs e k},
+    (* Note if the introduced value with (c, l) is never used, then it won't be in L. *)
+    valid_clabel_pairs L c (FromList xs :|: (f |: Γ)) e ->
+    valid_clabel_pairs L c (f |: Γ) k ->
+    valid_clabel_pairs L c Γ (Efun f l xs e k)
+
+| Valid_Clabel_Pairs_app :
+  forall {f l xs},
+    celim L (c, l) ->
+    (f \in Γ) ->
+    (FromList xs \subset Γ) ->
+    valid_clabel_pairs L c Γ (Eapp f l xs)
+
+| Valid_Clabel_Pairs_letapp :
+  forall {x f l xs k},
+    celim L (c, l) ->
+    (f \in Γ) ->
+    (FromList xs \subset Γ) ->
+    valid_clabel_pairs L c (x |: Γ) k ->
+    valid_clabel_pairs L c Γ (Eletapp x f l xs k)
+
+| Valid_Clabel_Pairs_constr :
+  forall {x l t xs k},
+    (FromList xs \subset Γ) ->
+    valid_clabel_pairs L c (x |: Γ) k ->
+    valid_clabel_pairs L c Γ (Econstr x l t xs k)
+
+| Valid_Clabel_Pairs_proj :
+  forall {l x y k n},
+    celim L (c, l) ->
+    (y \in Γ) ->
+    valid_clabel_pairs L c (x |: Γ) k ->
+    valid_clabel_pairs L c Γ (Eproj x l n y k)
+
+| Valid_Clabel_Pairs_case_nil :
+  forall {l x},
+    celim L (c, l) ->
+    (x \in Γ) ->
+    valid_clabel_pairs L c Γ (Ecase x l [])
+
+| Valid_Clabel_Pairs_case_cons :
+  forall {x l e t cl},
+    celim L (c, l) ->
+    (x \in Γ) ->
+    valid_clabel_pairs L c Γ e ->
+    valid_clabel_pairs L c Γ (Ecase x l cl) ->
+    valid_clabel_pairs L c Γ (Ecase x l ((t, e) :: cl)).
+
+Hint Constructors valid_clabel_pairs : core.
+
+(* No colored label is both an intro site and an elim site, i.e. the two
+   components of L are disjoint.  
+   In particular cl1 <> cl2 for every pair (cl1, cl2) \in L. *)
+Definition clabel_pairs_diff (L : clabel_pairs) : Prop :=
+  forall cl, cintro L cl -> ~ celim L cl.
+
+Lemma clabel_pairs_diff_neq {L cl1 cl2} :
+  clabel_pairs_diff L ->
+  ((cl1, cl2) \in L) ->
+  cl1 <> cl2.
+Proof.
+  intros Hdiff Hin Heq; subst.
+  eapply Hdiff; eexists; eauto.
+Qed.
+
+(* REVISIT: put cinteract into reachable*)
 
 (* Symmetric, undirected interaction between two colored labels in L. *)
-Definition cinteract (L : clabel_set) (cl1 cl2 : clabel) : Prop :=
+Definition cinteract (L : clabel_pairs) (cl1 cl2 : clabel) : Prop :=
   ((cl1, cl2) \in L) \/ ((cl2, cl1) \in L).
+
+(* Reachable label pairs *)
+(* `reachable L cl` is the set of colored labels connected to `cl` by a chain of
+   interactions in L, in either direction (transitive closure of `cinteract`).
+   Since `cinteract` is symmetric, `cl` itself is reachable from `cl` exactly when
+   `cl` occurs on either side of a pair in L. *)
+Inductive reachable (L : clabel_pairs) (cl : clabel) : clabels :=
+| Reachable_interact :
+  forall cl',
+    cinteract L cl cl' ->
+    reachable L cl cl'
+
+| Reachable_step :
+  forall cl' cl'',
+    reachable L cl cl' ->
+    cinteract L cl' cl'' ->
+    reachable L cl cl''.
+
+Hint Constructors reachable : core.
+
+(* Reachable labels of a given color *)
+(* If we allow reflexivity, (c, l) \in reachable L (c, l) holds for every l, 
+   which would make reachable_labels L c the set of all labels regardless of L. *)
+Definition reachable_labels (L : clabel_pairs) (c : color) : labels :=
+  fun l => exists l' c', ((c', l) \in reachable L (c, l')).
+
+(* Reachable colors of a given label *)
+Definition reachable_colors (L : clabel_pairs) (l : label) : colors :=
+  fun c => exists c' l', ((c, l') \in reachable L (c', l)).
+
+(*
+
+Definition web_map := M.t web.
+
+(* Converting [clabel_pairs] to [web_map] *)
+
+(* Labels of a given color appearing on either side of a pair in L. *)
+Definition labels_of_color (L : clabel_pairs) (c : color) : labels :=
+  fun l => exists cl, (((c, l), cl) \in L) \/ ((cl, (c, l)) \in L).
+
 
 (* A blue label is tainted iff it can reach a red label through a chain of
    blue-blue interactions. The transitive closure is captured by the recursive
    `Tainted_blue` rule. *)
-Inductive tainted (L : clabel_set) : label -> Prop :=
+Inductive tainted (L : clabel_pairs) : label -> Prop :=
 | Tainted_red :
     forall l r,
       cinteract L (Blue, l) (Red, r) ->
@@ -231,7 +398,7 @@ Hint Constructors tainted : core.
 (* Equivalence among non-tainted blue labels: the reflexive/symmetric/transitive
    closure of blue-blue interaction restricted to non-tainted labels.
    Symmetry of `BE_step` is inherited from `cinteract`. *)
-Inductive blue_equiv (L : clabel_set) : label -> label -> Prop :=
+Inductive blue_equiv (L : clabel_pairs) : label -> label -> Prop :=
 | BE_refl :
     forall l,
       (l \in labels_of_color L Blue) ->
@@ -254,7 +421,7 @@ Inductive blue_equiv (L : clabel_set) : label -> label -> Prop :=
 Hint Constructors blue_equiv : core.
 
 (* W is a valid web map for the colored label set L. *)
-Inductive clabel_set_to_web_map (L : clabel_set) (W : web_map) : Prop :=
+Inductive clabel_pairs_to_web_map (L : clabel_pairs) (W : web_map) : Prop :=
 | LS_to_WM :
     (* (1) Totality: every blue label of L is mapped by W. *)
     (forall l,
@@ -288,6 +455,7 @@ Inductive clabel_set_to_web_map (L : clabel_set) (W : web_map) : Prop :=
         W ! l1 = Some w ->
         W ! l2 = Some w ->
         blue_equiv L l1 l2) ->
-    clabel_set_to_web_map L W.
+    clabel_pairs_to_web_map L W.
 
-Hint Constructors clabel_set_to_web_map : core.
+Hint Constructors clabel_pairs_to_web_map : core.
+*)
