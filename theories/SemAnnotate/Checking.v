@@ -11,9 +11,9 @@ From LambdaANF Require Import ANF.
 From LambdaWeb Require Import Base.
 From SemAnnotate Require Import LabeledANF.
 
-Definition web_map := M.t web.
+(* Checking Semantics With Respect To Web Maps *)
 
-(* Checking Semantics *)
+Definition web_map := M.t web.
 
 (* Tagged Value *)
 Inductive ctag A : Type :=

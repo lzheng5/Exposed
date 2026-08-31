@@ -10,7 +10,7 @@ From Common Require Import Util.
 From SemAnnotate Require Import LabeledANF.
 From LambdaWeb Require Import Base.
 
-(* Colored Checking Semantics *)
+(* Checking Semantics With Respect to Colored Label Pair Set *)
 
 (* Color *)
 Definition color := nat.
@@ -21,7 +21,8 @@ Definition clabel : Type := (color * label).
 Definition clabels : Type := Ensemble clabel.
 
 (* Colored Label Pair Sets *)
-Definition clabel_pairs := Ensemble (clabel * clabel). (* intro x elim *)
+(* Each pair has the format (l_intro, l_elim). *)
+Definition clabel_pairs := Ensemble (clabel * clabel).
 
 (* Tagged Value *)
 Inductive ctag A : Type :=
@@ -51,8 +52,8 @@ Inductive cres : Type :=
 Hint Constructors cres : core.
 
 (* Colored Checking Semantics *)
-(* `L` is the collected output label set by stepping the collecting big-step semantics. *)
-(* We color the term depending on the current context we are in. *)
+(* `L` is the colored label set produced by running the entire linked labeled program,
+   so `L` contains all the information we need to specify what happens within the current program context. *)
 Inductive cbstep (L : clabel_pairs) (c : color) (ρ : cenv) : exp -> fuel -> cres -> Prop :=
 | Cbstep_ret :
   forall {x v},
@@ -253,6 +254,286 @@ Inductive refine_res : res -> cres -> Prop :=
 
 Hint Constructors refine_res : core.
 
+(* Helper lemmas on refine_env / refine_val *)
+Lemma refine_env_get x v {Γ ρ1 ρ2} :
+  refine_env Γ ρ1 ρ2 ->
+  x \in Γ ->
+  ρ1 ! x = Some v ->
+  exists v', ρ2 ! x = Some v' /\ refine_val v v'.
+Proof.
+  intros Henv Hget Hr1. inv Henv.
+  edestruct H as [v1 [v2 [Heqv1 [Heqv2 Href]]]]; eauto; invc; eauto.
+Qed.
+
+Lemma refine_env_subset Γ1 {Γ2 ρ1 ρ2} :
+  refine_env Γ1 ρ1 ρ2 ->
+  Γ2 \subset Γ1 ->
+  refine_env Γ2 ρ1 ρ2.
+Proof.
+  unfold Ensembles.Included, Ensembles.In.
+  intros.
+  constructor; intros.
+  inv H; fcrush.
+Qed.
+
+Lemma refine_env_get_list xs vs {Γ ρ1 ρ2} :
+  refine_env Γ ρ1 ρ2 ->
+  FromList xs \subset Γ ->
+  get_list xs ρ1 = Some vs ->
+  exists vs', get_list xs ρ2 = Some vs' /\ Forall2 refine_val vs vs'.
+Proof.
+  intros Henv. revert vs.
+  induction xs as [|x xs IH]; intros vs HS Hget; simpl in *.
+  - inv Hget. exists []; split; auto.
+  - destruct (ρ1 ! x) as [v|] eqn:Hx; [|discriminate].
+    destruct (get_list xs ρ1) as [vs0|] eqn:Hxs; [|discriminate].
+    inv Hget.
+    edestruct (refine_env_get x v Henv) as [v' [Hv' Hrv]]; eauto.
+    + unfold Ensembles.Included, Ensembles.In in *.
+      fcrush.
+    + edestruct (IH vs0) as [vs' [Hvs' Hrvs]]; eauto.
+      unfold Ensembles.Included, Ensembles.In in *.
+      fcrush.
+      rewrite Hv', Hvs'. exists (v' :: vs'); split; auto.
+Qed.
+
+Lemma refine_env_set x v v' {Γ ρ1 ρ2} :
+  refine_env Γ ρ1 ρ2 ->
+  refine_val v v' ->
+  refine_env (x |: Γ) (M.set x v ρ1) (M.set x v' ρ2).
+Proof.
+  intros Henv Hrv. constructor. intros y Hy.
+  destruct (M.elt_eq x y) as [<-|Hne].
+  - repeat (rewrite M.gss in *); invc.
+    fcrush.
+  - repeat (rewrite M.gso in * by auto).
+    inv Henv.
+    edestruct H as [w' [Hw' Hrw]]; eauto.
+    unfold Ensembles.Included, Ensembles.In in *.
+    fcrush.
+Qed.
+
+Lemma refine_env_set_lists xs vs vs' {Γ ρ1 ρ2 ρ1' ρ2'} :
+  Forall2 refine_val vs vs' ->
+  refine_env Γ ρ1 ρ2 ->
+  set_lists xs vs ρ1 = Some ρ1' ->
+  set_lists xs vs' ρ2 = Some ρ2' ->
+  refine_env (FromList xs :|: Γ) ρ1' ρ2'.
+Proof.
+  intros Hf2. revert xs ρ1 ρ2 ρ1' ρ2'.
+  induction Hf2 as [|v v' vs_rest vs_rest' Hrv _ IH];
+    intros xs ρ1 ρ2 ρ1' ρ2' Henv Hset1 Hset2.
+  - destruct xs as [|x xs_rest]; simpl in *.
+    + inv Hset1; inv Hset2; auto.
+      eapply refine_env_subset; eauto.
+      rewrite FromList_nil.
+      rewrite Union_Empty_set_neut_l.
+      fcrush.
+    + discriminate.
+  - destruct xs as [|x xs_rest]; simpl in *; [discriminate|].
+    destruct (set_lists xs_rest vs_rest ρ1) as [ρ3|] eqn:H3; [|discriminate].
+    destruct (set_lists xs_rest vs_rest' ρ2) as [ρ4|] eqn:H4; [|discriminate].
+    inv Hset1; inv Hset2.
+    eapply (refine_env_subset (x |: (FromList xs_rest :|: Γ))).
+    + eapply refine_env_set; eauto.
+    + rewrite FromList_cons.
+      rewrite <- Union_assoc.
+      apply Included_refl.
+Qed.
+
+Lemma refine_val_Vfun_inv {l f ρ xs e v''} :
+  refine_val (Tag l (Vfun f ρ xs e)) v'' ->
+  exists c ρ' Γ,
+    v'' = CTag c l (CVfun f ρ' xs e) /\
+    occurs_free e \subset (FromList xs :|: (f |: Γ)) /\
+    refine_env Γ ρ ρ'.
+Proof.
+  intros H.
+  inv H.
+  match goal with [Hv : refine_val' _ _ |- _] => inv Hv end.
+  do 3 eexists. eauto.
+Qed.
+
+Lemma refine_val'_Vconstr_inv {t vs v''} :
+  refine_val' (Vconstr t vs) v'' ->
+  exists vs', v'' = CVconstr t vs' /\ Forall2 refine_val vs vs'.
+Proof.
+  intros H. remember (Vconstr t vs) as v0 eqn:Heq.
+  revert t vs Heq.
+  induction H; intros t0 vs0 Heq; inv Heq.
+  - exists []; split; auto.
+  - destruct (IHrefine_val' t0 vs eq_refl) as [vs1 [Heq Hr]].
+    inv Heq. exists (v' :: vs1); split; auto.
+Qed.
+
+Lemma refine_val_Vconstr_inv {l t vs v''} :
+  refine_val (Tag l (Vconstr t vs)) v'' ->
+  exists c vs', v'' = CTag c l (CVconstr t vs') /\ Forall2 refine_val vs vs'.
+Proof.
+  intros H. inv H. apply refine_val'_Vconstr_inv in H3 as [vs' [-> Hr]]; eauto.
+Qed.
+
+Lemma refine_val'_Vconstr {t vs vs'} :
+  Forall2 refine_val vs vs' ->
+  refine_val' (Vconstr t vs) (CVconstr t vs').
+Proof. intros Hr. induction Hr; auto. Qed.
+
+Lemma refine_val_Vconstr {l c t vs vs'} :
+  Forall2 refine_val vs vs' ->
+  refine_val (Tag l (Vconstr t vs)) (CTag c l (CVconstr t vs')).
+Proof. intros Hr. constructor. apply refine_val'_Vconstr; auto. Qed.
+
+(* Correlation lemmas: bstep and cbstep that both terminate on the same expression agree on fuel and value. *)
+Lemma bstep_cbstep_aux v1 v2 {L c ρ1 ρ2 e c1 r1 c2 r2} :
+  bstep ρ1 e c1 r1 ->
+  refine_env (occurs_free e) ρ1 ρ2 ->
+  cbstep L c ρ2 e c2 r2 ->
+  r1 = Res v1 ->
+  r2 = CRes v2 ->
+  c1 = c2 /\ refine_val v1 v2.
+Proof.
+  intros Hb.
+  revert v1 v2 ρ2 L c c2 r2.
+  induction Hb using bstep_ind'
+    with (P := fun ρ1 e c1 r1 =>
+                 forall v1 v2 ρ2 L c c2 r2,
+                   refine_env (occurs_free e) ρ1 ρ2 ->
+                   cbstep L c ρ2 e c2 r2 ->
+                   r1 = Res v1 -> r2 = CRes v2 ->
+                   c1 = c2 /\ refine_val v1 v2)
+         (P0 := fun ρ1 e c1 r1 =>
+                  forall v1 v2 ρ2 L c c2 r2,
+                    refine_env (occurs_free e) ρ1 ρ2 ->
+                    cbstep_fuel L c ρ2 e c2 r2 ->
+                    r1 = Res v1 -> r2 = CRes v2 ->
+                    c1 = c2 /\ refine_val v1 v2);
+    intros v1 v2 ρ2 L0 c0 c2 r2 Henv Hc Heq1 Heq2; subst.
+
+  - (* BStep_ret: FV(Eret x) = {x} *)
+    inv Heq1. inv Hc.
+    edestruct (refine_env_get x v1 Henv (ltac:(constructor)) H) as [v' [Hv' Hrv]].
+    invc; fcrush.
+
+  - (* BStep_fun: FV(Efun f l xs e_body k) *)
+    inv Hc.
+    assert (Href_clos : refine_val (Tag w (Vfun f ρ xs e))
+                          (CTag c0 w (CVfun f ρ2 xs e))).
+    { constructor. econstructor.
+      - eapply free_fun_e_inv. apply Included_refl.
+      - exact Henv. }
+    eapply IHHb.
+    + (* FV(k) ⊆ f |: FV(Efun) via free_fun_k_subset; refine_env_set + subset *)
+      eapply refine_env_subset.
+      * eapply refine_env_set; eauto.
+      * apply free_fun_k_subset.
+    + eauto. + eauto. + eauto.
+
+  - (* BStep_app: FV(Eapp f l xs) = {f} ∪ xs *)
+    inv Hc.
+    edestruct (refine_env_get f (Tag w' (Vfun f' ρ' xs' e)) Henv (ltac:(constructor)) H) as [vf [Hvf Hrf]].
+    invc.
+    destruct (refine_val_Vfun_inv Hrf) as [c'' [ρ_2' [Γ_c [Heq [HFVe Hre]]]]].
+    inv Heq.
+    edestruct (refine_env_get_list xs _ Henv
+                 (ltac:(unfold Ensembles.Included, Ensembles.In; intros z Hz; constructor; auto))
+                 H0) as [vs2 [Hvs2 Hrvs]].
+    invc.
+    assert (Href_f : refine_val (Tag w' (Vfun f' ρ' xs' e))
+                       (CTag c'' w' (CVfun f' ρ_2' xs' e))).
+    { constructor. econstructor; eauto. }
+    assert (Hrenv : refine_env (f' |: Γ_c)
+                      (M.set f' (Tag w' (Vfun f' ρ' xs' e)) ρ')
+                      (M.set f' (CTag c'' w' (CVfun f' ρ_2' xs' e)) ρ_2')).
+    { apply refine_env_set; eauto. }
+    pose proof (refine_env_set_lists xs' vs vs2 Hrvs Hrenv H1 H8) as Hre''.
+    eapply IHHb; eauto.
+    eapply refine_env_subset; eauto.
+
+  - (* BStep_letapp_Res *)
+    inv Hc.
+    + (* Cbstep_letapp_Res *)
+      edestruct (refine_env_get f (Tag w' (Vfun f' ρ' xs' e)) Henv (ltac:(apply Free_letapp2)) H) as [vf [Hvf Hrf]].
+      invc.
+      destruct (refine_val_Vfun_inv Hrf) as [c'' [ρ_2' [Γ_c [Heq [HFVe Hre]]]]].
+      inv Heq.
+      assert (Hxs_in : FromList xs \subset occurs_free (Eletapp x f w xs k))
+        by (apply free_letapp_xs_subset).
+      edestruct (refine_env_get_list xs _ Henv Hxs_in H0) as [vs2 [Hvs2 Hrvs]].
+      invc.
+      assert (Href_f : refine_val (Tag w' (Vfun f' ρ' xs' e))
+                           (CTag c'' w' (CVfun f' ρ_2' xs' e))).
+        { constructor. econstructor; eauto. }
+        assert (Hrenv : refine_env (f' |: Γ_c)
+                          (M.set f' (Tag w' (Vfun f' ρ' xs' e)) ρ')
+                          (M.set f' (CTag c'' w' (CVfun f' ρ_2' xs' e)) ρ_2')).
+        { apply refine_env_set; eauto. }
+        pose proof (refine_env_set_lists xs' vs vs2 Hrvs Hrenv H1 H13) as Hre''.
+        edestruct (IHHb v v0) as [Hc0 Hrv0]; eauto.
+        { eapply refine_env_subset; eauto. }
+        edestruct (IHHb0 v1 v2) as [Hc0' Hrv2]; eauto.
+        { eapply refine_env_subset.
+          - apply refine_env_set; eauto.
+          - apply free_letapp_k_subset. }
+
+  - fcrush.
+
+  - (* BStep_constr: FV(Econstr x l t xs e) *)
+    inv Hc.
+    edestruct (refine_env_get_list xs _ Henv
+                 (ltac:(unfold Ensembles.Included, Ensembles.In; intros z Hz; constructor; auto))
+                 H) as [vs2 [Hvs2 Hrvs]].
+    invc.
+    eapply IHHb; eauto.
+    eapply refine_env_subset.
+    + apply refine_env_set; [exact Henv | apply refine_val_Vconstr; auto].
+    + apply free_constr_k_subset.
+
+  - (* BStep_proj: FV(Eproj x l i y e) *)
+    inv Hc.
+    edestruct (refine_env_get y (Tag w' (Vconstr t vs)) Henv (ltac:(constructor)) H) as [vc [Hvc Hrc]].
+    invc.
+      destruct (refine_val_Vconstr_inv Hrc) as [W'' [vs' [Heq Hrvs]]].
+      inv Heq.
+      edestruct (Forall2_nth_error H0 Hrvs) as [v' [Hnv' Hrv']]; eauto.
+      unfold clval in *; invc.
+      eapply IHHb; eauto.
+      eapply refine_env_subset.
+      * apply refine_env_set; [exact Henv | exact Hrv'].
+      * apply free_proj_k_subset.
+
+  - (* BStep_case *)
+    inv Hc.
+    edestruct (refine_env_get x (Tag w' (Vconstr t vs)) Henv (ltac:(constructor)) H) as [vc [Hvc Hrc]].
+    invc.
+      destruct (refine_val_Vconstr_inv Hrc) as [W'' [vs' [Heq _]]].
+      inv Heq.
+      destruct (find_tag_deterministic H0 H6); subst.
+      eapply IHHb; eauto.
+      eapply refine_env_subset; [exact Henv |].
+      eapply free_case_e_inv; eauto. apply Included_refl.
+
+  - discriminate.
+
+  - inv Hc. edestruct IHHb as [Hc0 Hrv0]; eauto.
+Qed.
+
+Lemma bstep_cbstep_refine L c ρ1 ρ2 e c1 c2 v1 v2 :
+  bstep ρ1 e c1 (Res v1) ->
+  refine_env (occurs_free e) ρ1 ρ2 ->
+  cbstep L c ρ2 e c2 (CRes v2) ->
+  c1 = c2 /\ refine_val v1 v2.
+Proof. intros; eapply bstep_cbstep_aux; eauto. Qed.
+
+Lemma bstep_fuel_cbstep_fuel_refine L c ρ1 ρ2 e c1 c2 v1 v2 :
+  bstep_fuel ρ1 e c1 (Res v1) ->
+  refine_env (occurs_free e) ρ1 ρ2 ->
+  cbstep_fuel L c ρ2 e c2 (CRes v2) ->
+  c1 = c2 /\ refine_val v1 v2.
+Proof.
+  intros Hb Henv Hc. inv Hb. inv Hc.
+  edestruct bstep_cbstep_refine as [Heq Hrv]; eauto.
+Qed.
+
 (* Valid `clabel_pairs` Specification *)
 Definition cintro (L : clabel_pairs) (cl1 : clabel) : Prop :=
   exists cl2, ((cl1, cl2) \in L).
@@ -317,11 +598,21 @@ Inductive valid_clabel_pairs (L : clabel_pairs) (c : color) (Γ : vars) : exp ->
 
 Hint Constructors valid_clabel_pairs : core.
 
-(* No colored label is both an intro site and an elim site, i.e. the two
-   components of L are disjoint.  
-   In particular cl1 <> cl2 for every pair (cl1, cl2) \in L. *)
-Definition clabel_pairs_diff (L : clabel_pairs) : Prop :=
-  forall cl, cintro L cl -> ~ celim L cl.
+(* If the labels are unique across the compilation unit, then no
+   colored label is both an intro site and an elim site, i.e. the two
+   components of L are disjoint. In particular cl1 <> cl2 for every
+   pair (cl1, cl2) \in L. *)
+Definition clabel_pairs_diff (L : clabel_pairs) : Prop := forall cl, cintro L cl -> ~ celim L cl.
+
+(* The converse direction is the same statement: both say ~ (cintro /\ celim). *)
+Lemma clabel_pairs_diff_celim {L cl} :
+  clabel_pairs_diff L ->
+  celim L cl ->
+  ~ cintro L cl.
+Proof.
+  intros Hdiff Helim Hintro.
+  eapply Hdiff; eauto.
+Qed.
 
 Lemma clabel_pairs_diff_neq {L cl1 cl2} :
   clabel_pairs_diff L ->
@@ -332,17 +623,17 @@ Proof.
   eapply Hdiff; eexists; eauto.
 Qed.
 
-(* REVISIT: put cinteract into reachable*)
+(* REVISIT: put cinteract into reachable? *)
 
 (* Symmetric, undirected interaction between two colored labels in L. *)
 Definition cinteract (L : clabel_pairs) (cl1 cl2 : clabel) : Prop :=
   ((cl1, cl2) \in L) \/ ((cl2, cl1) \in L).
 
 (* Reachable label pairs *)
-(* `reachable L cl` is the set of colored labels connected to `cl` by a chain of
+(* 1. `reachable L cl` is the set of colored labels connected to `cl` by a chain of
    interactions in L, in either direction (transitive closure of `cinteract`).
-   Since `cinteract` is symmetric, `cl` itself is reachable from `cl` exactly when
-   `cl` occurs on either side of a pair in L. *)
+
+   2. Note this set is exclusive in that `cl` is not part of under `clabel_pairs_diff`. *)
 Inductive reachable (L : clabel_pairs) (cl : clabel) : clabels :=
 | Reachable_interact :
   forall cl',
@@ -358,7 +649,7 @@ Inductive reachable (L : clabel_pairs) (cl : clabel) : clabels :=
 Hint Constructors reachable : core.
 
 (* Reachable labels of a given color *)
-(* If we allow reflexivity, (c, l) \in reachable L (c, l) holds for every l, 
+(* If we allow reflexivity, (c, l) \in reachable L (c, l) holds for every l,
    which would make reachable_labels L c the set of all labels regardless of L. *)
 Definition reachable_labels (L : clabel_pairs) (c : color) : labels :=
   fun l => exists l' c', ((c', l) \in reachable L (c, l')).
@@ -366,6 +657,16 @@ Definition reachable_labels (L : clabel_pairs) (c : color) : labels :=
 (* Reachable colors of a given label *)
 Definition reachable_colors (L : clabel_pairs) (l : label) : colors :=
   fun c => exists c' l', ((c, l') \in reachable L (c', l)).
+
+(* `cl` has only internal interaction if the set of reachable colors is exactly the singleton set {c}. *)
+Definition internal (L : clabel_pairs) (cl : clabel) : Prop :=
+  match cl with
+  | (c, l) => (reachable_colors L l) <--> [ set c ]
+  end.
+
+(* `cl` has external interaction if it is not internal *)
+Definition external (L : clabel_pairs) (cl : clabel) : Prop :=
+  ~ internal L cl.
 
 (*
 
