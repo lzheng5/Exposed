@@ -1211,9 +1211,9 @@ Proof.
 Qed.
 
 (* Compatibility Lemmas *)
-Definition well_colored L c Γ e :=
-  occurs_free e \subset Γ /\
-  forall i ρ1 ρ2,
+Definition well_colored c Γ e :=
+  forall L i ρ1 ρ2,
+    clabel_pairs_diff L ->
     clabel_pairs_sound L c Γ ρ1 ρ2 e ->
     G L i Γ ρ1 ρ2 ->
     E L c i ρ1 ρ2 e.
