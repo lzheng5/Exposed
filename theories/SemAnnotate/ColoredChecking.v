@@ -1460,6 +1460,120 @@ Proof.
   - admit.
 Admitted.
 
+(* Top Level *)
+
+(* Top-level Compilation Unit & Linking *)
+Inductive cexp : Type :=
+| CEexp : exp -> cexp
+| CElink : var -> cexp -> cexp -> cexp.
+
+Hint Constructors cexp : core.
+
+(* Linking *)
+Definition clink x e1 e2 : cexp := CElink x e1 e2.
+
+Inductive occurs_free_top : cexp -> vars :=
+| Free_cexp :
+  forall e x,
+    occurs_free e x ->
+    occurs_free_top (CEexp e) x
+
+| Free_clink1 :
+  forall v x e1 e2,
+    occurs_free_top e1 x ->
+    occurs_free_top (CElink v e1 e2) x
+
+| Free_clink2 :
+  forall v x e1 e2,
+    v <> x ->
+    occurs_free_top e2 x ->
+    occurs_free_top (CElink v e1 e2) x.
+
+Hint Constructors occurs_free_top : core.
+
+Lemma occurs_free_top_cexp e :
+  (occurs_free_top (CEexp e)) <--> (occurs_free e).
+Proof. split; unfold Ensembles.Included, Ensembles.In; fcrush. Qed.
+
+(* Top-level Checking Semantics *)
+Inductive cbstep_top (L : clabel_pairs) (c : color) (ρ : cenv) : cexp -> fuel -> cres -> Prop :=
+| Cbstep_exp_top :
+  forall {e i r},
+    cbstep L c ρ e i r ->
+    cbstep_top L c ρ (CEexp e) i r
+
+| Cbstep_link_top_trivial :
+  forall {x e k},
+    cbstep_top L c ρ (CElink x e k) 0 COOT
+
+| Cbstep_link_top_Res :
+  forall {x e k i' i r v},
+    cbstep_top_fuel L c ρ e i (CRes v) ->
+    cbstep_top_fuel L (S c) (M.set x v ρ) k i' r ->
+    cbstep_top L c ρ (CElink x e k) (S (i + i')) r
+
+| Cbstep_link_top_OOT :
+  forall {x e k i},
+    cbstep_top_fuel L c ρ e i COOT ->
+    cbstep_top L c ρ (CElink x e k) (S i) COOT
+
+with cbstep_top_fuel (L : clabel_pairs) (c : color) (ρ : cenv) : cexp -> fuel -> cres -> Prop :=
+| CbstepTF_OOT :
+  forall {e},
+    cbstep_top_fuel L c ρ e 0 COOT
+
+| CbstepTF_Step :
+  forall {e i r},
+    cbstep_top L c ρ e i r ->
+    cbstep_top_fuel L c ρ e (S i) r.
+
+Hint Constructors cbstep_top : core.
+Hint Constructors cbstep_top_fuel : core.
+
+(* The step-index is aligned between the two semantics. *)
+Lemma cbstep_fuel_cbstep_top_fuel L c ρ e j r:
+  cbstep_fuel L c ρ e j r ->
+  cbstep_top_fuel L c ρ (CEexp e) j r.
+Proof. intros H; inv H; eauto. Qed.
+
+Lemma cbstep_top_fuel_cbstep_fuel L c ρ e j r:
+  cbstep_top_fuel L c ρ (CEexp e) j r ->
+  cbstep_fuel L c ρ e j r.
+Proof.
+  intros H; inv H; eauto.
+  inv H0.
+  inv H1; eauto.
+Qed.
+
+Lemma cbstep_top_wf_res L c ρ e i r :
+  wf_cenv ρ ->
+  cbstep_top L c ρ e i r ->
+  wf_cres r
+with cbstep_top_fuel_wf_res L c ρ e i r :
+  wf_cenv ρ ->
+  cbstep_top_fuel L c ρ e i r ->
+  wf_cres r.
+Proof.
+  - intros Hw H. inv H.
+    + (* Cbstep_exp_top *)
+      eapply cbstep_wf_res; eauto.
+    + (* Cbstep_link_top_trivial *)
+      constructor.
+    + (* Cbstep_link_top_Res *)
+      assert (Hwfv : wf_cres (CRes v))
+        by (eapply cbstep_top_fuel_wf_res; eauto).
+      inv Hwfv.
+      assert (Hwfρx : wf_cenv (M.set x v ρ)) by (eapply wf_cenv_set; eauto).
+      eapply cbstep_top_fuel_wf_res; eauto.
+    + (* Cbstep_link_top_OOT *)
+      constructor.
+  - intros Hw H. inv H.
+    + (* CbstepTF_OOT *)
+      constructor.
+    + (* CbstepTF_Step *)
+      eapply cbstep_top_wf_res; eauto.
+Qed.
+
 (* REVISIT: put cinteract into reachable? *)
 
 (* Symmetric, undirected interaction between two colored labels in L. *)
