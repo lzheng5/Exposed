@@ -1273,6 +1273,48 @@ Proof.
   induction H; unfold Ensembles.Included, Ensembles.In in *; intros; fcrush.
 Qed.
 
+Lemma well_scoped_intro e Γ :
+  occurs_free e \subset Γ ->
+  well_scoped Γ e.
+Proof.
+  revert Γ.
+  induction e
+    as [ x
+       | x w xs
+       | f w xs e k IHe IHk
+       | x f w xs e IHe
+       | x w c xs e IHe
+       | x w
+       | x w cl c e IHe IHcl
+       | x w n v0 e IHe ]
+    using exp_ind';
+    intros Γ Hfree; unfold Ensembles.Included, Ensembles.In in *.
+  - constructor.
+    apply Hfree; constructor.
+  - constructor.
+    + apply Hfree; constructor.
+    + eapply free_app_xs_inv; eauto.
+  - constructor.
+    + apply IHe; eapply free_fun_e_inv; eauto.
+    + apply IHk; eapply free_fun_k_inv; eauto.
+  - constructor.
+    + apply Hfree; eapply Free_letapp2.
+    + eapply free_letapp_xs_inv; eauto.
+    + apply IHe; eapply free_letapp_k_inv; eauto.
+  - constructor.
+    + eapply free_constr_xs_inv; eauto.
+    + apply IHe; eapply free_constr_k_inv; eauto.
+  - constructor.
+    apply Hfree; constructor.
+  - constructor.
+    + apply Hfree; constructor.
+    + apply IHe; eapply free_case_hd_inv; eauto.
+    + apply IHcl; eapply free_case_tl_inv; eauto.
+  - constructor.
+    + apply Hfree; constructor.
+    + apply IHe; eapply free_proj_k_inv; eauto.
+Qed.
+
 Definition well_colored c Γ e :=
   forall L i ρ1 ρ2,
     clabel_pairs_diff L ->
@@ -1572,6 +1614,118 @@ Proof.
       constructor.
     + (* CbstepTF_Step *)
       eapply cbstep_top_wf_res; eauto.
+Qed.
+
+(* Cross-language Logical Relations *)
+
+Definition E_top' (P : nat -> wval -> clval -> Prop) (L : clabel_pairs) (c : color) (i : nat) (ρ1 : env) (e1 : exp) (ρ2 : cenv) (e2 : cexp) : Prop :=
+  forall j1 r1,
+    j1 <= i ->
+    bstep_fuel ρ1 e1 j1 r1 ->
+    exists j2 r2,
+      cbstep_top_fuel L c ρ2 e2 j2 r2 /\
+      R' P (i - j1) r1 r2.
+
+Definition E_top := E_top' V.
+
+Lemma E_E_top L c i ρ1 ρ2 e :
+  E L c i ρ1 ρ2 e ->
+  E_top L c i ρ1 e ρ2 (CEexp e).
+Proof.
+  unfold E, E_top, E', E_top'.
+  intros.
+  edestruct H as [j2 [r2 [Hcbstep HR]]]; eauto.
+  exists j2, r2; split; eauto.
+  eapply cbstep_fuel_cbstep_top_fuel; eauto.
+Qed.
+
+Lemma E_top_E L c i ρ1 ρ2 e :
+  E_top L c i ρ1 e ρ2 (CEexp e) ->
+  E L c i ρ1 ρ2 e.
+Proof.
+  unfold E, E_top, E', E_top'.
+  intros.
+  edestruct H as [j2 [r2 [Hcbstep HR]]]; eauto.
+  exists j2, r2; split; eauto.
+  eapply cbstep_top_fuel_cbstep_fuel; eauto.
+Qed.
+
+Lemma E_top_mono {L c ρ1 ρ2 e1 e2} i j:
+  E_top L c i ρ1 e1 ρ2 e2 ->
+  j <= i ->
+  E_top L c j ρ1 e1 ρ2 e2.
+Proof.
+  unfold E_top, E_top'.
+  intros.
+  destruct (H j1 r1) as [j2 [r2 [Hr2 HR]]]; auto; try lia.
+  exists j2, r2; split; eauto.
+  apply R_mono with (i - j1); try lia; auto.
+Qed.
+
+Definition G_top := G.
+
+(* Soundness of Coloring *)
+Definition trans_correct_top e c e' :=
+  (occurs_free_top e') \subset (occurs_free e) /\
+  forall L i ρ1 ρ2,
+    clabel_pairs_diff L ->
+    clabel_pairs_sound L c (occurs_free e) ρ1 ρ2 e ->
+    G_top i (occurs_free e) ρ1 ρ2 ->
+    E_top L c i ρ1 e ρ2 e'.
+
+Lemma trans_correct_top_subset e1 c e2 :
+  trans_correct_top e1 c e2 ->
+  occurs_free_top e2 \subset occurs_free e1.
+Proof. unfold trans_correct_top. fcrush. Qed.
+
+Theorem top c etop:
+  trans_correct_top etop c (CEexp etop).
+Proof.
+  unfold trans_correct_top.
+  split; intros.
+  eapply occurs_free_top_cexp; eauto.
+  eapply E_E_top; eauto.
+  eapply fundamental_property; eauto.
+  eapply well_scoped_intro; eauto.
+  eapply Included_refl.
+Qed.
+
+(* Soundness of Analysis *)
+(* L is large enough to incorporate all program traces. *)
+Definition clabel_pairs_analysis_sound L c Γ e :=
+  forall i r1 ρ1 ρ2,
+    bstep_fuel ρ1 e i r1 ->
+    refine_env Γ ρ1 ρ2 ->
+    exists r2,
+      cbstep_fuel L c ρ2 e i r2 /\
+      refine_res r1 r2.
+
+Lemma clabel_pairs_analysis_sound_instantiate L c Γ ρ1 ρ2 e :
+  clabel_pairs_analysis_sound L c Γ e ->
+  clabel_pairs_sound L c Γ ρ1 ρ2 e.
+Proof. unfold clabel_pairs_analysis_sound, clabel_pairs_sound; fcrush. Qed.
+
+Definition analysis_correct_top L e c e' :=
+  (occurs_free_top e') \subset (occurs_free e) /\
+  clabel_pairs_diff L /\
+  clabel_pairs_analysis_sound L c (occurs_free e) e /\
+  forall i ρ1 ρ2,
+    G_top i (occurs_free e) ρ1 ρ2 ->
+    E_top L c i ρ1 e ρ2 e'.
+
+Theorem analysis_top L c etop:
+  clabel_pairs_diff L ->
+  clabel_pairs_analysis_sound L c (occurs_free etop) etop ->
+  analysis_correct_top L etop c (CEexp etop).
+Proof.
+  unfold analysis_correct_top.
+  intros; repeat (split; eauto); intros.
+  eapply occurs_free_top_cexp; eauto.
+  eapply E_E_top; eauto.
+  eapply fundamental_property; eauto.
+  eapply well_scoped_intro; eauto.
+  eapply Included_refl.
+  eapply clabel_pairs_analysis_sound_instantiate; eauto.
 Qed.
 
 (* REVISIT: put cinteract into reachable? *)
