@@ -20,9 +20,10 @@ Definition colors := Ensemble nat.
 Definition clabel : Type := (color * label).
 Definition clabels : Type := Ensemble clabel.
 
-(* Colored Label Pair Sets *)
+(* Interaction Set *)
 (* Each pair has the format (l_intro, l_elim). *)
-Definition clabel_pairs := Ensemble (clabel * clabel).
+Definition interaction : Type := (clabel * clabel).
+Definition interactions := Ensemble interaction.
 
 (* Tagged Value *)
 Inductive ctag A : Type :=
@@ -52,78 +53,78 @@ Inductive cres : Type :=
 Hint Constructors cres : core.
 
 (* Colored Checking Semantics *)
-(* `L` is the colored label set produced by running the entire linked labeled program,
-   so `L` contains all the information we need to specify what happens within the current program context. *)
-Inductive cbstep (L : clabel_pairs) (c : color) (ρ : cenv) : exp -> fuel -> cres -> Prop :=
+(* `I` is the colored label set produced by running the entire linked labeled program,
+   so `I` contains all the information we need to specify what happens within the current program context. *)
+Inductive cbstep (I : interactions) (c : color) (ρ : cenv) : exp -> fuel -> cres -> Prop :=
 | Cbstep_ret :
   forall {x v},
     M.get x ρ = Some v ->
-    cbstep L c ρ (Eret x) 0 (CRes v)
+    cbstep I c ρ (Eret x) 0 (CRes v)
 
 | Cbstep_fun :
   forall {f l xs e k i r},
-    cbstep_fuel L c (M.set f (CTag c l (CVfun f ρ xs e)) ρ) k i r ->
-    cbstep L c ρ (Efun f l xs e k) i r
+    cbstep_fuel I c (M.set f (CTag c l (CVfun f ρ xs e)) ρ) k i r ->
+    cbstep I c ρ (Efun f l xs e k) i r
 
 | Cbstep_app :
   forall {f f' c' l l' xs ρ' xs' e vs ρ'' i r},
     M.get f ρ = Some (CTag c' l' (CVfun f' ρ' xs' e)) ->
     get_list xs ρ = Some vs ->
     set_lists xs' vs (M.set f' (CTag c' l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
-    (((c', l'), (c, l)) \in L) ->
-    cbstep_fuel L c' ρ'' e i r ->
-    cbstep L c ρ (Eapp f l xs) i r
+    (((c', l'), (c, l)) \in I) ->
+    cbstep_fuel I c' ρ'' e i r ->
+    cbstep I c ρ (Eapp f l xs) i r
 
 | Cbstep_letapp_Res :
   forall {x f f' l l' xs k ρ' xs' e vs ρ'' c' i i' v r},
     M.get f ρ = Some (CTag c' l' (CVfun f' ρ' xs' e)) ->
     get_list xs ρ = Some vs ->
     set_lists xs' vs (M.set f' (CTag c' l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
-    (((c', l'), (c, l)) \in L) ->
-    cbstep_fuel L c' ρ'' e i (CRes v) ->
-    cbstep_fuel L c (M.set x v ρ) k i' r ->
-    cbstep L c ρ (Eletapp x f l xs k) (i + i') r
+    (((c', l'), (c, l)) \in I) ->
+    cbstep_fuel I c' ρ'' e i (CRes v) ->
+    cbstep_fuel I c (M.set x v ρ) k i' r ->
+    cbstep I c ρ (Eletapp x f l xs k) (i + i') r
 
 | Cbstep_letapp_OOT :
   forall {x f f' l c' l' xs k ρ' xs' e vs ρ'' i},
     M.get f ρ = Some (CTag c' l' (CVfun f' ρ' xs' e)) ->
     get_list xs ρ = Some vs ->
     set_lists xs' vs (M.set f' (CTag c' l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
-    (((c', l'), (c, l)) \in L) ->
-    cbstep_fuel L c' ρ'' e i COOT ->
-    cbstep L c ρ (Eletapp x f l xs k) i COOT
+    (((c', l'), (c, l)) \in I) ->
+    cbstep_fuel I c' ρ'' e i COOT ->
+    cbstep I c ρ (Eletapp x f l xs k) i COOT
 
 | Cbstep_constr :
   forall {x l t xs e r vs i},
     get_list xs ρ = Some vs ->
-    cbstep_fuel L c (M.set x (CTag c l (CVconstr t vs)) ρ) e i r ->
-    cbstep L c ρ (Econstr x l t xs e) i r
+    cbstep_fuel I c (M.set x (CTag c l (CVconstr t vs)) ρ) e i r ->
+    cbstep I c ρ (Econstr x l t xs e) i r
 
 | Cbstep_proj :
   forall {x l c' l' t i y e j r v vs},
     M.get y ρ = Some (CTag c' l' (CVconstr t vs)) ->
     nth_error vs i = Some v ->
-    (((c', l'), (c, l)) \in L) ->
-    cbstep_fuel L c (M.set x v ρ) e j r ->
-    cbstep L c ρ (Eproj x l i y e) j r
+    (((c', l'), (c, l)) \in I) ->
+    cbstep_fuel I c (M.set x v ρ) e j r ->
+    cbstep I c ρ (Eproj x l i y e) j r
 
 | Cbstep_case :
   forall {x l c' l' cl t e r i vs},
     M.get x ρ = Some (CTag c' l' (CVconstr t vs)) ->
     find_tag cl t e ->
-    (((c', l'), (c, l)) \in L) ->
-    cbstep_fuel L c ρ e i r ->
-    cbstep L c ρ (Ecase x l cl) i r
+    (((c', l'), (c, l)) \in I) ->
+    cbstep_fuel I c ρ e i r ->
+    cbstep I c ρ (Ecase x l cl) i r
 
-with cbstep_fuel (L : clabel_pairs) (c : color) (ρ : cenv) : exp -> fuel -> cres -> Prop :=
+with cbstep_fuel (I : interactions) (c : color) (ρ : cenv) : exp -> fuel -> cres -> Prop :=
 | CbstepF_OOT :
   forall {e},
-    cbstep_fuel L c ρ e 0 COOT
+    cbstep_fuel I c ρ e 0 COOT
 
 | CbstepF_Step :
   forall {e i r},
-    cbstep L c ρ e i r ->
-    cbstep_fuel L c ρ e (S i) r.
+    cbstep I c ρ e i r ->
+    cbstep_fuel I c ρ e (S i) r.
 
 Hint Constructors cbstep : core.
 Hint Constructors cbstep_fuel : core.
@@ -131,9 +132,9 @@ Hint Constructors cbstep_fuel : core.
 Scheme cbstep_ind' := Minimality for cbstep Sort Prop
 with cbstep_fuel_ind' := Minimality for cbstep_fuel Sort Prop.
 
-Lemma cbstep_deterministic_aux v v' {L c ρ e i i' r r'}:
-  cbstep L c ρ e i r ->
-  cbstep L c ρ e i' r' ->
+Lemma cbstep_deterministic_aux v v' {I c ρ e i i' r r'}:
+  cbstep I c ρ e i r ->
+  cbstep I c ρ e i' r' ->
   r = CRes v ->
   r' = CRes v' ->
   (v = v' /\ i = i').
@@ -145,12 +146,12 @@ Proof.
   generalize dependent v.
   induction H using cbstep_ind' with (P := fun c ρ e i r =>
                                              forall v i' r' v',
-                                               cbstep L c ρ e i' r' ->
+                                               cbstep I c ρ e i' r' ->
                                                r = CRes v -> r' = CRes v' ->
                                                v = v' /\ i = i')
                                      (P0 := fun c ρ e i r =>
                                               forall v i' r' v',
-                                                cbstep_fuel L c ρ e i' r' ->
+                                                cbstep_fuel I c ρ e i' r' ->
                                                 r = CRes v -> r' = CRes v' ->
                                                 v = v' /\ i = i');
     intros; subst.
@@ -176,9 +177,9 @@ Proof.
       edestruct IHcbstep; eauto.
 Qed.
 
-Lemma cbstep_fuel_deterministic_aux v v' {L c ρ e i i' r r'}:
-  cbstep_fuel L c ρ e i r ->
-  cbstep_fuel L c ρ e i' r' ->
+Lemma cbstep_fuel_deterministic_aux v v' {I c ρ e i i' r r'}:
+  cbstep_fuel I c ρ e i r ->
+  cbstep_fuel I c ρ e i' r' ->
   r = CRes v ->
   r' = CRes v' ->
   (v = v' /\ i = i').
@@ -188,15 +189,15 @@ Proof.
   edestruct (cbstep_deterministic_aux v v' H3 H); eauto.
 Qed.
 
-Theorem cbstep_deterministic v v' {L c ρ e i i'}:
-  cbstep L c ρ e i (CRes v) ->
-  cbstep L c ρ e i' (CRes v') ->
+Theorem cbstep_deterministic v v' {I c ρ e i i'}:
+  cbstep I c ρ e i (CRes v) ->
+  cbstep I c ρ e i' (CRes v') ->
   (v = v' /\ i = i').
 Proof. srun eauto using cbstep_deterministic_aux. Qed.
 
-Theorem cbstep_fuel_deterministic v v' {L c ρ e i i'}:
-  cbstep_fuel L c ρ e i (CRes v) ->
-  cbstep_fuel L c ρ e i' (CRes v') ->
+Theorem cbstep_fuel_deterministic v v' {I c ρ e i i'}:
+  cbstep_fuel I c ρ e i (CRes v) ->
+  cbstep_fuel I c ρ e i' (CRes v') ->
   (v = v' /\ i = i').
 Proof. srun eauto using cbstep_fuel_deterministic_aux. Qed.
 
@@ -384,30 +385,30 @@ Lemma refine_val_Vconstr {l c t vs vs'} :
 Proof. intros Hr. constructor. apply refine_val'_Vconstr; auto. Qed.
 
 (* Correlation lemmas: bstep and cbstep that both terminate on the same expression agree on fuel and value. *)
-Lemma bstep_cbstep_aux v1 v2 {L c ρ1 ρ2 e c1 r1 c2 r2} :
+Lemma bstep_cbstep_aux v1 v2 {I c ρ1 ρ2 e c1 r1 c2 r2} :
   bstep ρ1 e c1 r1 ->
   refine_env (occurs_free e) ρ1 ρ2 ->
-  cbstep L c ρ2 e c2 r2 ->
+  cbstep I c ρ2 e c2 r2 ->
   r1 = Res v1 ->
   r2 = CRes v2 ->
   c1 = c2 /\ refine_val v1 v2.
 Proof.
   intros Hb.
-  revert v1 v2 ρ2 L c c2 r2.
+  revert v1 v2 ρ2 I c c2 r2.
   induction Hb using bstep_ind'
     with (P := fun ρ1 e c1 r1 =>
-                 forall v1 v2 ρ2 L c c2 r2,
+                 forall v1 v2 ρ2 I c c2 r2,
                    refine_env (occurs_free e) ρ1 ρ2 ->
-                   cbstep L c ρ2 e c2 r2 ->
+                   cbstep I c ρ2 e c2 r2 ->
                    r1 = Res v1 -> r2 = CRes v2 ->
                    c1 = c2 /\ refine_val v1 v2)
          (P0 := fun ρ1 e c1 r1 =>
-                  forall v1 v2 ρ2 L c c2 r2,
+                  forall v1 v2 ρ2 I c c2 r2,
                     refine_env (occurs_free e) ρ1 ρ2 ->
-                    cbstep_fuel L c ρ2 e c2 r2 ->
+                    cbstep_fuel I c ρ2 e c2 r2 ->
                     r1 = Res v1 -> r2 = CRes v2 ->
                     c1 = c2 /\ refine_val v1 v2);
-    intros v1 v2 ρ2 L0 c0 c2 r2 Henv Hc Heq1 Heq2; subst.
+    intros v1 v2 ρ2 I0 c0 c2 r2 Henv Hc Heq1 Heq2; subst.
 
   - (* BStep_ret: FV(Eret x) = {x} *)
     inv Heq1. inv Hc.
@@ -517,17 +518,17 @@ Proof.
   - inv Hc. edestruct IHHb as [Hc0 Hrv0]; eauto.
 Qed.
 
-Lemma bstep_cbstep_refine L c ρ1 ρ2 e c1 c2 v1 v2 :
+Lemma bstep_cbstep_refine I c ρ1 ρ2 e c1 c2 v1 v2 :
   bstep ρ1 e c1 (Res v1) ->
   refine_env (occurs_free e) ρ1 ρ2 ->
-  cbstep L c ρ2 e c2 (CRes v2) ->
+  cbstep I c ρ2 e c2 (CRes v2) ->
   c1 = c2 /\ refine_val v1 v2.
 Proof. intros; eapply bstep_cbstep_aux; eauto. Qed.
 
-Lemma bstep_fuel_cbstep_fuel_refine L c ρ1 ρ2 e c1 c2 v1 v2 :
+Lemma bstep_fuel_cbstep_fuel_refine I c ρ1 ρ2 e c1 c2 v1 v2 :
   bstep_fuel ρ1 e c1 (Res v1) ->
   refine_env (occurs_free e) ρ1 ρ2 ->
-  cbstep_fuel L c ρ2 e c2 (CRes v2) ->
+  cbstep_fuel I c ρ2 e c2 (CRes v2) ->
   c1 = c2 /\ refine_val v1 v2.
 Proof.
   intros Hb Henv Hc. inv Hb. inv Hc.
@@ -667,9 +668,9 @@ Proof.
   - fcrush.
 Qed.
 
-Lemma cbstep_wf_res L c ρ e i r :
+Lemma cbstep_wf_res I c ρ e i r :
   wf_cenv ρ ->
-  cbstep L c ρ e i r ->
+  cbstep I c ρ e i r ->
   wf_cres r.
 Proof.
   intros Hw H.
@@ -732,98 +733,98 @@ Proof.
     eapply wf_cval_CVconstr_inv; eauto.
 Qed.
 
-Lemma cbstep_fuel_wf_res L c ρ e i r :
+Lemma cbstep_fuel_wf_res I c ρ e i r :
   wf_cenv ρ ->
-  cbstep_fuel L c ρ e i r ->
+  cbstep_fuel I c ρ e i r ->
   wf_cres r.
 Proof.
   intros.
   inv H0; eauto using cbstep_wf_res.
 Qed.
 
-(* Valid `clabel_pairs` Specification *)
-Definition cintro (L : clabel_pairs) (cl1 : clabel) : Prop :=
-  exists cl2, ((cl1, cl2) \in L).
+(* Valid `interactions` Specification *)
+Definition cintro (I : interactions) (cl1 : clabel) : Prop :=
+  exists cl2, ((cl1, cl2) \in I).
 
-Definition celim (L : clabel_pairs) (cl1 : clabel) : Prop :=
-  exists cl2, ((cl2, cl1) \in L).
+Definition celim (I : interactions) (cl1 : clabel) : Prop :=
+  exists cl2, ((cl2, cl1) \in I).
 
-Inductive valid_clabel_pairs (L : clabel_pairs) (c : color) (Γ : vars) : exp -> Prop :=
-| Valid_Clabel_Pairs_ret :
+Inductive valid_interactions (I : interactions) (c : color) (Γ : vars) : exp -> Prop :=
+| Valid_Interactions_ret :
   forall x,
     (x \in Γ) ->
-    valid_clabel_pairs L c Γ (Eret x)
+    valid_interactions I c Γ (Eret x)
 
-| Valid_Clabel_Pairs_fun :
+| Valid_Interactions_fun :
   forall {f l xs e k},
-    (* Note if the introduced value with (c, l) is never used, then it won't be in L. *)
-    valid_clabel_pairs L c (FromList xs :|: (f |: Γ)) e ->
-    valid_clabel_pairs L c (f |: Γ) k ->
-    valid_clabel_pairs L c Γ (Efun f l xs e k)
+    (* Note if the introduced value with (c, l) is never used, then it won't be in I. *)
+    valid_interactions I c (FromList xs :|: (f |: Γ)) e ->
+    valid_interactions I c (f |: Γ) k ->
+    valid_interactions I c Γ (Efun f l xs e k)
 
-| Valid_Clabel_Pairs_app :
+| Valid_Interactions_app :
   forall {f l xs},
-    celim L (c, l) ->
+    celim I (c, l) ->
     (f \in Γ) ->
     (FromList xs \subset Γ) ->
-    valid_clabel_pairs L c Γ (Eapp f l xs)
+    valid_interactions I c Γ (Eapp f l xs)
 
-| Valid_Clabel_Pairs_letapp :
+| Valid_Interactions_letapp :
   forall {x f l xs k},
-    celim L (c, l) ->
+    celim I (c, l) ->
     (f \in Γ) ->
     (FromList xs \subset Γ) ->
-    valid_clabel_pairs L c (x |: Γ) k ->
-    valid_clabel_pairs L c Γ (Eletapp x f l xs k)
+    valid_interactions I c (x |: Γ) k ->
+    valid_interactions I c Γ (Eletapp x f l xs k)
 
-| Valid_Clabel_Pairs_constr :
+| Valid_Interactions_constr :
   forall {x l t xs k},
     (FromList xs \subset Γ) ->
-    valid_clabel_pairs L c (x |: Γ) k ->
-    valid_clabel_pairs L c Γ (Econstr x l t xs k)
+    valid_interactions I c (x |: Γ) k ->
+    valid_interactions I c Γ (Econstr x l t xs k)
 
-| Valid_Clabel_Pairs_proj :
+| Valid_Interactions_proj :
   forall {l x y k n},
-    celim L (c, l) ->
+    celim I (c, l) ->
     (y \in Γ) ->
-    valid_clabel_pairs L c (x |: Γ) k ->
-    valid_clabel_pairs L c Γ (Eproj x l n y k)
+    valid_interactions I c (x |: Γ) k ->
+    valid_interactions I c Γ (Eproj x l n y k)
 
-| Valid_Clabel_Pairs_case_nil :
+| Valid_Interactions_case_nil :
   forall {l x},
-    celim L (c, l) ->
+    celim I (c, l) ->
     (x \in Γ) ->
-    valid_clabel_pairs L c Γ (Ecase x l [])
+    valid_interactions I c Γ (Ecase x l [])
 
-| Valid_Clabel_Pairs_case_cons :
+| Valid_Interactions_case_cons :
   forall {x l e t cl},
-    celim L (c, l) ->
+    celim I (c, l) ->
     (x \in Γ) ->
-    valid_clabel_pairs L c Γ e ->
-    valid_clabel_pairs L c Γ (Ecase x l cl) ->
-    valid_clabel_pairs L c Γ (Ecase x l ((t, e) :: cl)).
+    valid_interactions I c Γ e ->
+    valid_interactions I c Γ (Ecase x l cl) ->
+    valid_interactions I c Γ (Ecase x l ((t, e) :: cl)).
 
-Hint Constructors valid_clabel_pairs : core.
+Hint Constructors valid_interactions : core.
 
 (* If the labels are unique across the compilation unit, then no
    colored label is both an intro site and an elim site, i.e. the two
-   components of L are disjoint. In particular cl1 <> cl2 for every
-   pair (cl1, cl2) \in L. *)
-Definition clabel_pairs_diff (L : clabel_pairs) : Prop := forall cl, cintro L cl -> ~ celim L cl.
+   components of I are disjoint. In particular cl1 <> cl2 for every
+   pair (cl1, cl2) \in I. *)
+Definition interactions_diff (I : interactions) : Prop := forall cl, cintro I cl -> ~ celim I cl.
 
 (* The converse direction is the same statement: both say ~ (cintro /\ celim). *)
-Lemma clabel_pairs_diff_celim {L cl} :
-  clabel_pairs_diff L ->
-  celim L cl ->
-  ~ cintro L cl.
+Lemma interactions_diff_celim {I cl} :
+  interactions_diff I ->
+  celim I cl ->
+  ~ cintro I cl.
 Proof.
   intros Hdiff Helim Hintro.
   eapply Hdiff; eauto.
 Qed.
 
-Lemma clabel_pairs_diff_neq {L cl1 cl2} :
-  clabel_pairs_diff L ->
-  ((cl1, cl2) \in L) ->
+Lemma interactions_diff_neq {I cl1 cl2} :
+  interactions_diff I ->
+  ((cl1, cl2) \in I) ->
   cl1 <> cl2.
 Proof.
   intros Hdiff Hin Heq; subst.
@@ -838,22 +839,22 @@ Definition R' (P : nat -> wval -> clval -> Prop) (i : nat) (r1 : res) (r2 : cres
   | _, _ => False
   end.
 
-Definition E' (P : nat -> wval -> clval -> Prop) (L : clabel_pairs) (c : color) (i : nat) (ρ1 : env) (ρ2 : cenv) (e : exp) : Prop :=
+Definition E' (P : nat -> wval -> clval -> Prop) (I : interactions) (c : color) (i : nat) (ρ1 : env) (ρ2 : cenv) (e : exp) : Prop :=
   forall j1 r1,
     j1 <= i ->
     bstep_fuel ρ1 e j1 r1 ->
     exists j2 r2,
-      cbstep_fuel L c ρ2 e j2 r2 /\
+      cbstep_fuel I c ρ2 e j2 r2 /\
         R' P (i - j1) r1 r2.
 
 (* L is sound for a particular program trace of e *)
 (* Note that this naturally specifies L produced by the collecting semantics. *)
-Definition clabel_pairs_sound L c Γ ρ1 ρ2 e :=
+Definition interactions_sound I c Γ ρ1 ρ2 e :=
   forall i r1,
     bstep_fuel ρ1 e i r1 ->
     refine_env Γ ρ1 ρ2 ->
     exists r2,
-      cbstep_fuel L c ρ2 e i r2 /\
+      cbstep_fuel I c ρ2 e i r2 /\
         refine_res r1 r2.
 
 Fixpoint V (i : nat) (wv : wval) (cv : clval) {struct i} : Prop :=
@@ -879,14 +880,14 @@ Fixpoint V (i : nat) (wv : wval) (cv : clval) {struct i} : Prop :=
                 match i with
                 | 0 => True
                 | S i0 =>
-                    forall L j vs1 vs2 ρ3 ρ4,
+                    forall I j vs1 vs2 ρ3 ρ4,
                       j <= i0 ->
                       Forall2 (V (i0 - (i0 - j))) vs1 vs2 ->
                       set_lists xs1 vs1 (M.set f1 (Tag l1 (Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
                       set_lists xs2 vs2 (M.set f2 (CTag c2 l2 (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
-                      clabel_pairs_diff L ->
-                      clabel_pairs_sound L c2 (occurs_free e1) ρ3 ρ4 e1 ->
-                      E' V L c2 (i0 - (i0 - j)) ρ3 ρ4 e1
+                      interactions_diff I ->
+                      interactions_sound I c2 (occurs_free e1) ρ3 ρ4 e1 ->
+                      E' V I c2 (i0 - (i0 - j)) ρ3 ρ4 e1
                 end
 
           | _, _ => False
@@ -1154,7 +1155,7 @@ Proof.
     destruct v; destruct c0; try contradiction.
     + destruct HV as [Heqv [Heql [Heqe HV]]]; subst.
       eexists; repeat (split; eauto); intros.
-      specialize (HV L j0 vs1 vs2 ρ3 ρ4).
+      specialize (HV I j0 vs1 vs2 ρ3 ρ4).
       rewrite normalize_step in *; try lia.
       apply HV; eauto; lia.
     + destruct HV as [Heqc [Hlen HV]]; subst.
@@ -1186,10 +1187,10 @@ Proof.
   eapply V_mono; eauto.
 Qed.
 
-Lemma E_mono {L c ρ1 ρ2 e} i j:
-  E L c i ρ1 ρ2 e ->
+Lemma E_mono {I c ρ1 ρ2 e} i j:
+  E I c i ρ1 ρ2 e ->
   j <= i ->
-  E L c j ρ1 ρ2 e.
+  E I c j ρ1 ρ2 e.
 Proof.
   unfold E, R, E', R'.
   intros.
@@ -1317,11 +1318,11 @@ Proof.
 Qed.
 
 Definition well_colored c Γ e :=
-  forall L i ρ1 ρ2,
-    clabel_pairs_diff L ->
-    clabel_pairs_sound L c Γ ρ1 ρ2 e ->
+  forall I i ρ1 ρ2,
+    interactions_diff I ->
+    interactions_sound I c Γ ρ1 ρ2 e ->
     G i Γ ρ1 ρ2 ->
-    E L c i ρ1 ρ2 e.
+    E I c i ρ1 ρ2 e.
 
 Lemma ret_compat c Γ x :
   (x \in Γ) ->
@@ -1340,24 +1341,24 @@ Proof.
     eapply V_mono; eauto; lia.
 Qed.
 
-Lemma clabel_pairs_sound_fun_inv_k {L c Γ ρ1 ρ2 f l xs e k}:
-  clabel_pairs_sound L c Γ ρ1 ρ2 (Efun f l xs e k) ->
+Lemma interactions_sound_fun_inv_k {I c Γ ρ1 ρ2 f l xs e k}:
+  interactions_sound I c Γ ρ1 ρ2 (Efun f l xs e k) ->
   refine_env Γ ρ1 ρ2 ->
-  clabel_pairs_sound L c (f |: Γ) (M.set f (Tag l (Vfun f ρ1 xs e)) ρ1) (M.set f (CTag c l (CVfun f ρ2 xs e)) ρ2) k.
+  interactions_sound I c (f |: Γ) (M.set f (Tag l (Vfun f ρ1 xs e)) ρ1) (M.set f (CTag c l (CVfun f ρ2 xs e)) ρ2) k.
 Proof.
-  unfold clabel_pairs_sound.
+  unfold interactions_sound.
   intros.
   edestruct (H (S i) r1) as [r2 [Hcbstep Href]]; eauto.
   eexists; split; eauto.
   fcrush.
 Qed.
 
-Lemma clabel_pairs_sound_subset L c Γ1 Γ2 ρ1 ρ2 e :
-  clabel_pairs_sound L c Γ1 ρ1 ρ2 e ->
+Lemma interactions_sound_subset I c Γ1 Γ2 ρ1 ρ2 e :
+  interactions_sound I c Γ1 ρ1 ρ2 e ->
   Γ1 \subset Γ2 ->
-  clabel_pairs_sound L c Γ2 ρ1 ρ2 e.
+  interactions_sound I c Γ2 ρ1 ρ2 e.
 Proof.
-  unfold clabel_pairs_sound.
+  unfold interactions_sound.
   intros.
   eapply H; eauto.
   eapply refine_env_subset; eauto.
@@ -1378,9 +1379,9 @@ Proof.
   induction i; simpl; intros; auto;
     repeat (split; auto);
     intros; (repeat split; auto).
-  eapply (He L (i - (i - j)) ρ3 ρ4); eauto.
+  eapply (He I (i - (i - j)) ρ3 ρ4); eauto.
 
-  eapply clabel_pairs_sound_subset; eauto.
+  eapply interactions_sound_subset; eauto.
 
   eapply G_subset; eauto.
   eapply G_set_lists; eauto.
@@ -1398,7 +1399,7 @@ Lemma fun_compat c Γ e k f l xs :
   well_colored c (f |: Γ) k ->
   well_colored c Γ (Efun f l xs e k).
 Proof.
-  unfold well_colored, clabel_pairs_sound, E, E'.
+  unfold well_colored, interactions_sound, E, E'.
   intross HS He Hk.
 
   inv H3.
@@ -1412,8 +1413,8 @@ Proof.
 
     inv Hcbstep; inv H4.
     inv H6; invc.
-    edestruct (Hk L (i - 1) (M.set f (Tag l (Vfun f ρ1 xs e)) ρ1) (M.set f (CTag c l (CVfun f ρ2 xs e)) ρ2)) with (j1 := c0) (r1 := (Res w)) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
-    + strivial use: @clabel_pairs_sound_fun_inv_k unfold: clabel_pairs_sound.
+    edestruct (Hk I (i - 1) (M.set f (Tag l (Vfun f ρ1 xs e)) ρ1) (M.set f (CTag c l (CVfun f ρ2 xs e)) ρ2)) with (j1 := c0) (r1 := (Res w)) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+    + strivial use: @interactions_sound_fun_inv_k unfold: interactions_sound.
     + eapply G_subset.
       eapply G_set; eauto.
       eapply G_mono with i; eauto; lia.
@@ -1453,12 +1454,12 @@ Proof.
     unfold clval in *.
     rewrite <- (set_lists_length_eq _ _ _ _ H14); auto.
 
-    assert (HE : E L c' (i - (i - i)) ρ'' ρ4 e0).
+    assert (HE : E I c' (i - (i - i)) ρ'' ρ4 e0).
     {
       eapply (HV _ i vs vs2); eauto.
       apply V_mono_Forall with (S i); auto; lia.
 
-      unfold clabel_pairs_sound; intros.
+      unfold interactions_sound; intros.
       edestruct (H0 (S i0) r1) as [r2 [Hcbstep2 Hrefr2]]; eauto.
       inv Hrefr2.
       - inv Hcbstep2.
@@ -1544,61 +1545,61 @@ Inductive unique_color : cexp -> vars := .
 Hint Constructors unique_color : core.
 
 (* Top-level Checking Semantics *)
-Inductive cbstep_top (L : clabel_pairs) (ρ : cenv) : cexp -> fuel -> cres -> Prop :=
+Inductive cbstep_top (I : interactions) (ρ : cenv) : cexp -> fuel -> cres -> Prop :=
 | Cbstep_exp_top :
   forall {e c i r},
-    cbstep L c ρ e i r ->
-    cbstep_top L ρ (CEexp c e) i r
+    cbstep I c ρ e i r ->
+    cbstep_top I ρ (CEexp c e) i r
 
 | Cbstep_link_top_trivial :
   forall {x e k},
-    cbstep_top L ρ (CElink x e k) 0 COOT
+    cbstep_top I ρ (CElink x e k) 0 COOT
 
 | Cbstep_link_top_Res :
   forall {x e k i' i r v},
-    cbstep_top_fuel L ρ e i (CRes v) ->
-    cbstep_top_fuel L (M.set x v ρ) k i' r ->
-    cbstep_top L ρ (CElink x e k) (S (i + i')) r
+    cbstep_top_fuel I ρ e i (CRes v) ->
+    cbstep_top_fuel I (M.set x v ρ) k i' r ->
+    cbstep_top I ρ (CElink x e k) (S (i + i')) r
 
 | Cbstep_link_top_OOT :
   forall {x e k i},
-    cbstep_top_fuel L ρ e i COOT ->
-    cbstep_top L ρ (CElink x e k) (S i) COOT
+    cbstep_top_fuel I ρ e i COOT ->
+    cbstep_top I ρ (CElink x e k) (S i) COOT
 
-with cbstep_top_fuel (L : clabel_pairs) (ρ : cenv) : cexp -> fuel -> cres -> Prop :=
+with cbstep_top_fuel (I : interactions) (ρ : cenv) : cexp -> fuel -> cres -> Prop :=
 | CbstepTF_OOT :
   forall {e},
-    cbstep_top_fuel L ρ e 0 COOT
+    cbstep_top_fuel I ρ e 0 COOT
 
 | CbstepTF_Step :
   forall {e i r},
-    cbstep_top L ρ e i r ->
-    cbstep_top_fuel L ρ e (S i) r.
+    cbstep_top I ρ e i r ->
+    cbstep_top_fuel I ρ e (S i) r.
 
 Hint Constructors cbstep_top : core.
 Hint Constructors cbstep_top_fuel : core.
 
 (* The step-index is aligned between the two semantics. *)
-Lemma cbstep_fuel_cbstep_top_fuel L c ρ e j r:
-  cbstep_fuel L c ρ e j r ->
-  cbstep_top_fuel L ρ (CEexp c e) j r.
+Lemma cbstep_fuel_cbstep_top_fuel I c ρ e j r:
+  cbstep_fuel I c ρ e j r ->
+  cbstep_top_fuel I ρ (CEexp c e) j r.
 Proof. intros H; inv H; eauto. Qed.
 
-Lemma cbstep_top_fuel_cbstep_fuel L c ρ e j r:
-  cbstep_top_fuel L ρ (CEexp c e) j r ->
-  cbstep_fuel L c ρ e j r.
+Lemma cbstep_top_fuel_cbstep_fuel I c ρ e j r:
+  cbstep_top_fuel I ρ (CEexp c e) j r ->
+  cbstep_fuel I c ρ e j r.
 Proof.
   intros H; inv H; eauto.
   fcrush.
 Qed.
 
-Lemma cbstep_top_wf_res L ρ e i r :
+Lemma cbstep_top_wf_res I ρ e i r :
   wf_cenv ρ ->
-  cbstep_top L ρ e i r ->
+  cbstep_top I ρ e i r ->
   wf_cres r
-with cbstep_top_fuel_wf_res L ρ e i r :
+with cbstep_top_fuel_wf_res I ρ e i r :
   wf_cenv ρ ->
-  cbstep_top_fuel L ρ e i r ->
+  cbstep_top_fuel I ρ e i r ->
   wf_cres r.
 Proof.
   - intros Hw H. inv H.
@@ -1623,19 +1624,19 @@ Qed.
 
 (* Cross-language Logical Relations *)
 
-Definition E_top' (P : nat -> wval -> clval -> Prop) (L : clabel_pairs) (i : nat) (ρ1 : env) (e1 : exp) (ρ2 : cenv) (e2 : cexp) : Prop :=
+Definition E_top' (P : nat -> wval -> clval -> Prop) (I : interactions) (i : nat) (ρ1 : env) (e1 : exp) (ρ2 : cenv) (e2 : cexp) : Prop :=
   forall j1 r1,
     j1 <= i ->
     bstep_fuel ρ1 e1 j1 r1 ->
     exists j2 r2,
-      cbstep_top_fuel L ρ2 e2 j2 r2 /\
+      cbstep_top_fuel I ρ2 e2 j2 r2 /\
       R' P (i - j1) r1 r2.
 
 Definition E_top := E_top' V.
 
-Lemma E_E_top L c i ρ1 ρ2 e :
-  E L c i ρ1 ρ2 e ->
-  E_top L i ρ1 e ρ2 (CEexp c e).
+Lemma E_E_top I c i ρ1 ρ2 e :
+  E I c i ρ1 ρ2 e ->
+  E_top I i ρ1 e ρ2 (CEexp c e).
 Proof.
   unfold E, E_top, E', E_top'.
   intros.
@@ -1644,9 +1645,9 @@ Proof.
   eapply cbstep_fuel_cbstep_top_fuel; eauto.
 Qed.
 
-Lemma E_top_E L c i ρ1 ρ2 e :
-  E_top L i ρ1 e ρ2 (CEexp c e) ->
-  E L c i ρ1 ρ2 e.
+Lemma E_top_E I c i ρ1 ρ2 e :
+  E_top I i ρ1 e ρ2 (CEexp c e) ->
+  E I c i ρ1 ρ2 e.
 Proof.
   unfold E, E_top, E', E_top'.
   intros.
@@ -1655,10 +1656,10 @@ Proof.
   eapply cbstep_top_fuel_cbstep_fuel; eauto.
 Qed.
 
-Lemma E_top_mono {L ρ1 ρ2 e1 e2} i j:
-  E_top L i ρ1 e1 ρ2 e2 ->
+Lemma E_top_mono {I ρ1 ρ2 e1 e2} i j:
+  E_top I i ρ1 e1 ρ2 e2 ->
   j <= i ->
-  E_top L j ρ1 e1 ρ2 e2.
+  E_top I j ρ1 e1 ρ2 e2.
 Proof.
   unfold E_top, E_top'.
   intros.
@@ -1671,45 +1672,45 @@ Definition G_top := G.
 
 (* Soundness of Analysis *)
 (* L is large enough to incorporate all program traces. *)
-Definition clabel_pairs_analysis_sound L e e' :=
+Definition interactions_analysis_sound I e e' :=
   forall i r1 ρ1 ρ2,
     bstep_fuel ρ1 e i r1 ->
     refine_env (occurs_free e) ρ1 ρ2 ->
     wf_env (occurs_free e) ρ1 ->
     wf_cenv ρ2 ->
     exists r2,
-      cbstep_top_fuel L ρ2 e' i r2 /\
+      cbstep_top_fuel I ρ2 e' i r2 /\
       refine_res r1 r2.
 
-Lemma clabel_pairs_analysis_sound_instantiate L c e :
-  clabel_pairs_analysis_sound L e (CEexp c e) ->
+Lemma interactions_analysis_sound_instantiate I c e :
+  interactions_analysis_sound I e (CEexp c e) ->
   forall ρ1 ρ2,
     wf_env (occurs_free e) ρ1 ->
     wf_cenv ρ2 ->
-    clabel_pairs_sound L c (occurs_free e) ρ1 ρ2 e.
+    interactions_sound I c (occurs_free e) ρ1 ρ2 e.
 Proof.
-  unfold clabel_pairs_analysis_sound, clabel_pairs_sound.
+  unfold interactions_analysis_sound, interactions_sound.
   intros.
   hauto lq: on use: cbstep_top_fuel_cbstep_fuel.
 Qed.
 
-Definition analysis_correct_top L e e' :=
+Definition analysis_correct_top I e e' :=
   (occurs_free_top e') \subset (occurs_free e) /\
-  clabel_pairs_diff L /\
-  clabel_pairs_analysis_sound L e e' /\
+  interactions_diff I /\
+  interactions_analysis_sound I e e' /\
   forall i ρ1 ρ2,
     G_top i (occurs_free e) ρ1 ρ2 ->
-    E_top L i ρ1 e ρ2 e'.
+    E_top I i ρ1 e ρ2 e'.
 
-Lemma analysis_correct_top_subset L e1 e2 :
-  analysis_correct_top L e1 e2 ->
+Lemma analysis_correct_top_subset I e1 e2 :
+  analysis_correct_top I e1 e2 ->
   occurs_free_top e2 \subset occurs_free e1.
 Proof. unfold analysis_correct_top. fcrush. Qed.
 
-Theorem analysis_top L c etop:
-  clabel_pairs_diff L ->
-  clabel_pairs_analysis_sound L etop (CEexp c etop) ->
-  analysis_correct_top L etop (CEexp c etop).
+Theorem analysis_top I c etop:
+  interactions_diff I ->
+  interactions_analysis_sound I etop (CEexp c etop) ->
+  analysis_correct_top I etop (CEexp c etop).
 Proof.
   unfold analysis_correct_top.
   intros; repeat (split; eauto); intros.
@@ -1718,156 +1719,156 @@ Proof.
   eapply fundamental_property; eauto.
   eapply well_scoped_intro; eauto.
   eapply Included_refl.
-  eapply clabel_pairs_analysis_sound_instantiate; eauto.
+  eapply interactions_analysis_sound_instantiate; eauto.
   eapply G_wf_env_l; eauto.
   eapply G_wf_cenv_r; eauto.
 Qed.
 
 (* Linking Preservation *)
-Lemma preserves_linking f x L1 L2 e1 e1' e2 e2' :
+Lemma preserves_linking f x I1 I2 e1 e1' e2 e2' :
   f <> x ->
   ~ (f \in occurs_free e1) ->
   ~ (f \in occurs_free e2) ->
-  analysis_correct_top L1 e1 e1' ->
-  analysis_correct_top L2 e2 e2' ->
-  analysis_correct_top (L1 :|: L2) (link f x e1 e2) (clink x e1' e2').
+  analysis_correct_top I1 e1 e1' ->
+  analysis_correct_top I2 e2 e2' ->
+  analysis_correct_top (I1 :|: I2) (link f x e1 e2) (clink x e1' e2').
 Proof.
 Abort.
 
 (* REVISIT: put cinteract into reachable? *)
 
-(* Symmetric, undirected interaction between two colored labels in L. *)
-Definition cinteract (L : clabel_pairs) (cl1 cl2 : clabel) : Prop :=
-  ((cl1, cl2) \in L) \/ ((cl2, cl1) \in L).
+(* Symmetric, undirected interaction between two colored labels in I. *)
+Definition cinteract (I : interactions) (cl1 cl2 : clabel) : Prop :=
+  ((cl1, cl2) \in I) \/ ((cl2, cl1) \in I).
 
 (* Reachable label pairs *)
-(* 1. `reachable L cl` is the set of colored labels connected to `cl` by a chain of
-   interactions in L, in either direction (transitive closure of `cinteract`).
+(* 1. `reachable I cl` is the set of colored labels connected to `cl` by a chain of
+   interactions in I, in either direction (transitive closure of `cinteract`).
 
-   2. Note this set is exclusive in that `cl` is not part of under `clabel_pairs_diff`. *)
-Inductive reachable (L : clabel_pairs) (cl : clabel) : clabels :=
+   2. Note this set is exclusive in that `cl` is not part of under `interactions_diff`. *)
+Inductive reachable (I : interactions) (cl : clabel) : clabels :=
 | Reachable_interact :
   forall cl',
-    cinteract L cl cl' ->
-    reachable L cl cl'
+    cinteract I cl cl' ->
+    reachable I cl cl'
 
 | Reachable_step :
   forall cl' cl'',
-    reachable L cl cl' ->
-    cinteract L cl' cl'' ->
-    reachable L cl cl''.
+    reachable I cl cl' ->
+    cinteract I cl' cl'' ->
+    reachable I cl cl''.
 
 Hint Constructors reachable : core.
 
 (* Reachable labels of a given color *)
-(* If we allow reflexivity, (c, l) \in reachable L (c, l) holds for every l,
-   which would make reachable_labels L c the set of all labels regardless of L. *)
-Definition reachable_labels (L : clabel_pairs) (c : color) : labels :=
-  fun l => exists l' c', ((c', l) \in reachable L (c, l')).
+(* If we allow reflexivity, (c, l) \in reachable I (c, l) holds for every l,
+   which would make reachable_labels I c the set of all labels regardless of I. *)
+Definition reachable_labels (I : interactions) (c : color) : labels :=
+  fun l => exists l' c', ((c', l) \in reachable I (c, l')).
 
 (* Reachable colors of a given label *)
-Definition reachable_colors (L : clabel_pairs) (l : label) : colors :=
-  fun c => exists c' l', ((c, l') \in reachable L (c', l)).
+Definition reachable_colors (I : interactions) (l : label) : colors :=
+  fun c => exists c' l', ((c, l') \in reachable I (c', l)).
 
 (* `cl` has only internal interaction if the set of reachable colors is exactly the singleton set {c}. *)
-Definition internal (L : clabel_pairs) (cl : clabel) : Prop :=
+Definition internal (I : interactions) (cl : clabel) : Prop :=
   match cl with
-  | (c, l) => (reachable_colors L l) <--> [ set c ]
+  | (c, l) => (reachable_colors I l) <--> [ set c ]
   end.
 
 (* `cl` has external interaction if it is not internal *)
-Definition external (L : clabel_pairs) (cl : clabel) : Prop :=
-  ~ internal L cl.
+Definition external (I : interactions) (cl : clabel) : Prop :=
+  ~ internal I cl.
 
 (*
 
 Definition web_map := M.t web.
 
-(* Converting [clabel_pairs] to [web_map] *)
+(* Converting [interactions] to [web_map] *)
 
-(* Labels of a given color appearing on either side of a pair in L. *)
-Definition labels_of_color (L : clabel_pairs) (c : color) : labels :=
-  fun l => exists cl, (((c, l), cl) \in L) \/ ((cl, (c, l)) \in L).
+(* Labels of a given color appearing on either side of a pair in I. *)
+Definition labels_of_color (I : interactions) (c : color) : labels :=
+  fun l => exists cl, (((c, l), cl) \in I) \/ ((cl, (c, l)) \in I).
 
 
 (* A blue label is tainted iff it can reach a red label through a chain of
    blue-blue interactions. The transitive closure is captured by the recursive
    `Tainted_blue` rule. *)
-Inductive tainted (L : clabel_pairs) : label -> Prop :=
+Inductive tainted (I : interactions) : label -> Prop :=
 | Tainted_red :
     forall l r,
-      cinteract L (Blue, l) (Red, r) ->
-      tainted L l
+      cinteract I (Blue, l) (Red, r) ->
+      tainted I l
 
 | Tainted_blue :
     forall l l',
-      cinteract L (Blue, l) (Blue, l') ->
-      tainted L l' ->
-      tainted L l.
+      cinteract I (Blue, l) (Blue, l') ->
+      tainted I l' ->
+      tainted I l.
 
 Hint Constructors tainted : core.
 
 (* Equivalence among non-tainted blue labels: the reflexive/symmetric/transitive
    closure of blue-blue interaction restricted to non-tainted labels.
    Symmetry of `BE_step` is inherited from `cinteract`. *)
-Inductive blue_equiv (L : clabel_pairs) : label -> label -> Prop :=
+Inductive blue_equiv (I : interactions) : label -> label -> Prop :=
 | BE_refl :
     forall l,
-      (l \in labels_of_color L Blue) ->
-      ~ tainted L l ->
-      blue_equiv L l l
+      (l \in labels_of_color I Blue) ->
+      ~ tainted I l ->
+      blue_equiv I l l
 
 | BE_step :
     forall l1 l2,
-      cinteract L (Blue, l1) (Blue, l2) ->
-      ~ tainted L l1 ->
-      ~ tainted L l2 ->
-      blue_equiv L l1 l2
+      cinteract I (Blue, l1) (Blue, l2) ->
+      ~ tainted I l1 ->
+      ~ tainted I l2 ->
+      blue_equiv I l1 l2
 
 | BE_trans :
     forall l1 l2 l3,
-      blue_equiv L l1 l2 ->
-      blue_equiv L l2 l3 ->
-      blue_equiv L l1 l3.
+      blue_equiv I l1 l2 ->
+      blue_equiv I l2 l3 ->
+      blue_equiv I l1 l3.
 
 Hint Constructors blue_equiv : core.
 
-(* W is a valid web map for the colored label set L. *)
-Inductive clabel_pairs_to_web_map (L : clabel_pairs) (W : web_map) : Prop :=
-| LS_to_WM :
-    (* (1) Totality: every blue label of L is mapped by W. *)
+(* W is a valid web map for the colored label set I. *)
+Inductive interactions_to_web_map (I : interactions) (W : web_map) : Prop :=
+| IS_to_WM :
+    (* (1) Totality: every blue label of I is mapped by W. *)
     (forall l,
-        (l \in labels_of_color L Blue) ->
+        (l \in labels_of_color I Blue) ->
         exists w, W ! l = Some w) ->
     (* (2) Tainted blue labels map to exposed webs. *)
     (forall l w,
-        tainted L l ->
+        tainted I l ->
         W ! l = Some w ->
         (w \in Exposed)) ->
     (* (3) Non-tainted blue labels map to non-exposed webs
        (these are the internal class representatives). *)
     (forall l w,
-        (l \in labels_of_color L Blue) ->
-        ~ tainted L l ->
+        (l \in labels_of_color I Blue) ->
+        ~ tainted I l ->
         W ! l = Some w ->
         ~ (w \in Exposed)) ->
     (* (4) Equivalent non-tainted blue labels share the same web (the rep). *)
     (forall l1 l2 w1 w2,
-        blue_equiv L l1 l2 ->
+        blue_equiv I l1 l2 ->
         W ! l1 = Some w1 ->
         W ! l2 = Some w2 ->
         w1 = w2) ->
     (* (5) Distinct equivalence classes get distinct reps: if two non-tainted
        blue labels share a web, they must be in the same class. *)
     (forall l1 l2 w,
-        (l1 \in labels_of_color L Blue) ->
-        (l2 \in labels_of_color L Blue) ->
-        ~ tainted L l1 ->
-        ~ tainted L l2 ->
+        (l1 \in labels_of_color I Blue) ->
+        (l2 \in labels_of_color I Blue) ->
+        ~ tainted I l1 ->
+        ~ tainted I l2 ->
         W ! l1 = Some w ->
         W ! l2 = Some w ->
-        blue_equiv L l1 l2) ->
-    clabel_pairs_to_web_map L W.
+        blue_equiv I l1 l2) ->
+    interactions_to_web_map I W.
 
-Hint Constructors clabel_pairs_to_web_map : core.
+Hint Constructors interactions_to_web_map : core.
 *)
