@@ -25,6 +25,9 @@ Definition clabels : Type := Ensemble clabel.
 Definition interaction : Type := (clabel * clabel).
 Definition interactions := Ensemble interaction.
 
+(* Internal Label Set *)
+Definition internals : Type := clabels.
+
 (* Tagged Value *)
 Inductive ctag A : Type :=
 | CTAG : clabel -> A -> ctag A.
@@ -53,8 +56,7 @@ Inductive cres : Type :=
 Hint Constructors cres : core.
 
 (* Colored Checking Semantics *)
-(* `I` is the colored label set produced by running the entire linked labeled program,
-   so `I` contains all the information we need to specify what happens within the current program context. *)
+(* `I` is the colored label set specifying the valid program interactions. *)
 Inductive cbstep (I : interactions) (c : color) (ρ : cenv) : exp -> fuel -> cres -> Prop :=
 | Cbstep_ret :
   forall {x v},
@@ -857,7 +859,48 @@ Definition interactions_sound I c Γ ρ1 ρ2 e :=
       cbstep_fuel I c ρ2 e i r2 /\
         refine_res r1 r2.
 
-Fixpoint V (i : nat) (wv : wval) (cv : clval) {struct i} : Prop :=
+(* Reachable label pairs *)
+(* `reachable I cl` is the set of colored labels connected to `cl` by a chain of
+   interactions in I, in either direction (transitive closure of `cinteract`). *)
+Inductive reachable (I : interactions) (cl : clabel) : clabels :=
+| Reachable_refl :
+  reachable I cl cl
+
+| Reachable_interact_l :
+  forall cl',
+    (cl, cl') \in I ->
+    reachable I cl cl'
+
+| Reachable_interact_r :
+  forall cl',
+    (cl', cl) \in I ->
+    reachable I cl cl'
+
+| Reachable_step :
+  forall cl' cl'',
+    reachable I cl cl' ->
+    reachable I cl' cl'' ->
+    reachable I cl cl''.
+
+Hint Constructors reachable : core.
+
+Definition colors_of (L : clabels) : colors :=
+  fun c => exists l, (c, l) \in L.
+
+(* `cl` has only internal interaction if the set of reachable colors is exactly the singleton set {c}. *)
+Definition internal (I : interactions) (cl : clabel) : Prop :=
+  match cl with
+  | (c, _) => (colors_of (reachable I cl)) <--> [ set c ]
+  end.
+
+(* `cl` has external interaction if it is not internal *)
+Definition external (I : interactions) (cl : clabel) : Prop :=
+  ~ internal I cl.
+
+Definition internals_sound (U : internals) (I : interactions) (cl : clabel) : Prop :=
+  (cl \in U) -> internal I cl.
+
+Fixpoint V (U : internals) (i : nat) (wv : wval) (cv : clval) {struct i} : Prop :=
   wf_val wv /\
   wf_cval cv /\
   refine_val wv cv /\
@@ -870,7 +913,7 @@ Fixpoint V (i : nat) (wv : wval) (cv : clval) {struct i} : Prop :=
                 length vs1 = length vs2 /\
                 match i with
                 | 0 => True
-                | S i0 => Forall2 (V i0) vs1 vs2
+                | S i0 => Forall2 (V U i0) vs1 vs2
                 end
 
           | Vfun f1 ρ1 xs1 e1, CVfun f2 ρ2 xs2 e2 =>
@@ -882,12 +925,13 @@ Fixpoint V (i : nat) (wv : wval) (cv : clval) {struct i} : Prop :=
                 | S i0 =>
                     forall I j vs1 vs2 ρ3 ρ4,
                       j <= i0 ->
-                      Forall2 (V (i0 - (i0 - j))) vs1 vs2 ->
+                      Forall2 (V U (i0 - (i0 - j))) vs1 vs2 ->
                       set_lists xs1 vs1 (M.set f1 (Tag l1 (Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
                       set_lists xs2 vs2 (M.set f2 (CTag c2 l2 (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
                       interactions_diff I ->
                       interactions_sound I c2 (occurs_free e1) ρ3 ρ4 e1 ->
-                      E' V I c2 (i0 - (i0 - j)) ρ3 ρ4 e1
+                      internals_sound U I (c2, l2) ->
+                      E' (V U) I c2 (i0 - (i0 - j)) ρ3 ρ4 e1
                 end
 
           | _, _ => False
@@ -1735,30 +1779,8 @@ Lemma preserves_linking f x I1 I2 e1 e1' e2 e2' :
 Proof.
 Abort.
 
-(* REVISIT: put cinteract into reachable? *)
+(*
 
-(* Symmetric, undirected interaction between two colored labels in I. *)
-Definition cinteract (I : interactions) (cl1 cl2 : clabel) : Prop :=
-  ((cl1, cl2) \in I) \/ ((cl2, cl1) \in I).
-
-(* Reachable label pairs *)
-(* 1. `reachable I cl` is the set of colored labels connected to `cl` by a chain of
-   interactions in I, in either direction (transitive closure of `cinteract`).
-
-   2. Note this set is exclusive in that `cl` is not part of under `interactions_diff`. *)
-Inductive reachable (I : interactions) (cl : clabel) : clabels :=
-| Reachable_interact :
-  forall cl',
-    cinteract I cl cl' ->
-    reachable I cl cl'
-
-| Reachable_step :
-  forall cl' cl'',
-    reachable I cl cl' ->
-    cinteract I cl' cl'' ->
-    reachable I cl cl''.
-
-Hint Constructors reachable : core.
 
 (* Reachable labels of a given color *)
 (* If we allow reflexivity, (c, l) \in reachable I (c, l) holds for every l,
@@ -1769,18 +1791,6 @@ Definition reachable_labels (I : interactions) (c : color) : labels :=
 (* Reachable colors of a given label *)
 Definition reachable_colors (I : interactions) (l : label) : colors :=
   fun c => exists c' l', ((c, l') \in reachable I (c', l)).
-
-(* `cl` has only internal interaction if the set of reachable colors is exactly the singleton set {c}. *)
-Definition internal (I : interactions) (cl : clabel) : Prop :=
-  match cl with
-  | (c, l) => (reachable_colors I l) <--> [ set c ]
-  end.
-
-(* `cl` has external interaction if it is not internal *)
-Definition external (I : interactions) (cl : clabel) : Prop :=
-  ~ internal I cl.
-
-(*
 
 Definition web_map := M.t web.
 
