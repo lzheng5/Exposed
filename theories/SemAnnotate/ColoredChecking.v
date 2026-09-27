@@ -1051,7 +1051,8 @@ Fixpoint V (i : nat) (wv : wval) (cv : clval) {struct i} : Prop :=
                       set_lists xs1 vs1 (M.set f1 (Tag l1 (Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
                       set_lists xs2 vs2 (M.set f2 (CTag U c2 l2 (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
                       interactions_diff I ->
-                      internals_closed U I ->
+                      (* This should be an invariant but adding this somehow overconstrains the definition. *)
+                      (* internals_closed U I -> *)
                       internals_sound U I (c2, l2) ->
                       interactions_sound U I c2 (occurs_free e1) ρ3 ρ4 e1 ->
                       E' V U I c2 (i0 - (i0 - j)) ρ3 ρ4 e1
@@ -1488,7 +1489,7 @@ Definition well_colored U c Γ e :=
   internals_monochromatic_with U c /\
   forall I i ρ1 ρ2,
     interactions_diff I ->
-    internals_closed U I ->
+    (* internals_closed U I -> *)
     interactions_sound U I c Γ ρ1 ρ2 e ->
     G i Γ ρ1 ρ2 ->
     E U I c i ρ1 ρ2 e.
@@ -1502,12 +1503,12 @@ Proof.
   intros; simpl.
   split; auto; intros.
 
-  inv H6.
+  inv H5.
   - fcrush.
   - destruct r1.
     fcrush.
-    inv H7.
-    edestruct (G_get H4) as [v2 [Heqv2 HV]]; eauto.
+    inv H6.
+    edestruct (G_get H3) as [v2 [Heqv2 HV]]; eauto.
     eexists; exists (CRes v2); split; eauto; simpl.
     eapply V_mono; eauto; lia.
 Qed.
@@ -1574,17 +1575,17 @@ Proof.
   intros HS He [HU Hk].
   split; auto; intros.
 
-  inv H4.
+  inv H3.
   - fcrush.
   - destruct r1.
     fcrush.
     assert (Hwfρ1 : wf_env Γ ρ1) by eauto using G_wf_env_l.
     assert (Hwfρ2 : wf_cenv ρ2) by eauto using G_wf_cenv_r.
     assert (Hrefρ : refine_env Γ ρ1 ρ2) by eauto using G_refine_env.
-    edestruct (H1 (S c0) (Res w)) as [cv [Hcbstep Href]]; eauto.
+    edestruct (H0 (S c0) (Res w)) as [cv [Hcbstep Href]]; eauto.
 
-    inv Hcbstep; inv H5.
-    inv H7; invc.
+    inv Hcbstep; inv H4.
+    inv H6; invc.
     edestruct (Hk I (i - 1) (M.set f (Tag l (Vfun f ρ1 xs e)) ρ1) (M.set f (CTag U c l (CVfun f ρ2 xs e)) ρ2)) with (j1 := c0) (r1 := (Res w)) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
     + strivial use: @interactions_sound_fun_inv_k unfold: interactions_sound.
     + eapply G_subset.
@@ -1607,44 +1608,42 @@ Proof.
   intross HU Hf Hxs; simpl.
   split; auto; intros.
 
-  inv H4.
+  inv H3.
   - fcrush.
   - destruct r1.
     fcrush.
     assert (Hrefρ : refine_env _ ρ1 ρ2) by eauto using G_refine_env.
-    edestruct (H1 (S c0) (Res w)) as [cv [Hcbstep Href]]; eauto.
-    inv Hcbstep; inv H5; inv Href.
-    inv H7; invc.
-    edestruct (G_get H2 f) as [fv2 [Heqfv2 HV]]; eauto.
+    edestruct (H0 (S c0) (Res w)) as [cv [Hcbstep Href]]; eauto.
+    inv Hcbstep; inv H4; inv Href.
+    inv H6; invc.
+    edestruct (G_get H1 f) as [fv2 [Heqfv2 HV]]; eauto.
     destruct i.
-    inv H3.
+    inv H2.
     rename w into v.
     destruct fv2; simpl in HV; invc;
       rename i0 into U0;
       destruct HV as [Hwf1 [Hwf2 [Hrefv [Heql [HU0 [Heqf [Heqxs [Heqe HV]]]]]]]]; subst; invc.
 
-    edestruct (G_get_list H2 xs vs) as [vs2 [Heqvs2 Vvs]]; eauto; invc.
+    edestruct (G_get_list H1 xs vs) as [vs2 [Heqvs2 Vvs]]; eauto; invc.
 
     destruct (set_lists_length3 (M.set f'0 (CTag U0 c' l' (CVfun f'0 ρ'0 xs'0 e0)) ρ'0) xs'0 vs2) as [ρ4 Heqρ4].
     unfold clval in *.
-    rewrite <- (set_lists_length_eq _ _ _ _ H15); auto.
+    rewrite <- (set_lists_length_eq _ _ _ _ H14); auto.
 
     assert (HE : E U0 I c' (i - (i - i)) ρ'' ρ4 e0).
     {
       eapply (HV _ i vs vs2); eauto.
       apply V_mono_Forall with (S i); auto; lia.
 
-      admit.
-
       unfold interactions_sound; intros.
-      edestruct (H1 (S i0) r1) as [r2 [Hcbstep2 Hrefr2]]; eauto.
+      edestruct (H0 (S i0) r1) as [r2 [Hcbstep2 Hrefr2]]; eauto.
       inv Hrefr2.
       - inv Hcbstep2.
-        inv H18.
+        inv H17.
         unfold clval in *.
         invc; eauto.
       - inv Hcbstep2.
-        inv H19.
+        inv H18.
         unfold clval in *.
         invc; fcrush.
     }
@@ -1653,24 +1652,25 @@ Proof.
     unfold E, E' in HE.
     destruct (HE c0 (Res v)) as [j2 [r2 [He0 Rr]]]; try lia; auto.
     exists (S j2), r2; split; eauto.
-Admitted.
+Qed.
 
-Lemma cbstep_internals_closed
-
-Lemma case_nil_compat Γ x l c :
+Lemma case_nil_compat U Γ x l c :
+  internals_monochromatic_with U c ->
   (x \in Γ) ->
-  well_colored c Γ (Ecase x l []).
+  well_colored U c Γ (Ecase x l []).
 Proof.
   unfold well_colored, E, E'.
-  intros Hx; intros.
+  intros HU Hx; intros.
+  split; auto; intros.
   inv H3; fcrush.
 Qed.
 
-Lemma fundamental_property {c Γ e}:
+Lemma fundamental_property {U c Γ e}:
+  internals_monochromatic_with U c ->
   well_scoped Γ e ->
-  well_colored c Γ e.
+  well_colored U c Γ e.
 Proof.
-  intros H.
+  intros HU H.
   induction H; intros.
   - eapply ret_compat; eauto.
   - eapply fun_compat; eauto.
@@ -1687,7 +1687,7 @@ Admitted.
 
 (* Top-level Compilation Unit & Linking *)
 Inductive cexp : Type :=
-| CEexp : color -> exp -> cexp
+| CEunit : internals -> color -> exp -> cexp
 | CElink : var -> cexp -> cexp -> cexp.
 
 Hint Constructors cexp : core.
@@ -1697,9 +1697,9 @@ Definition clink x e1 e2 : cexp := CElink x e1 e2.
 
 Inductive occurs_free_top : cexp -> vars :=
 | Free_cexp :
-  forall e c x,
+  forall e U c x,
     occurs_free e x ->
-    occurs_free_top (CEexp c e) x
+    occurs_free_top (CEunit U c e) x
 
 | Free_clink1 :
   forall v x e1 e2,
@@ -1714,21 +1714,52 @@ Inductive occurs_free_top : cexp -> vars :=
 
 Hint Constructors occurs_free_top : core.
 
-Lemma occurs_free_top_cexp c e :
-  (occurs_free_top (CEexp c e)) <--> (occurs_free e).
+Lemma occurs_free_top_cexp U c e :
+  (occurs_free_top (CEunit U c e)) <--> (occurs_free e).
 Proof. split; unfold Ensembles.Included, Ensembles.In; fcrush. Qed.
 
-(* TODO *)
-Inductive unique_color : cexp -> vars := .
+Inductive has_color : cexp -> colors :=
+| Color_cexp :
+  forall U c e,
+    has_color (CEunit U c e) c
 
-Hint Constructors unique_color : core.
+| Color_clink1 :
+  forall v c e1 e2,
+    has_color e1 c ->
+    has_color (CElink v e1 e2) c
+
+| Color_clink2 :
+  forall v c e1 e2,
+    has_color e2 c ->
+    has_color (CElink v e1 e2) c.
+
+Hint Constructors has_color : core.
+
+(* Well-formed Top-level Expression
+  1. each compilation unit is uniquely colored
+  2. the internal labels of each compilation unit satisifies internals_monochromatic_with
+ *)
+Inductive wf_cexp : cexp -> Prop :=
+| Wf_cexp :
+  forall U c e,
+    internals_monochromatic_with U c ->
+    wf_cexp (CEunit U c e)
+
+| Wf_clink :
+  forall v e1 e2,
+    Disjoint _ (has_color e1) (has_color e2) ->
+    wf_cexp e1 ->
+    wf_cexp e2 ->
+    wf_cexp (CElink v e1 e2).
+
+Hint Constructors wf_cexp : core.
 
 (* Top-level Checking Semantics *)
 Inductive cbstep_top (I : interactions) (ρ : cenv) : cexp -> fuel -> cres -> Prop :=
 | Cbstep_exp_top :
-  forall {e c i r},
-    cbstep I c ρ e i r ->
-    cbstep_top I ρ (CEexp c e) i r
+  forall {U e c i r},
+    cbstep U I c ρ e i r ->
+    cbstep_top I ρ (CEunit U c e) i r
 
 | Cbstep_link_top_trivial :
   forall {x e k},
@@ -1759,14 +1790,14 @@ Hint Constructors cbstep_top : core.
 Hint Constructors cbstep_top_fuel : core.
 
 (* The step-index is aligned between the two semantics. *)
-Lemma cbstep_fuel_cbstep_top_fuel I c ρ e j r:
-  cbstep_fuel I c ρ e j r ->
-  cbstep_top_fuel I ρ (CEexp c e) j r.
+Lemma cbstep_fuel_cbstep_top_fuel U I c ρ e j r:
+  cbstep_fuel U I c ρ e j r ->
+  cbstep_top_fuel I ρ (CEunit U c e) j r.
 Proof. intros H; inv H; eauto. Qed.
 
-Lemma cbstep_top_fuel_cbstep_fuel I c ρ e j r:
-  cbstep_top_fuel I ρ (CEexp c e) j r ->
-  cbstep_fuel I c ρ e j r.
+Lemma cbstep_top_fuel_cbstep_fuel U I c ρ e j r:
+  cbstep_top_fuel I ρ (CEunit U c e) j r ->
+  cbstep_fuel U I c ρ e j r.
 Proof.
   intros H; inv H; eauto.
   fcrush.
@@ -1815,7 +1846,7 @@ Definition E_top := E_top' V.
 
 Lemma E_E_top I c i ρ1 ρ2 e :
   E I c i ρ1 ρ2 e ->
-  E_top I i ρ1 e ρ2 (CEexp c e).
+  E_top I i ρ1 e ρ2 (CEunit c e).
 Proof.
   unfold E, E_top, E', E_top'.
   intros.
@@ -1825,7 +1856,7 @@ Proof.
 Qed.
 
 Lemma E_top_E I c i ρ1 ρ2 e :
-  E_top I i ρ1 e ρ2 (CEexp c e) ->
+  E_top I i ρ1 e ρ2 (CEunit c e) ->
   E I c i ρ1 ρ2 e.
 Proof.
   unfold E, E_top, E', E_top'.
@@ -1862,7 +1893,7 @@ Definition interactions_analysis_sound I e e' :=
       refine_res r1 r2.
 
 Lemma interactions_analysis_sound_instantiate I c e :
-  interactions_analysis_sound I e (CEexp c e) ->
+  interactions_analysis_sound I e (CEunit c e) ->
   forall ρ1 ρ2,
     wf_env (occurs_free e) ρ1 ->
     wf_cenv ρ2 ->
@@ -1888,8 +1919,8 @@ Proof. unfold analysis_correct_top. fcrush. Qed.
 
 Theorem analysis_top I c etop:
   interactions_diff I ->
-  interactions_analysis_sound I etop (CEexp c etop) ->
-  analysis_correct_top I etop (CEexp c etop).
+  interactions_analysis_sound I etop (CEunit c etop) ->
+  analysis_correct_top I etop (CEunit c etop).
 Proof.
   unfold analysis_correct_top.
   intros; repeat (split; eauto); intros.
