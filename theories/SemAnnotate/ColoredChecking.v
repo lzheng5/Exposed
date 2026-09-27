@@ -70,9 +70,14 @@ Definition external (I : interactions) (cl : clabel) : Prop :=
 (* Internal Label Set *)
 Definition internals : Type := clabels.
 
+(* `U` contains labels of only a single color, `c`, which is the attached to each compilation units. *)
+Definition internals_monochromatic_with (U : internals) (c : color) : Prop :=
+  forall cl, (cl \in U) -> fst cl = c.
+
+(* REVISIT: try remove *)
 (* `U` contains labels of only a single color, i.e. it is the label set of one compilation unit. *)
 Definition internals_monochromatic (U : internals) : Prop :=
-  exists c0, forall cl, (cl \in U) -> fst cl = c0.
+  exists c, internals_monochromatic_with U c.
 
 (* `U` is closed under reachable interactions `I` *)
 Definition internals_closed (U : internals) (I : interactions) : Prop :=
@@ -84,17 +89,17 @@ Definition internals_closed (U : internals) (I : interactions) : Prop :=
 Definition internals_sound (U : internals) (I : interactions) (cl : clabel) : Prop :=
   (cl \in U) -> internal I cl.
 
-Lemma internals_closed_sound U I :
+Lemma internals_closed_sound U I c :
   internals_closed U I ->
-  internals_monochromatic U ->
+  internals_monochromatic_with U c ->
   forall cl,
     internals_sound U I cl.
 Proof.
-  unfold internals_closed, internals_monochromatic, internals_sound, internal,
+  unfold internals_closed, internals_monochromatic_with, internals_sound, internal,
     colors_of, Ensembles.Included, Ensembles.In in *.
-  intros Hclosed [c0 Hmono] cl HclU.
-  destruct cl as [c l].
-  pose proof (Hmono (c, l) HclU) as Heqc; simpl in Heqc; subst c0.
+  intros Hclosed Hmono cl HclU.
+  destruct cl as [c0 l].
+  pose proof (Hmono (c0, l) HclU) as Heqc; simpl in Heqc; subst c0.
   intros x [l0 Hreach].
   assert (HxU : U (x, l0)) by (eapply Hclosed; [exact HclU | exact Hreach]).
   pose proof (Hmono (x, l0) HxU) as Heqx; simpl in Heqx; subst.
@@ -998,38 +1003,39 @@ Definition R' (P : nat -> wval -> clval -> Prop) (i : nat) (r1 : res) (r2 : cres
   | _, _ => False
   end.
 
-Definition E' (P : nat -> wval -> clval -> Prop) (I : interactions) (c : color) (i : nat) (ρ1 : env) (ρ2 : cenv) (e : exp) : Prop :=
+Definition E' (P : nat -> wval -> clval -> Prop) (U : internals) (I : interactions) (c : color) (i : nat) (ρ1 : env) (ρ2 : cenv) (e : exp) : Prop :=
   forall j1 r1,
     j1 <= i ->
     bstep_fuel ρ1 e j1 r1 ->
     exists j2 r2,
-      cbstep_fuel I c ρ2 e j2 r2 /\
+      cbstep_fuel U I c ρ2 e j2 r2 /\
         R' P (i - j1) r1 r2.
 
-(* L is sound for a particular program trace of e *)
+(* U and L are sound for a particular program trace of e *)
 (* Note that this naturally specifies L produced by the collecting semantics. *)
-Definition interactions_sound I c Γ ρ1 ρ2 e :=
+Definition interactions_sound U I c Γ ρ1 ρ2 e :=
   forall i r1,
     bstep_fuel ρ1 e i r1 ->
     refine_env Γ ρ1 ρ2 ->
     exists r2,
-      cbstep_fuel I c ρ2 e i r2 /\
+      cbstep_fuel U I c ρ2 e i r2 /\
         refine_res r1 r2.
 
-Fixpoint V (U : internals) (i : nat) (wv : wval) (cv : clval) {struct i} : Prop :=
+Fixpoint V (i : nat) (wv : wval) (cv : clval) {struct i} : Prop :=
   wf_val wv /\
   wf_cval cv /\
   refine_val wv cv /\
   match wv, cv with
-  | TAG _ l1 v1, CTAG _ (c2, l2) v2 =>
-        l1 = l2 /\
+  | TAG _ l1 v1, CTAG _ U (c2, l2) v2 =>
+      l1 = l2 /\
+      internals_monochromatic_with U c2 /\
           match v1, v2 with
           | Vconstr c1 vs1, CVconstr c2 vs2 =>
               c1 = c2 /\
                 length vs1 = length vs2 /\
                 match i with
                 | 0 => True
-                | S i0 => Forall2 (V U i0) vs1 vs2
+                | S i0 => Forall2 (V i0) vs1 vs2
                 end
 
           | Vfun f1 ρ1 xs1 e1, CVfun f2 ρ2 xs2 e2 =>
@@ -1041,13 +1047,14 @@ Fixpoint V (U : internals) (i : nat) (wv : wval) (cv : clval) {struct i} : Prop 
                 | S i0 =>
                     forall I j vs1 vs2 ρ3 ρ4,
                       j <= i0 ->
-                      Forall2 (V U (i0 - (i0 - j))) vs1 vs2 ->
+                      Forall2 (V (i0 - (i0 - j))) vs1 vs2 ->
                       set_lists xs1 vs1 (M.set f1 (Tag l1 (Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
-                      set_lists xs2 vs2 (M.set f2 (CTag c2 l2 (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
+                      set_lists xs2 vs2 (M.set f2 (CTag U c2 l2 (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
                       interactions_diff I ->
-                      interactions_sound I c2 (occurs_free e1) ρ3 ρ4 e1 ->
+                      internals_closed U I ->
                       internals_sound U I (c2, l2) ->
-                      E' (V U) I c2 (i0 - (i0 - j)) ρ3 ρ4 e1
+                      interactions_sound U I c2 (occurs_free e1) ρ3 ρ4 e1 ->
+                      E' V U I c2 (i0 - (i0 - j)) ρ3 ρ4 e1
                 end
 
           | _, _ => False
@@ -1304,7 +1311,7 @@ Proof.
   destruct i; simpl in H0;
     destruct j; simpl; intros;
     destruct H0 as [Hwf1 [Hwf2 [Href HV]]];
-    destruct c; destruct HV as [Heql HV]; subst.
+    destruct c; destruct HV as [Heql [HU HV]]; subst.
   - destruct v; destruct c; fcrush.
   - fcrush.
   - repeat (split; auto).
@@ -1347,10 +1354,10 @@ Proof.
   eapply V_mono; eauto.
 Qed.
 
-Lemma E_mono {I c ρ1 ρ2 e} i j:
-  E I c i ρ1 ρ2 e ->
+Lemma E_mono {U I c ρ1 ρ2 e} i j:
+  E U I c i ρ1 ρ2 e ->
   j <= i ->
-  E I c j ρ1 ρ2 e.
+  E U I c j ρ1 ρ2 e.
 Proof.
   unfold E, R, E', R'.
   intros.
@@ -1477,34 +1484,38 @@ Proof.
     + apply IHe; eapply free_proj_k_inv; eauto.
 Qed.
 
-Definition well_colored c Γ e :=
+Definition well_colored U c Γ e :=
+  internals_monochromatic_with U c /\
   forall I i ρ1 ρ2,
     interactions_diff I ->
-    interactions_sound I c Γ ρ1 ρ2 e ->
+    internals_closed U I ->
+    interactions_sound U I c Γ ρ1 ρ2 e ->
     G i Γ ρ1 ρ2 ->
-    E I c i ρ1 ρ2 e.
+    E U I c i ρ1 ρ2 e.
 
-Lemma ret_compat c Γ x :
+Lemma ret_compat U c Γ x :
+  internals_monochromatic_with U c ->
   (x \in Γ) ->
-  well_colored c Γ (Eret x).
+  well_colored U c Γ (Eret x).
 Proof.
   unfold well_colored, E, E', R, R', Ensembles.Included, Ensembles.In.
   intros; simpl.
+  split; auto; intros.
 
-  inv H4.
+  inv H6.
   - fcrush.
   - destruct r1.
     fcrush.
-    inv H5.
-    edestruct (G_get H2) as [v2 [Heqv2 HV]]; eauto.
+    inv H7.
+    edestruct (G_get H4) as [v2 [Heqv2 HV]]; eauto.
     eexists; exists (CRes v2); split; eauto; simpl.
     eapply V_mono; eauto; lia.
 Qed.
 
-Lemma interactions_sound_fun_inv_k {I c Γ ρ1 ρ2 f l xs e k}:
-  interactions_sound I c Γ ρ1 ρ2 (Efun f l xs e k) ->
+Lemma interactions_sound_fun_inv_k {U I c Γ ρ1 ρ2 f l xs e k}:
+  interactions_sound U I c Γ ρ1 ρ2 (Efun f l xs e k) ->
   refine_env Γ ρ1 ρ2 ->
-  interactions_sound I c (f |: Γ) (M.set f (Tag l (Vfun f ρ1 xs e)) ρ1) (M.set f (CTag c l (CVfun f ρ2 xs e)) ρ2) k.
+  interactions_sound U I c (f |: Γ) (M.set f (Tag l (Vfun f ρ1 xs e)) ρ1) (M.set f (CTag U c l (CVfun f ρ2 xs e)) ρ2) k.
 Proof.
   unfold interactions_sound.
   intros.
@@ -1513,10 +1524,10 @@ Proof.
   fcrush.
 Qed.
 
-Lemma interactions_sound_subset I c Γ1 Γ2 ρ1 ρ2 e :
-  interactions_sound I c Γ1 ρ1 ρ2 e ->
+Lemma interactions_sound_subset U I c Γ1 Γ2 ρ1 ρ2 e :
+  interactions_sound U I c Γ1 ρ1 ρ2 e ->
   Γ1 \subset Γ2 ->
-  interactions_sound I c Γ2 ρ1 ρ2 e.
+  interactions_sound U I c Γ2 ρ1 ρ2 e.
 Proof.
   unfold interactions_sound.
   intros.
@@ -1524,18 +1535,18 @@ Proof.
   eapply refine_env_subset; eauto.
 Qed.
 
-Lemma Vfun_V Γ f l c xs e  :
+Lemma Vfun_V Γ f l U c xs e  :
   occurs_free e \subset FromList xs :|: (f |: Γ) ->
-  well_colored c (FromList xs :|: (f |: Γ)) e ->
+  well_colored U c (FromList xs :|: (f |: Γ)) e ->
   forall {i ρ1 ρ2},
     wf_val (Tag l (Vfun f ρ1 xs e)) ->
-    wf_cval (CTag c l (CVfun f ρ2 xs e)) ->
-    refine_val (Tag l (Vfun f ρ1 xs e)) (CTag c l (CVfun f ρ2 xs e)) ->
+    wf_cval (CTag U c l (CVfun f ρ2 xs e)) ->
+    refine_val (Tag l (Vfun f ρ1 xs e)) (CTag U c l (CVfun f ρ2 xs e)) ->
     G i Γ ρ1 ρ2 ->
-    V i (Tag l (Vfun f ρ1 xs e)) (CTag c l (CVfun f ρ2 xs e)).
+    V i (Tag l (Vfun f ρ1 xs e)) (CTag U c l (CVfun f ρ2 xs e)).
 Proof.
   unfold well_colored.
-  intros HS He i.
+  intros HS [HU He] i.
   induction i; simpl; intros; auto;
     repeat (split; auto);
     intros; (repeat split; auto).
@@ -1553,27 +1564,28 @@ Proof.
   + fcrush.
 Qed.
 
-Lemma fun_compat c Γ e k f l xs :
+Lemma fun_compat U c Γ e k f l xs :
   occurs_free e \subset FromList xs :|: (f |: Γ) ->
-  well_colored c (FromList xs :|: (f |: Γ)) e ->
-  well_colored c (f |: Γ) k ->
-  well_colored c Γ (Efun f l xs e k).
+  well_colored U c (FromList xs :|: (f |: Γ)) e ->
+  well_colored U c (f |: Γ) k ->
+  well_colored U c Γ (Efun f l xs e k).
 Proof.
   unfold well_colored, interactions_sound, E, E'.
-  intross HS He Hk.
+  intros HS He [HU Hk].
+  split; auto; intros.
 
-  inv H3.
+  inv H4.
   - fcrush.
   - destruct r1.
     fcrush.
     assert (Hwfρ1 : wf_env Γ ρ1) by eauto using G_wf_env_l.
     assert (Hwfρ2 : wf_cenv ρ2) by eauto using G_wf_cenv_r.
     assert (Hrefρ : refine_env Γ ρ1 ρ2) by eauto using G_refine_env.
-    edestruct (H0 (S c0) (Res w)) as [cv [Hcbstep Href]]; eauto.
+    edestruct (H1 (S c0) (Res w)) as [cv [Hcbstep Href]]; eauto.
 
-    inv Hcbstep; inv H4.
-    inv H6; invc.
-    edestruct (Hk I (i - 1) (M.set f (Tag l (Vfun f ρ1 xs e)) ρ1) (M.set f (CTag c l (CVfun f ρ2 xs e)) ρ2)) with (j1 := c0) (r1 := (Res w)) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+    inv Hcbstep; inv H5.
+    inv H7; invc.
+    edestruct (Hk I (i - 1) (M.set f (Tag l (Vfun f ρ1 xs e)) ρ1) (M.set f (CTag U c l (CVfun f ρ2 xs e)) ρ2)) with (j1 := c0) (r1 := (Res w)) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
     + strivial use: @interactions_sound_fun_inv_k unfold: interactions_sound.
     + eapply G_subset.
       eapply G_set; eauto.
@@ -1585,49 +1597,54 @@ Proof.
       eapply R_mono; eauto; lia.
 Qed.
 
-Lemma app_compat Γ xs f l c :
+Lemma app_compat U Γ xs f l c :
+  internals_monochromatic_with U c ->
   (f \in Γ) ->
   (FromList xs \subset Γ) ->
-  well_colored c Γ (Eapp f l xs).
+  well_colored U c Γ (Eapp f l xs).
 Proof.
   unfold well_colored, E, E'.
-  intross Hf Hxs; simpl.
+  intross HU Hf Hxs; simpl.
+  split; auto; intros.
 
-  inv H3.
+  inv H4.
   - fcrush.
   - destruct r1.
     fcrush.
     assert (Hrefρ : refine_env _ ρ1 ρ2) by eauto using G_refine_env.
-    edestruct (H0 (S c0) (Res w)) as [cv [Hcbstep Href]]; eauto.
-    inv Hcbstep; inv H4; inv Href.
-    inv H6; invc.
-    edestruct (G_get H1 f) as [fv2 [Heqfv2 HV]]; eauto.
+    edestruct (H1 (S c0) (Res w)) as [cv [Hcbstep Href]]; eauto.
+    inv Hcbstep; inv H5; inv Href.
+    inv H7; invc.
+    edestruct (G_get H2 f) as [fv2 [Heqfv2 HV]]; eauto.
     destruct i.
-    inv H2.
+    inv H3.
     rename w into v.
     destruct fv2; simpl in HV; invc;
-      destruct HV as [Hwf1 [Hwf2 [Hrefv [Heql [Heqf [Heqxs [Heqe HV]]]]]]]; subst; invc.
+      rename i0 into U0;
+      destruct HV as [Hwf1 [Hwf2 [Hrefv [Heql [HU0 [Heqf [Heqxs [Heqe HV]]]]]]]]; subst; invc.
 
-    edestruct (G_get_list H1 xs vs) as [vs2 [Heqvs2 Vvs]]; eauto; invc.
+    edestruct (G_get_list H2 xs vs) as [vs2 [Heqvs2 Vvs]]; eauto; invc.
 
-    destruct (set_lists_length3 (M.set f'0 (CTag c' l' (CVfun f'0 ρ'0 xs'0 e0)) ρ'0) xs'0 vs2) as [ρ4 Heqρ4].
+    destruct (set_lists_length3 (M.set f'0 (CTag U0 c' l' (CVfun f'0 ρ'0 xs'0 e0)) ρ'0) xs'0 vs2) as [ρ4 Heqρ4].
     unfold clval in *.
-    rewrite <- (set_lists_length_eq _ _ _ _ H14); auto.
+    rewrite <- (set_lists_length_eq _ _ _ _ H15); auto.
 
-    assert (HE : E I c' (i - (i - i)) ρ'' ρ4 e0).
+    assert (HE : E U0 I c' (i - (i - i)) ρ'' ρ4 e0).
     {
       eapply (HV _ i vs vs2); eauto.
       apply V_mono_Forall with (S i); auto; lia.
 
+      admit.
+
       unfold interactions_sound; intros.
-      edestruct (H0 (S i0) r1) as [r2 [Hcbstep2 Hrefr2]]; eauto.
+      edestruct (H1 (S i0) r1) as [r2 [Hcbstep2 Hrefr2]]; eauto.
       inv Hrefr2.
       - inv Hcbstep2.
-        inv H15.
+        inv H18.
         unfold clval in *.
         invc; eauto.
       - inv Hcbstep2.
-        inv H16.
+        inv H19.
         unfold clval in *.
         invc; fcrush.
     }
@@ -1636,7 +1653,9 @@ Proof.
     unfold E, E' in HE.
     destruct (HE c0 (Res v)) as [j2 [r2 [He0 Rr]]]; try lia; auto.
     exists (S j2), r2; split; eauto.
-Qed.
+Admitted.
+
+Lemma cbstep_internals_closed
 
 Lemma case_nil_compat Γ x l c :
   (x \in Γ) ->
