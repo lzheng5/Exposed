@@ -79,102 +79,8 @@ Definition internals_monochromatic_with (U : internals) (c : color) : Prop :=
 Definition internals_monochromatic (U : internals) : Prop :=
   exists c, internals_monochromatic_with U c.
 
-(* `U` is closed under reachable interactions `I` *)
-Definition internals_closed (U : internals) (I : interactions) : Prop :=
-  forall cl cl',
-    (cl \in U) ->
-    (cl' \in (reachable I cl)) ->
-    (cl' \in U).
-
 Definition internals_sound (U : internals) (I : interactions) (cl : clabel) : Prop :=
   (cl \in U) -> internal I cl.
-
-Lemma internals_closed_sound U I c :
-  internals_closed U I ->
-  internals_monochromatic_with U c ->
-  forall cl,
-    internals_sound U I cl.
-Proof.
-  unfold internals_closed, internals_monochromatic_with, internals_sound, internal,
-    colors_of, Ensembles.Included, Ensembles.In in *.
-  intros Hclosed Hmono cl HclU.
-  destruct cl as [c0 l].
-  pose proof (Hmono (c0, l) HclU) as Heqc; simpl in Heqc; subst c0.
-  intros x [l0 Hreach].
-  assert (HxU : U (x, l0)) by (eapply Hclosed; [exact HclU | exact Hreach]).
-  pose proof (Hmono (x, l0) HxU) as Heqx; simpl in Heqx; subst.
-  constructor.
-Qed.
-
-Lemma internals_sound_l {U I} :
-  internals_closed U I ->
-  forall cl cl',
-    ((cl, cl') \in I) ->
-    internals_sound U I cl ->
-    internals_sound U I cl'.
-Proof.
-  unfold internals_closed, internals_sound, internal, colors_of,
-    Ensembles.Included, Ensembles.In in *.
-  intros Hclosed cl cl' Hin Hsnd Hcl'U.
-  destruct cl as [c l].
-  destruct cl' as [c' l'].
-  assert (Hreach_l : reachable I (c, l) (c', l')) by (apply Reachable_interact_l; exact Hin).
-  assert (Hreach_r : reachable I (c', l') (c, l)) by (apply Reachable_interact_r; exact Hin).
-  assert (HclU : U (c, l)) by (eapply Hclosed; [exact Hcl'U | exact Hreach_r]).
-  pose proof (Hsnd HclU) as Hic.
-  assert (Heqc : c' = c).
-  { pose proof (Hic c' (ex_intro _ l' Hreach_l)) as Hmem.
-    inversion Hmem; subst; reflexivity. }
-  subst c'.
-  intros y Hy.
-  destruct Hy as [l0 Hreach2].
-  assert (Hreach3 : reachable I (c, l) (y, l0)) by (eapply Reachable_step; [exact Hreach_l | exact Hreach2]).
-  apply Hic.
-  exists l0; exact Hreach3.
-Qed.
-
-Lemma internals_sound_r {U I} :
-  internals_closed U I ->
-  forall cl cl',
-    ((cl, cl') \in I) ->
-    internals_sound U I cl' ->
-    internals_sound U I cl.
-Proof.
-  unfold internals_closed, internals_sound, internal, colors_of,
-    Ensembles.Included, Ensembles.In in *.
-  intros Hclosed cl cl' Hin Hsnd HclU.
-  destruct cl as [c l].
-  destruct cl' as [c' l'].
-  assert (Hreach_l : reachable I (c, l) (c', l')) by (apply Reachable_interact_l; exact Hin).
-  assert (Hreach_r : reachable I (c', l') (c, l)) by (apply Reachable_interact_r; exact Hin).
-  assert (Hcl'U : U (c', l')) by (eapply Hclosed; [exact HclU | exact Hreach_l]).
-  pose proof (Hsnd Hcl'U) as Hic.
-  assert (Heqc : c = c').
-  { pose proof (Hic c (ex_intro _ l Hreach_r)) as Hmem.
-    inversion Hmem; subst; reflexivity. }
-  subst c'.
-  intros y Hy.
-  destruct Hy as [l0 Hreach2].
-  assert (Hreach3 : reachable I (c, l') (y, l0)) by (eapply Reachable_step; [exact Hreach_r | exact Hreach2]).
-  apply Hic.
-  exists l0; exact Hreach3.
-Qed.
-
-(*
-(* Issue: we need cl \in U *)
-
-Lemma internals_sound_l' {U U' I} :
-  internals_closed U I ->
-  internals_closed U' I ->
-  internals_monochromatic U ->
-  internals_monochromatic U' ->
-  forall cl cl',
-    ((cl, cl') \in I) ->
-    internals_sound U I cl ->
-    internals_sound U' I cl'.
-Proof.
-Admitted.
- *)
 
 (* Tagged Value *)
 Inductive ctag A : Type :=
@@ -1051,8 +957,6 @@ Fixpoint V (i : nat) (wv : wval) (cv : clval) {struct i} : Prop :=
                       set_lists xs1 vs1 (M.set f1 (Tag l1 (Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
                       set_lists xs2 vs2 (M.set f2 (CTag U c2 l2 (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
                       interactions_diff I ->
-                      (* This should be an invariant but adding this somehow overconstrains the definition. *)
-                      (* internals_closed U I -> *)
                       internals_sound U I (c2, l2) ->
                       interactions_sound U I c2 (occurs_free e1) ρ3 ρ4 e1 ->
                       E' V U I c2 (i0 - (i0 - j)) ρ3 ρ4 e1
@@ -1489,7 +1393,6 @@ Definition well_colored U c Γ e :=
   internals_monochromatic_with U c /\
   forall I i ρ1 ρ2,
     interactions_diff I ->
-    (* internals_closed U I -> *)
     interactions_sound U I c Γ ρ1 ρ2 e ->
     G i Γ ρ1 ρ2 ->
     E U I c i ρ1 ρ2 e.
@@ -1735,24 +1638,139 @@ Inductive has_color : cexp -> colors :=
 
 Hint Constructors has_color : core.
 
+Definition unique_color e1 e2 :=
+  Disjoint _ (has_color e1) (has_color e2).
+
+(* the internal labels of each compilation unit should be a subset of the labels in each unit paired with the assigned color *)
+Definition internals_monochromatic_top (U : internals) c e :=
+  U \subset (fun cl => match cl with (c0, l) => c0 = c /\ has_label e l end).
+
+Lemma internals_monochromatic_top_internals_monochromatic U c e :
+  internals_monochromatic_top U c e ->
+  internals_monochromatic_with U c.
+Proof.
+  unfold internals_monochromatic_top, internals_monochromatic_with, Ensembles.Included, Ensembles.In.
+  intros H cl Hcl.
+  apply H in Hcl.
+  destruct cl as [c0 l]; destruct Hcl; auto.
+Qed.
+
 (* Well-formed Top-level Expression
   1. each compilation unit is uniquely colored
-  2. the internal labels of each compilation unit satisifies internals_monochromatic_with
+  2. each compilation unit is uniquely labeled
+  3. the internal labels of each compilation unit should be a subset of the labels in each unit paired with the assigned color
  *)
 Inductive wf_cexp : cexp -> Prop :=
 | Wf_cexp :
   forall U c e,
-    internals_monochromatic_with U c ->
+    unique_label e ->
+    internals_monochromatic_top U c e ->
     wf_cexp (CEunit U c e)
 
 | Wf_clink :
   forall v e1 e2,
-    Disjoint _ (has_color e1) (has_color e2) ->
+    unique_color e1 e2 ->
     wf_cexp e1 ->
     wf_cexp e2 ->
     wf_cexp (CElink v e1 e2).
 
 Hint Constructors wf_cexp : core.
+
+(* Closure Property [X] *)
+(* `U` is closed under reachable interactions `I` *)
+Definition internals_closed (U : internals) (I : interactions) : Prop :=
+  forall cl cl',
+    (cl \in U) ->
+    (cl' \in (reachable I cl)) ->
+    (cl' \in U).
+
+Lemma internals_closed_sound U I c :
+  internals_closed U I ->
+  internals_monochromatic_with U c ->
+  forall cl,
+    internals_sound U I cl.
+Proof.
+  unfold internals_closed, internals_monochromatic_with, internals_sound, internal,
+    colors_of, Ensembles.Included, Ensembles.In in *.
+  intros Hclosed Hmono cl HclU.
+  destruct cl as [c0 l].
+  pose proof (Hmono (c0, l) HclU) as Heqc; simpl in Heqc; subst c0.
+  intros x [l0 Hreach].
+  assert (HxU : U (x, l0)) by (eapply Hclosed; [exact HclU | exact Hreach]).
+  pose proof (Hmono (x, l0) HxU) as Heqx; simpl in Heqx; subst.
+  constructor.
+Qed.
+
+Lemma internals_sound_l {U I} :
+  internals_closed U I ->
+  forall cl cl',
+    ((cl, cl') \in I) ->
+    internals_sound U I cl ->
+    internals_sound U I cl'.
+Proof.
+  unfold internals_closed, internals_sound, internal, colors_of,
+    Ensembles.Included, Ensembles.In in *.
+  intros Hclosed cl cl' Hin Hsnd Hcl'U.
+  destruct cl as [c l].
+  destruct cl' as [c' l'].
+  assert (Hreach_l : reachable I (c, l) (c', l')) by (apply Reachable_interact_l; exact Hin).
+  assert (Hreach_r : reachable I (c', l') (c, l)) by (apply Reachable_interact_r; exact Hin).
+  assert (HclU : U (c, l)) by (eapply Hclosed; [exact Hcl'U | exact Hreach_r]).
+  pose proof (Hsnd HclU) as Hic.
+  assert (Heqc : c' = c).
+  { pose proof (Hic c' (ex_intro _ l' Hreach_l)) as Hmem.
+    inversion Hmem; subst; reflexivity. }
+  subst c'.
+  intros y Hy.
+  destruct Hy as [l0 Hreach2].
+  assert (Hreach3 : reachable I (c, l) (y, l0)) by (eapply Reachable_step; [exact Hreach_l | exact Hreach2]).
+  apply Hic.
+  exists l0; exact Hreach3.
+Qed.
+
+Lemma internals_sound_r {U I} :
+  internals_closed U I ->
+  forall cl cl',
+    ((cl, cl') \in I) ->
+    internals_sound U I cl' ->
+    internals_sound U I cl.
+Proof.
+  unfold internals_closed, internals_sound, internal, colors_of,
+    Ensembles.Included, Ensembles.In in *.
+  intros Hclosed cl cl' Hin Hsnd HclU.
+  destruct cl as [c l].
+  destruct cl' as [c' l'].
+  assert (Hreach_l : reachable I (c, l) (c', l')) by (apply Reachable_interact_l; exact Hin).
+  assert (Hreach_r : reachable I (c', l') (c, l)) by (apply Reachable_interact_r; exact Hin).
+  assert (Hcl'U : U (c', l')) by (eapply Hclosed; [exact HclU | exact Hreach_l]).
+  pose proof (Hsnd Hcl'U) as Hic.
+  assert (Heqc : c = c').
+  { pose proof (Hic c (ex_intro _ l Hreach_r)) as Hmem.
+    inversion Hmem; subst; reflexivity. }
+  subst c'.
+  intros y Hy.
+  destruct Hy as [l0 Hreach2].
+  assert (Hreach3 : reachable I (c, l') (y, l0)) by (eapply Reachable_step; [exact Hreach_r | exact Hreach2]).
+  apply Hic.
+  exists l0; exact Hreach3.
+Qed.
+
+(* Take e := Efun f l1 [] (Eapp f l_inner []) (Eret y) where l1 ≠ l_inner and y is some bound variable — f is defined but never called.
+
+wf_cexp (CEunit U c e) only requires unique_label e (trivially satisfiable) and U ⊆ {(c, l) | has_label e l}. Since has_label e = {l1, l_inner}, we can pick U := {(c, l_inner)} — a label that only occurs inside f's dead body.
+cbstep U I c ρ e i r: Cbstep_fun only demands internals_sound U I (c, l1), which holds vacuously since (c,l1) ∉ U. Execution proceeds straight into the continuation Eret y, never touching l_inner at all. So this succeeds for any I, including...
+I := {((c, l_inner), (c2, l_other))} for some c2 ≠ c — a "junk" edge that cbstep never has to check because the dead code containing l_inner is never reached.
+Then (c, l_inner) ∈ U, (c2, l_other) ∈ reachable I (c, l_inner), but (c2, l_other) ∉ U — so internals_closed U I fails, even though wf_cexp (CEunit U c e) and cbstep U I c ρ e i r both hold.
+
+The root issue: cbstep only walks the single dynamic execution path, so it never constrains labels belonging to un-invoked functions/branches — but wf_cexp (via has_label) allows U to include labels from anywhere in e, dead code included. internals_closed is really a static, whole-program property, closer to the (currently unused) valid_interactions judgment than to anything a single cbstep derivation can pin down. *)
+
+Lemma wf_cexp_closed U c e :
+  wf_cexp (CEunit U c e) ->
+  forall I ρ i r,
+    cbstep U I c ρ e i r ->
+    internals_closed U I.
+Proof.
+Abort.
 
 (* Top-level Checking Semantics *)
 Inductive cbstep_top (I : interactions) (ρ : cenv) : cexp -> fuel -> cres -> Prop :=
