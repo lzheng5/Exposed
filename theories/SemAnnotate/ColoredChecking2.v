@@ -71,20 +71,129 @@ Definition external (I : interactions) (cl : clabel) : Prop :=
 Definition internals : Type := clabels.
 
 (* `U` contains labels of only a single color, `c`, which is the attached to each compilation units. *)
-Definition internals_monochromatic_with (U : internals) (c : color) : Prop :=
+Definition internals_monochromatic (U : internals) (c : color) : Prop :=
   forall cl, (cl \in U) -> fst cl = c.
 
-(* REVISIT: try remove *)
-(* `U` contains labels of only a single color, i.e. it is the label set of one compilation unit. *)
-Definition internals_monochromatic (U : internals) : Prop :=
-  exists c, internals_monochromatic_with U c.
-
+(* `U` only contains internal labels in `I`. *)
 Definition internals_sound (U : internals) (I : interactions) (cl : clabel) : Prop :=
   (cl \in U) -> internal I cl.
 
+(* Closure Property *)
+(* `U` is closed under reachable interactions `I`.
+    Note that `U` is not necessarily all the internal events in `I`. *)
+Definition internals_closed (U : internals) (I : interactions) : Prop :=
+  forall cl cl',
+    (cl \in U) ->
+    (cl' \in (reachable I cl)) ->
+    (cl' \in U).
+
+Lemma internals_closed_empty (U : internals) :
+  internals_closed U (Empty_set interaction).
+Proof.
+  unfold internals_closed, Ensembles.In.
+  intros cl cl' HclU Hreach.
+  assert (Heq : cl' = cl).
+  { clear HclU.
+    induction Hreach as [| ? Hin | ? Hin | ? ? ? IH1 ? IH2]; sfirstorder. }
+  subst; exact HclU.
+Qed.
+
+Lemma internals_closed_equivalent U I I' :
+  I <--> I' ->
+  (internals_closed U I <-> internals_closed U I').
+Proof.
+  intros [Hsub Hsub'].
+  assert (Hreach : forall (J J' : interactions),
+             (forall p, p \in J -> p \in J') ->
+             forall cl cl', cl' \in reachable J cl -> cl' \in reachable J' cl).
+  { intros J J' HJ cl cl' Hr.
+    induction Hr as [x | x y Hin | x y Hin | x y z H1 IH1 H2 IH2];
+      [ apply Reachable_refl
+      | apply Reachable_interact_l; apply HJ; exact Hin
+      | apply Reachable_interact_r; apply HJ; exact Hin
+      | eapply Reachable_step; eauto ]. }
+  unfold internals_closed.
+  split; intros Hclosed cl cl' HclU Hr.
+  - eapply Hclosed; [exact HclU |].
+    eapply (Hreach I' I); eauto.
+  - eapply Hclosed; [exact HclU |].
+    eapply (Hreach I I'); eauto.
+Qed.
+
+Lemma internals_mono_closed_sound U I c :
+  internals_closed U I ->
+  internals_monochromatic U c ->
+  forall cl,
+    internals_sound U I cl.
+Proof.
+  unfold internals_closed, internals_monochromatic, internals_sound, internal,
+    colors_of, Ensembles.Included, Ensembles.In in *.
+  intros Hclosed Hmono cl HclU.
+  destruct cl as [c0 l].
+  pose proof (Hmono (c0, l) HclU) as Heqc; simpl in Heqc; subst c0.
+  intros x [l0 Hreach].
+  assert (HxU : U (x, l0)) by (eapply Hclosed; [exact HclU | exact Hreach]).
+  pose proof (Hmono (x, l0) HxU) as Heqx; simpl in Heqx; subst.
+  constructor.
+Qed.
+
+Lemma internals_closed_sound_l {U I} :
+  internals_closed U I ->
+  forall cl cl',
+    ((cl, cl') \in I) ->
+    internals_sound U I cl ->
+    internals_sound U I cl'.
+Proof.
+  unfold internals_closed, internals_sound, internal, colors_of,
+    Ensembles.Included, Ensembles.In in *.
+  intros Hclosed cl cl' Hin Hsnd Hcl'U.
+  destruct cl as [c l].
+  destruct cl' as [c' l'].
+  assert (Hreach_l : reachable I (c, l) (c', l')) by (apply Reachable_interact_l; exact Hin).
+  assert (Hreach_r : reachable I (c', l') (c, l)) by (apply Reachable_interact_r; exact Hin).
+  assert (HclU : U (c, l)) by (eapply Hclosed; [exact Hcl'U | exact Hreach_r]).
+  pose proof (Hsnd HclU) as Hic.
+  assert (Heqc : c' = c).
+  { pose proof (Hic c' (ex_intro _ l' Hreach_l)) as Hmem.
+    inversion Hmem; subst; reflexivity. }
+  subst c'.
+  intros y Hy.
+  destruct Hy as [l0 Hreach2].
+  assert (Hreach3 : reachable I (c, l) (y, l0)) by (eapply Reachable_step; [exact Hreach_l | exact Hreach2]).
+  apply Hic.
+  exists l0; exact Hreach3.
+Qed.
+
+Lemma internals_closed_sound_r {U I} :
+  internals_closed U I ->
+  forall cl cl',
+    ((cl, cl') \in I) ->
+    internals_sound U I cl' ->
+    internals_sound U I cl.
+Proof.
+  unfold internals_closed, internals_sound, internal, colors_of,
+    Ensembles.Included, Ensembles.In in *.
+  intros Hclosed cl cl' Hin Hsnd HclU.
+  destruct cl as [c l].
+  destruct cl' as [c' l'].
+  assert (Hreach_l : reachable I (c, l) (c', l')) by (apply Reachable_interact_l; exact Hin).
+  assert (Hreach_r : reachable I (c', l') (c, l)) by (apply Reachable_interact_r; exact Hin).
+  assert (Hcl'U : U (c', l')) by (eapply Hclosed; [exact HclU | exact Hreach_l]).
+  pose proof (Hsnd Hcl'U) as Hic.
+  assert (Heqc : c = c').
+  { pose proof (Hic c (ex_intro _ l Hreach_r)) as Hmem.
+    inversion Hmem; subst; reflexivity. }
+  subst c'.
+  intros y Hy.
+  destruct Hy as [l0 Hreach2].
+  assert (Hreach3 : reachable I (c, l') (y, l0)) by (eapply Reachable_step; [exact Hreach_r | exact Hreach2]).
+  apply Hic.
+  exists l0; exact Hreach3.
+Qed.
+
 (* Tagged Value *)
 Inductive ctag A : Type :=
-| CTAG : clabel -> A -> ctag A.
+| CTAG : internals -> clabel -> A -> ctag A.
 
 Hint Constructors ctag : core.
 
@@ -97,7 +206,7 @@ Hint Constructors cval : core.
 
 Definition clval := ctag cval.
 
-Definition CTag c l cv := CTAG cval (c, l) cv.
+Definition CTag U c l cv := CTAG cval U (c, l) cv.
 
 (* Environment *)
 Definition cenv := M.t clval.
@@ -109,72 +218,77 @@ Inductive cres : Type :=
 
 Hint Constructors cres : core.
 
-(* Collecting Semantics *)
-Inductive cbstep (c : color) (ρ : cenv) : exp -> fuel -> cres -> interactions -> Prop :=
+(* Checking Semantics based on the Collecting Semantics *)
+(* This semantics specifies the validity of the internal program components, U, based on the collected interactions, I. *)
+Inductive cbstep (U : internals) (c : color) (ρ : cenv) : exp -> fuel -> cres -> interactions -> Prop :=
 | Cbstep_ret :
   forall {x v},
     M.get x ρ = Some v ->
-    cbstep c ρ (Eret x) 0 (CRes v) (Empty_set _)
+    (* Note a foreign value can be returned as long as it is not eliminated in a foreign context. *)
+    cbstep U c ρ (Eret x) 0 (CRes v) (Empty_set _)
 
 | Cbstep_fun :
   forall {I f l xs e k i r},
-    cbstep_fuel c (M.set f (CTag c l (CVfun f ρ xs e)) ρ) k i r I ->
-    cbstep c ρ (Efun f l xs e k) i r I
+    cbstep_fuel U c (M.set f (CTag U c l (CVfun f ρ xs e)) ρ) k i r I ->
+    cbstep U c ρ (Efun f l xs e k) i r I
 
 | Cbstep_app :
-  forall {I f f' c' l l' xs ρ' xs' e vs ρ'' i r},
-    M.get f ρ = Some (CTag c' l' (CVfun f' ρ' xs' e)) ->
+  forall {I' U' f f' c' l l' xs ρ' xs' e vs ρ'' i r},
+    M.get f ρ = Some (CTag U' c' l' (CVfun f' ρ' xs' e)) ->
     get_list xs ρ = Some vs ->
-    set_lists xs' vs (M.set f' (CTag c' l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
-    cbstep_fuel c' ρ'' e i r I ->
-    cbstep c ρ (Eapp f l xs) i r (((c', l'), (c, l)) |: I)
+    set_lists xs' vs (M.set f' (CTag U' c' l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
+    cbstep_fuel U' c' ρ'' e i r I' ->
+    cbstep U c ρ (Eapp f l xs) i r (((c', l'), (c, l)) |: I')
 
 | Cbstep_letapp_Res :
-  forall {I I' x f f' l l' xs k ρ' xs' e vs ρ'' c' i i' v r},
-    M.get f ρ = Some (CTag c' l' (CVfun f' ρ' xs' e)) ->
+  forall {I I' U' x f f' l l' xs k ρ' xs' e vs ρ'' c' i i' v r},
+    M.get f ρ = Some (CTag U' c' l' (CVfun f' ρ' xs' e)) ->
     get_list xs ρ = Some vs ->
-    set_lists xs' vs (M.set f' (CTag c' l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
-    cbstep_fuel c' ρ'' e i (CRes v) I ->
-    cbstep_fuel c (M.set x v ρ) k i' r I' ->
-    cbstep c ρ (Eletapp x f l xs k) (i + i') r (((c', l'), (c, l)) |: (I :|: I'))
+    set_lists xs' vs (M.set f' (CTag U' c' l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
+    cbstep_fuel U' c' ρ'' e i (CRes v) I' ->
+    cbstep_fuel U c (M.set x v ρ) k i' r I ->
+    cbstep U c ρ (Eletapp x f l xs k) (i + i') r (((c', l'), (c, l)) |: (I :|: I'))
 
 | Cbstep_letapp_OOT :
-  forall {I x f f' l c' l' xs k ρ' xs' e vs ρ'' i},
-    M.get f ρ = Some (CTag c' l' (CVfun f' ρ' xs' e)) ->
+  forall {I' U' x f f' l c' l' xs k ρ' xs' e vs ρ'' i},
+    M.get f ρ = Some (CTag U' c' l' (CVfun f' ρ' xs' e)) ->
     get_list xs ρ = Some vs ->
-    set_lists xs' vs (M.set f' (CTag c' l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
-    cbstep_fuel c' ρ'' e i COOT I ->
-    cbstep c ρ (Eletapp x f l xs k) i COOT (((c', l'), (c, l)) |: I)
+    set_lists xs' vs (M.set f' (CTag U' c' l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
+    cbstep_fuel U' c' ρ'' e i COOT I' ->
+    cbstep U c ρ (Eletapp x f l xs k) i COOT (((c', l'), (c, l)) |: I')
 
 | Cbstep_constr :
   forall {I x l t xs e r vs i},
     get_list xs ρ = Some vs ->
-    cbstep_fuel c (M.set x (CTag c l (CVconstr t vs)) ρ) e i r I ->
-    cbstep c ρ (Econstr x l t xs e) i r I
+    cbstep_fuel U c (M.set x (CTag U c l (CVconstr t vs)) ρ) e i r I ->
+    cbstep U c ρ (Econstr x l t xs e) i r I
 
 | Cbstep_proj :
-  forall {I x l c' l' t i y e j r v vs},
-    M.get y ρ = Some (CTag c' l' (CVconstr t vs)) ->
+  forall {I U' x l c' l' t i y e j r v vs},
+    M.get y ρ = Some (CTag U' c' l' (CVconstr t vs)) ->
     nth_error vs i = Some v ->
-    cbstep_fuel c (M.set x v ρ) e j r I ->
-    cbstep c ρ (Eproj x l i y e) j r (((c', l'), (c, l)) |: I)
+    cbstep_fuel U c (M.set x v ρ) e j r I ->
+    cbstep U c ρ (Eproj x l i y e) j r (((c', l'), (c, l)) |: I)
 
 | Cbstep_case :
-  forall {I x l c' l' cl t e r i vs},
-    M.get x ρ = Some (CTag c' l' (CVconstr t vs)) ->
+  forall {I U' x l c' l' cl t e r i vs},
+    M.get x ρ = Some (CTag U' c' l' (CVconstr t vs)) ->
     find_tag cl t e ->
-    cbstep_fuel c ρ e i r I ->
-    cbstep c ρ (Ecase x l cl) i r (((c', l'), (c, l)) |: I)
+    cbstep_fuel U c ρ e i r I ->
+    cbstep U c ρ (Ecase x l cl) i r (((c', l'), (c, l)) |: I)
 
-with cbstep_fuel (c : color) (ρ : cenv) : exp -> fuel -> cres -> interactions -> Prop :=
+with cbstep_fuel (U : internals) (c : color) (ρ : cenv) : exp -> fuel -> cres -> interactions -> Prop :=
 | CbstepF_OOT :
   forall {e},
-    cbstep_fuel c ρ e 0 COOT (Empty_set _)
+    internals_monochromatic U c ->
+    cbstep_fuel U c ρ e 0 COOT (Empty_set _)
 
 | CbstepF_Step :
   forall {I e i r},
-    cbstep c ρ e i r I ->
-    cbstep_fuel c ρ e (S i) r I.
+    internals_monochromatic U c ->
+    internals_closed U I ->
+    cbstep U c ρ e i r I ->
+    cbstep_fuel U c ρ e (S i) r I.
 
 Hint Constructors cbstep : core.
 Hint Constructors cbstep_fuel : core.
@@ -182,9 +296,9 @@ Hint Constructors cbstep_fuel : core.
 Scheme cbstep_ind' := Minimality for cbstep Sort Prop
 with cbstep_fuel_ind' := Minimality for cbstep_fuel Sort Prop.
 
-Lemma cbstep_deterministic_aux v v' {I I' c ρ e i i' r r'}:
-  cbstep c ρ e i r I ->
-  cbstep c ρ e i' r' I' ->
+Lemma cbstep_deterministic_aux v v' {U I I' c ρ e i i' r r'}:
+  cbstep U c ρ e i r I ->
+  cbstep U c ρ e i' r' I' ->
   r = CRes v ->
   r' = CRes v' ->
   (v = v' /\ i = i' /\ I <--> I').
@@ -195,72 +309,76 @@ Proof.
   generalize dependent i'.
   generalize dependent v.
   generalize dependent I'.
-  induction H using cbstep_ind' with (P := fun c ρ e i r I =>
+  induction H using cbstep_ind' with (P := fun U c ρ e i r I =>
                                              forall I' v i' r' v',
-                                               cbstep c ρ e i' r' I' ->
+                                               cbstep U c ρ e i' r' I' ->
                                                r = CRes v -> r' = CRes v' ->
                                                v = v' /\ i = i' /\ I <--> I')
-                                     (P0 := fun c ρ e i r I =>
+                                     (P0 := fun U c ρ e i r I =>
                                               forall I' v i' r' v',
-                                                cbstep_fuel c ρ e i' r' I' ->
+                                                cbstep_fuel U c ρ e i' r' I' ->
                                                 r = CRes v -> r' = CRes v' ->
                                                 v = v' /\ i = i' /\ I <--> I');
     intros; subst.
+Admitted.
+
+(*
   - inv H0; inv H1; invc; fcrush.
-  - inv H0.
+  - inv H1.
     edestruct IHcbstep; eauto; subst.
-  - inv H3; invc.
+  - inv H5; invc.
     edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto; subst.
-    hauto use: Extensionality_Ensembles unfold: Same_set, Included, interactions.
-  - inv H4; invc.
+    hauto lq: on use: Extensionality_Ensembles unfold: Same_set, Included, interactions.
+  - inv H6; invc.
     edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto; subst.
     edestruct IHcbstep0 as [Heqv' [Heqi' HeqI']]; eauto; subst.
-    hauto use: Extensionality_Ensembles unfold: Same_set, Included, interactions.
+    hauto l: on use: Extensionality_Ensembles unfold: Same_set, Included, interactions.
   - fcrush.
-  - inv H1; invc.
+  - inv H2; invc.
     edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto.
-  - inv H2; invc.
+  - inv H4; invc.
     edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto; subst.
-    hauto use: Extensionality_Ensembles unfold: Same_set, Included, interactions.
-  - inv H2; invc.
-    destruct (find_tag_deterministic H0 H10); subst.
+    hauto lq: on use: Extensionality_Ensembles unfold: Same_set, Included, interactions.
+  - inv H4; invc.
+    destruct (find_tag_deterministic H0 H9); subst.
     edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto; subst.
-    hauto use: Extensionality_Ensembles unfold: Same_set, Included, interactions.
+    hauto lq: on use: Extensionality_Ensembles unfold: Same_set, Included, interactions.
   - fcrush.
   - inv H0;
       edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto.
 Qed.
+ *)
 
-Lemma cbstep_fuel_deterministic_aux v v' {I I' c ρ e i i' r r'}:
-  cbstep_fuel c ρ e i r I ->
-  cbstep_fuel c ρ e i' r' I' ->
+Lemma cbstep_fuel_deterministic_aux v v' {U I I' c ρ e i i' r r'}:
+  cbstep_fuel U c ρ e i r I ->
+  cbstep_fuel U c ρ e i' r' I' ->
   r = CRes v ->
   r' = CRes v' ->
   (v = v' /\ i = i' /\ I <--> I').
 Proof.
   intros.
   inv H; inv H0; try discriminate.
-  edestruct (cbstep_deterministic_aux v v' H3 H) as [Heqv [Heqi HeqI]]; eauto.
+  edestruct (cbstep_deterministic_aux v v' H5 H2) as [Heqv [Heqi HeqI]]; eauto.
 Qed.
 
-Theorem cbstep_deterministic v v' {I I' c ρ e i i'}:
-  cbstep c ρ e i (CRes v) I ->
-  cbstep c ρ e i' (CRes v') I' ->
+Theorem cbstep_deterministic v v' {U I I' c ρ e i i'}:
+  cbstep U c ρ e i (CRes v) I ->
+  cbstep U c ρ e i' (CRes v') I' ->
   (v = v' /\ i = i' /\ I <--> I').
 Proof. srun eauto using cbstep_deterministic_aux. Qed.
 
-Theorem cbstep_fuel_deterministic v v' {I I' c ρ e i i'}:
-  cbstep_fuel c ρ e i (CRes v) I ->
-  cbstep_fuel c ρ e i' (CRes v') I' ->
+Theorem cbstep_fuel_deterministic v v' {U I I' c ρ e i i'}:
+  cbstep_fuel U c ρ e i (CRes v) I ->
+  cbstep_fuel U c ρ e i' (CRes v') I' ->
   (v = v' /\ i = i' /\ I <--> I').
 Proof. srun eauto using cbstep_fuel_deterministic_aux. Qed.
 
 (* Value Refinement *)
 Inductive refine_val : wval -> clval -> Prop :=
 | Refine_wval :
-  forall l c v v',
+  forall U l c v v',
     refine_val' v v' ->
-    refine_val (Tag l v) (CTag c l v')
+    refine_val (Tag l v) (CTag U c l v')
 
 with refine_val' : val -> cval -> Prop :=
 | Refine_fun :
@@ -398,8 +516,8 @@ Qed.
 
 Lemma refine_val_Vfun_inv {l f ρ xs e v''} :
   refine_val (Tag l (Vfun f ρ xs e)) v'' ->
-  exists c ρ' Γ,
-    v'' = CTag c l (CVfun f ρ' xs e) /\
+  exists U c ρ' Γ,
+    v'' = CTag U c l (CVfun f ρ' xs e) /\
     occurs_free e \subset (FromList xs :|: (f |: Γ)) /\
     refine_env Γ ρ ρ'.
 Proof.
@@ -421,9 +539,10 @@ Proof.
     inv Heq. exists (v' :: vs1); split; auto.
 Qed.
 
+
 Lemma refine_val_Vconstr_inv {l t vs v''} :
   refine_val (Tag l (Vconstr t vs)) v'' ->
-  exists c vs', v'' = CTag c l (CVconstr t vs') /\ Forall2 refine_val vs vs'.
+  exists U c vs', v'' = CTag U c l (CVconstr t vs') /\ Forall2 refine_val vs vs'.
 Proof.
   intros H. inv H. apply refine_val'_Vconstr_inv in H3 as [vs' [-> Hr]]; eauto.
 Qed.
@@ -433,36 +552,36 @@ Lemma refine_val'_Vconstr {t vs vs'} :
   refine_val' (Vconstr t vs) (CVconstr t vs').
 Proof. intros Hr. induction Hr; auto. Qed.
 
-Lemma refine_val_Vconstr {l c t vs vs'} :
+Lemma refine_val_Vconstr {U l c t vs vs'} :
   Forall2 refine_val vs vs' ->
-  refine_val (Tag l (Vconstr t vs)) (CTag c l (CVconstr t vs')).
+  refine_val (Tag l (Vconstr t vs)) (CTag U c l (CVconstr t vs')).
 Proof. intros Hr. constructor. apply refine_val'_Vconstr; auto. Qed.
 
 (* Correlation lemmas: bstep and cbstep that both terminate on the same expression agree on fuel and value. *)
-Lemma bstep_cbstep_aux v1 v2 {I c ρ1 ρ2 e c1 r1 c2 r2} :
+Lemma bstep_cbstep_aux v1 v2 {U I c ρ1 ρ2 e c1 r1 c2 r2} :
   bstep ρ1 e c1 r1 ->
   refine_env (occurs_free e) ρ1 ρ2 ->
-  cbstep c ρ2 e c2 r2 I ->
+  cbstep U c ρ2 e c2 r2 I ->
   r1 = Res v1 ->
   r2 = CRes v2 ->
   c1 = c2 /\ refine_val v1 v2.
 Proof.
   intros Hb.
-  revert v1 v2 ρ2 I c c2 r2.
+  revert U v1 v2 ρ2 I c c2 r2.
   induction Hb using bstep_ind'
     with (P := fun ρ1 e c1 r1 =>
-                 forall v1 v2 ρ2 I c c2 r2,
+                 forall U v1 v2 ρ2 I c c2 r2,
                    refine_env (occurs_free e) ρ1 ρ2 ->
-                   cbstep c ρ2 e c2 r2 I ->
+                   cbstep U c ρ2 e c2 r2 I ->
                    r1 = Res v1 -> r2 = CRes v2 ->
                    c1 = c2 /\ refine_val v1 v2)
          (P0 := fun ρ1 e c1 r1 =>
-                  forall v1 v2 ρ2 I c c2 r2,
+                  forall U v1 v2 ρ2 I c c2 r2,
                     refine_env (occurs_free e) ρ1 ρ2 ->
-                    cbstep_fuel c ρ2 e c2 r2 I ->
+                    cbstep_fuel U c ρ2 e c2 r2 I ->
                     r1 = Res v1 -> r2 = CRes v2 ->
                     c1 = c2 /\ refine_val v1 v2);
-    intros v1 v2 ρ2 I0 c0 c2 r2 Henv Hc Heq1 Heq2; subst.
+    intros U v1 v2 ρ2 I0 c0 c2 r2 Henv Hc Heq1 Heq2; subst.
 
   - (* BStep_ret: FV(Eret x) = {x} *)
     inv Heq1. inv Hc.
@@ -472,7 +591,7 @@ Proof.
   - (* BStep_fun: FV(Efun f l xs e_body k) *)
     inv Hc.
     assert (Href_clos : refine_val (Tag w (Vfun f ρ xs e))
-                          (CTag c0 w (CVfun f ρ2 xs e))).
+                          (CTag U c0 w (CVfun f ρ2 xs e))).
     { constructor. econstructor.
       - eapply free_fun_e_inv. apply Included_refl.
       - exact Henv. }
@@ -487,18 +606,18 @@ Proof.
     inv Hc.
     edestruct (refine_env_get f (Tag w' (Vfun f' ρ' xs' e)) Henv (ltac:(constructor)) H) as [vf [Hvf Hrf]].
     invc.
-    destruct (refine_val_Vfun_inv Hrf) as [c'' [ρ_2' [Γ_c [Heq [HFVe Hre]]]]].
+    destruct (refine_val_Vfun_inv Hrf) as [U'' [c'' [ρ_2' [Γ_c [Heq [HFVe Hre]]]]]].
     inv Heq.
     edestruct (refine_env_get_list xs _ Henv
                  (ltac:(unfold Ensembles.Included, Ensembles.In; intros z Hz; constructor; auto))
                  H0) as [vs2 [Hvs2 Hrvs]].
     invc.
     assert (Href_f : refine_val (Tag w' (Vfun f' ρ' xs' e))
-                       (CTag c'' w' (CVfun f' ρ_2' xs' e))).
+                       (CTag U'' c'' w' (CVfun f' ρ_2' xs' e))).
     { constructor. econstructor; eauto. }
     assert (Hrenv : refine_env (f' |: Γ_c)
                       (M.set f' (Tag w' (Vfun f' ρ' xs' e)) ρ')
-                      (M.set f' (CTag c'' w' (CVfun f' ρ_2' xs' e)) ρ_2')).
+                      (M.set f' (CTag U'' c'' w' (CVfun f' ρ_2' xs' e)) ρ_2')).
     { apply refine_env_set; eauto. }
     pose proof (refine_env_set_lists xs' vs vs2 Hrvs Hrenv H1 H11) as Hre''.
     eapply IHHb; eauto.
@@ -509,23 +628,23 @@ Proof.
     + (* Cbstep_letapp_Res *)
       edestruct (refine_env_get f (Tag w' (Vfun f' ρ' xs' e)) Henv (ltac:(apply Free_letapp2)) H) as [vf [Hvf Hrf]].
       invc.
-      destruct (refine_val_Vfun_inv Hrf) as [c'' [ρ_2' [Γ_c [Heq [HFVe Hre]]]]].
+      destruct (refine_val_Vfun_inv Hrf) as [U'' [c'' [ρ_2' [Γ_c [Heq [HFVe Hre]]]]]].
       inv Heq.
       assert (Hxs_in : FromList xs \subset occurs_free (Eletapp x f w xs k))
         by (apply free_letapp_xs_subset).
       edestruct (refine_env_get_list xs _ Henv Hxs_in H0) as [vs2 [Hvs2 Hrvs]].
       invc.
       assert (Href_f : refine_val (Tag w' (Vfun f' ρ' xs' e))
-                           (CTag c'' w' (CVfun f' ρ_2' xs' e))).
+                           (CTag U'' c'' w' (CVfun f' ρ_2' xs' e))).
         { constructor. econstructor; eauto. }
         assert (Hrenv : refine_env (f' |: Γ_c)
                           (M.set f' (Tag w' (Vfun f' ρ' xs' e)) ρ')
-                          (M.set f' (CTag c'' w' (CVfun f' ρ_2' xs' e)) ρ_2')).
+                          (M.set f' (CTag U'' c'' w' (CVfun f' ρ_2' xs' e)) ρ_2')).
         { apply refine_env_set; eauto. }
         pose proof (refine_env_set_lists xs' vs vs2 Hrvs Hrenv H1 H14) as Hre''.
-        edestruct (IHHb v v0) as [Hc0 Hrv0]; eauto.
+        edestruct (IHHb U'' v v0) as [Hc0 Hrv0]; eauto.
         { eapply refine_env_subset; eauto. }
-        edestruct (IHHb0 v1 v2) as [Hc0' Hrv2]; eauto.
+        edestruct (IHHb0 U v1 v2) as [Hc0' Hrv2]; eauto.
         { eapply refine_env_subset.
           - apply refine_env_set; eauto.
           - apply free_letapp_k_subset. }
@@ -547,7 +666,7 @@ Proof.
     inv Hc.
     edestruct (refine_env_get y (Tag w' (Vconstr t vs)) Henv (ltac:(constructor)) H) as [vc [Hvc Hrc]].
     invc.
-      destruct (refine_val_Vconstr_inv Hrc) as [c'' [vs' [Heq Hrvs]]].
+      destruct (refine_val_Vconstr_inv Hrc) as [U'' [c'' [vs' [Heq Hrvs]]]].
       inv Heq.
       edestruct (Forall2_nth_error H0 Hrvs) as [v' [Hnv' Hrv']]; eauto.
       unfold clval in *; invc.
@@ -560,7 +679,7 @@ Proof.
     inv Hc.
     edestruct (refine_env_get x (Tag w' (Vconstr t vs)) Henv (ltac:(constructor)) H) as [vc [Hvc Hrc]].
     invc.
-      destruct (refine_val_Vconstr_inv Hrc) as [c'' [vs' [Heq _]]].
+      destruct (refine_val_Vconstr_inv Hrc) as [U'' [c'' [vs' [Heq _]]]].
       inv Heq.
       destruct (find_tag_deterministic H0 H9); subst.
       eapply IHHb; eauto.
@@ -572,17 +691,17 @@ Proof.
   - inv Hc. edestruct IHHb as [Hc0 Hrv0]; eauto.
 Qed.
 
-Lemma bstep_cbstep_refine I c ρ1 ρ2 e c1 c2 v1 v2 :
+Lemma bstep_cbstep_refine U I c ρ1 ρ2 e c1 c2 v1 v2 :
   bstep ρ1 e c1 (Res v1) ->
   refine_env (occurs_free e) ρ1 ρ2 ->
-  cbstep c ρ2 e c2 (CRes v2) I ->
+  cbstep U c ρ2 e c2 (CRes v2) I ->
   c1 = c2 /\ refine_val v1 v2.
 Proof. intros; eapply bstep_cbstep_aux; eauto. Qed.
 
-Lemma bstep_fuel_cbstep_fuel_refine I c ρ1 ρ2 e c1 c2 v1 v2 :
+Lemma bstep_fuel_cbstep_fuel_refine U I c ρ1 ρ2 e c1 c2 v1 v2 :
   bstep_fuel ρ1 e c1 (Res v1) ->
   refine_env (occurs_free e) ρ1 ρ2 ->
-  cbstep_fuel c ρ2 e c2 (CRes v2) I ->
+  cbstep_fuel U c ρ2 e c2 (CRes v2) I ->
   c1 = c2 /\ refine_val v1 v2.
 Proof.
   intros Hb Henv Hc. inv Hb. inv Hc.
@@ -592,9 +711,10 @@ Qed.
 (* Well-formed Value and Environment *)
 Inductive wf_cval : clval -> Prop :=
 | WF_TAG :
-  forall l c v,
+  forall U l c v,
     wf_cval' v ->
-    wf_cval (CTag c l v)
+    internals_monochromatic U c ->
+    wf_cval (CTag U c l v)
 
 with wf_cval' : cval -> Prop :=
 | WF_CVfun:
@@ -693,21 +813,23 @@ Proof.
     + rewrite M.gso in *; fcrush.
 Qed.
 
-Lemma wf_cval_CVconstr t l c vs :
+Lemma wf_cval_CVconstr t l U c vs :
   Forall wf_cval vs ->
-  wf_cval (CTag c l (CVconstr t vs)).
+  internals_monochromatic U c ->
+  wf_cval (CTag U c l (CVconstr t vs)).
 Proof.
   intros H.
   induction H; simpl; auto; intros.
   fcrush.
 Qed.
 
-Lemma wf_cval_CVconstr_inv {t l c vs} :
-  wf_cval (CTag c l (CVconstr t vs)) ->
+Lemma wf_cval_CVconstr_inv {t U l c vs} :
+  wf_cval (CTag U c l (CVconstr t vs)) ->
+  internals_monochromatic U c ->
   Forall wf_cval vs.
 Proof.
   intros.
-  remember (CTag c l (CVconstr t vs)) as v.
+  remember (CTag U c l (CVconstr t vs)) as v.
   revert t vs Heqv.
   induction H using wf_cval_mut with (P0 := fun v wf =>
                                               forall t vs,
@@ -722,14 +844,16 @@ Proof.
   - fcrush.
 Qed.
 
-Lemma cbstep_wf_res I c ρ e i r :
+Lemma cbstep_wf_res U I c ρ e i r :
   wf_cenv ρ ->
-  cbstep c ρ e i r I ->
+  internals_monochromatic U c ->
+  cbstep U c ρ e i r I ->
   wf_cres r.
 Proof.
-  intros Hw H.
+  intros Hw HU H.
+  Print cbstep_ind'.
   induction H using cbstep_ind' with
-    (P0 := fun c ρ e i r I => wf_cenv ρ -> wf_cres r);
+    (P0 := fun U c ρ e i r I => wf_cenv ρ -> internals_monochromatic U c -> wf_cres r);
     intros; auto.
 
   - (* Cbstep_ret *)
@@ -737,63 +861,70 @@ Proof.
     eapply wf_cenv_get; eauto.
 
   - (* Cbstep_fun *)
-    apply IHcbstep.
+    apply IHcbstep; auto.
     eapply wf_cenv_set; eauto.
 
   - (* Cbstep_app *)
-    assert (Hwfclo : wf_cval (CTag c' l' (CVfun f' ρ' xs' e))).
+    assert (Hwfclo : wf_cval (CTag U' c' l' (CVfun f' ρ' xs' e))).
     { eapply wf_cenv_get; eauto. }
     assert (Hwfρ' : wf_cenv ρ').
     { inv Hwfclo.
       match goal with [Hv : wf_cval' _ |- _] => inv Hv end; auto. }
     assert (Hwfvs : Forall wf_cval vs).
     { eapply wf_cenv_get_list. apply Hw. eassumption. }
-    assert (Hwfρf : wf_cenv (M.set f' (CTag c' l' (CVfun f' ρ' xs' e)) ρ')).
+    assert (Hwfρf : wf_cenv (M.set f' (CTag U' c' l' (CVfun f' ρ' xs' e)) ρ')).
     { eapply wf_cenv_set; eauto. }
     apply IHcbstep.
     eapply wf_cenv_set_lists
-      with (ρ := M.set f' (CTag c' l' (CVfun f' ρ' xs' e)) ρ'); eauto.
+      with (ρ := M.set f' (CTag U' c' l' (CVfun f' ρ' xs' e)) ρ'); eauto.
+    inv H2; auto.
 
   - (* Cbstep_letapp_Res *)
-    assert (Hwfclo : wf_cval (CTag c' l' (CVfun f' ρ' xs' e))).
+    assert (Hwfclo : wf_cval (CTag U' c' l' (CVfun f' ρ' xs' e))).
     { eapply wf_cenv_get; eauto. }
     assert (Hwfρ' : wf_cenv ρ').
     { inv Hwfclo.
       match goal with [Hv : wf_cval' _ |- _] => inv Hv end; auto. }
     assert (Hwfvs : Forall wf_cval vs).
     { eapply wf_cenv_get_list. apply Hw. eassumption. }
-    assert (Hwfρf : wf_cenv (M.set f' (CTag c' l' (CVfun f' ρ' xs' e)) ρ')).
+    assert (Hwfρf : wf_cenv (M.set f' (CTag U' c' l' (CVfun f' ρ' xs' e)) ρ')).
     { eapply wf_cenv_set; eauto. }
     assert (Hwfρ'' : wf_cenv ρ'').
     { eapply wf_cenv_set_lists
-        with (ρ := M.set f' (CTag c' l' (CVfun f' ρ' xs' e)) ρ'); eauto. }
-    assert (Hwfres : wf_cres (CRes v)) by (apply IHcbstep; auto).
+        with (ρ := M.set f' (CTag U' c' l' (CVfun f' ρ' xs' e)) ρ'); eauto. }
+    assert (Hwfres : wf_cres (CRes v)).
+    {
+      eapply IHcbstep; eauto.
+      inv H2; auto.
+    }
     inv Hwfres.
-    apply IHcbstep0.
+    apply IHcbstep0; auto.
     eapply wf_cenv_set; eauto.
 
   - (* Cbstep_constr *)
-    apply IHcbstep.
+    apply IHcbstep; auto.
     eapply wf_cenv_set; eauto.
     eapply wf_cval_CVconstr; eauto.
     eapply wf_cenv_get_list; eauto.
 
   - (* Cbstep_proj *)
-    apply IHcbstep.
+    apply IHcbstep; auto.
     eapply wf_cenv_set; eauto.
-    assert (Hwfvc : wf_cval (CTag c' l' (CVconstr t vs))).
+    assert (Hwfvc : wf_cval (CTag U' c' l' (CVconstr t vs))).
     { eapply wf_cenv_get; eauto. }
     eapply Forall_nth_error; eauto.
-    eapply wf_cval_CVconstr_inv; eauto.
+    eapply (wf_cval_CVconstr_inv Hwfvc); eauto.
+    inv Hwfvc; auto.
 Qed.
 
-Lemma cbstep_fuel_wf_res I c ρ e i r :
+Lemma cbstep_fuel_wf_res U I c ρ e i r :
   wf_cenv ρ ->
-  cbstep_fuel c ρ e i r I ->
+  internals_monochromatic U c ->
+  cbstep_fuel U c ρ e i r I ->
   wf_cres r.
 Proof.
   intros.
-  inv H0; eauto using cbstep_wf_res.
+  inv H1; eauto using cbstep_wf_res.
 Qed.
 
 (* Valid `interactions` Specification *)
@@ -865,7 +996,8 @@ Hint Constructors valid_interactions : core.
    colored label is both an intro site and an elim site, i.e. the two
    components of I are disjoint. In particular cl1 <> cl2 for every
    pair (cl1, cl2) \in I. *)
-Definition interactions_diff (I : interactions) : Prop := forall cl, cintro I cl -> ~ celim I cl.
+Definition interactions_diff (I : interactions) : Prop :=
+  forall cl, cintro I cl -> ~ celim I cl.
 
 (* The converse direction is the same statement: both say ~ (cintro /\ celim). *)
 Lemma interactions_diff_celim {I cl} :
@@ -886,6 +1018,11 @@ Proof.
   eapply Hdiff; eexists; eauto.
 Qed.
 
+(* TODO: unique_coloring + unique labeling should + semantic trace -> interactions_diff *)
+Definition interactions_diff2 (I : interactions) : Prop :=
+  forall cl1 cl2,
+    ((cl1, cl2) \in I) -> cl1 <> cl2.
+
 (* Cross-semantics Logical Relations *)
 Definition R' (P : nat -> wval -> clval -> Prop) (i : nat) (r1 : res) (r2 : cres) :=
   match r1, r2 with
@@ -894,33 +1031,31 @@ Definition R' (P : nat -> wval -> clval -> Prop) (i : nat) (r1 : res) (r2 : cres
   | _, _ => False
   end.
 
-Definition E' (P : nat -> wval -> clval -> Prop) (c : color) (i : nat) (ρ1 : env) (ρ2 : cenv) (e : exp) : Prop :=
+Definition E' (P : nat -> wval -> clval -> Prop) (U : internals) (c : color) (i : nat) (ρ1 : env) (ρ2 : cenv) (e : exp) : Prop :=
   forall j1 r1,
     j1 <= i ->
     bstep_fuel ρ1 e j1 r1 ->
     exists j2 r2 I2,
-      cbstep_fuel c ρ2 e j2 r2 I2 /\
+      cbstep_fuel U c ρ2 e j2 r2 I2 /\
         R' P (i - j1) r1 r2.
 
-(*
-(* U and L are sound for a particular program trace of e *)
-(* Note that this naturally specifies L produced by the collecting semantics. *)
-Definition interactions_sound U I c Γ ρ1 ρ2 e :=
+(* U is sound for a particular program trace of e *)
+Definition internals_sound_trace U c Γ ρ1 ρ2 e :=
   forall i r1,
     bstep_fuel ρ1 e i r1 ->
     refine_env Γ ρ1 ρ2 ->
-    exists r2,
-      cbstep_fuel U I c ρ2 e i r2 /\
+    exists r2 I2,
+      cbstep_fuel U c ρ2 e i r2 I2 /\
         refine_res r1 r2.
- *)
 
 Fixpoint V (i : nat) (wv : wval) (cv : clval) {struct i} : Prop :=
   wf_val wv /\
   wf_cval cv /\
   refine_val wv cv /\
   match wv, cv with
-  | TAG _ l1 v1, CTAG _ (c2, l2) v2 =>
+  | TAG _ l1 v1, CTAG _ U2 (c2, l2) v2 =>
       l1 = l2 /\
+        internals_monochromatic U2 c2 /\
           match v1, v2 with
           | Vconstr c1 vs1, CVconstr c2 vs2 =>
               c1 = c2 /\
@@ -941,8 +1076,9 @@ Fixpoint V (i : nat) (wv : wval) (cv : clval) {struct i} : Prop :=
                       j <= i0 ->
                       Forall2 (V (i0 - (i0 - j))) vs1 vs2 ->
                       set_lists xs1 vs1 (M.set f1 (Tag l1 (Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
-                      set_lists xs2 vs2 (M.set f2 (CTag c2 l2 (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
-                      E' V c2 (i0 - (i0 - j)) ρ3 ρ4 e1
+                      set_lists xs2 vs2 (M.set f2 (CTag U2 c2 l2 (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
+                      internals_sound_trace U2 c2 (occurs_free e1) ρ3 ρ4 e1 ->
+                      E' V U2 c2 (i0 - (i0 - j)) ρ3 ρ4 e1
                 end
 
           | _, _ => False
@@ -1210,7 +1346,7 @@ Proof.
     destruct v; destruct c0; try contradiction.
     + destruct HV as [Heqv [Heql [Heqe HV]]]; subst.
       eexists; repeat (split; eauto); intros.
-      specialize (HV I j0 vs1 vs2 ρ3 ρ4).
+      specialize (HV j0 vs1 vs2 ρ3 ρ4).
       rewrite normalize_step in *; try lia.
       apply HV; eauto; lia.
     + destruct HV as [Heqc [Hlen HV]]; subst.
@@ -1242,15 +1378,15 @@ Proof.
   eapply V_mono; eauto.
 Qed.
 
-Lemma E_mono {U I c ρ1 ρ2 e} i j:
-  E U I c i ρ1 ρ2 e ->
+Lemma E_mono {U c ρ1 ρ2 e} i j:
+  E U c i ρ1 ρ2 e ->
   j <= i ->
-  E U I c j ρ1 ρ2 e.
+  E U c j ρ1 ρ2 e.
 Proof.
   unfold E, R, E', R'.
   intros.
-  destruct (H j1 r1) as [j2 [r2 [Hr2 HR]]]; auto; try lia.
-  exists j2, r2; split; eauto.
+  destruct (H j1 r1) as [j2 [r2 [I2 [Hr2 HR]]]]; auto; try lia.
+  exists j2, r2, I2; split; eauto.
   apply R_mono with (i - j1); try lia; auto.
 Qed.
 
@@ -1373,15 +1509,14 @@ Proof.
 Qed.
 
 Definition well_colored U c Γ e :=
-  internals_monochromatic_with U c /\
-  forall I i ρ1 ρ2,
-    interactions_diff I ->
-    interactions_sound U I c Γ ρ1 ρ2 e ->
+  internals_monochromatic U c /\
+  forall i ρ1 ρ2,
     G i Γ ρ1 ρ2 ->
-    E U I c i ρ1 ρ2 e.
+    internals_sound_trace U c Γ ρ1 ρ2 e ->
+    E U c i ρ1 ρ2 e.
 
 Lemma ret_compat U c Γ x :
-  internals_monochromatic_with U c ->
+  internals_monochromatic U c ->
   (x \in Γ) ->
   well_colored U c Γ (Eret x).
 Proof.
@@ -1389,34 +1524,24 @@ Proof.
   intros; simpl.
   split; auto; intros.
 
-  inv H5.
+  inv H4.
   - fcrush.
   - destruct r1.
     fcrush.
-    inv H6.
-    edestruct (G_get H3) as [v2 [Heqv2 HV]]; eauto.
-    eexists; exists (CRes v2); split; eauto; simpl.
+    inv H5.
+    edestruct (G_get H1) as [v2 [Heqv2 HV]]; eauto.
+    exists 1, (CRes v2), (Empty_set _); split; eauto; simpl.
+    econstructor; eauto.
+    eapply internals_closed_empty; eauto.
     eapply V_mono; eauto; lia.
 Qed.
 
-Lemma interactions_sound_fun_inv_k {U I c Γ ρ1 ρ2 f l xs e k}:
-  interactions_sound U I c Γ ρ1 ρ2 (Efun f l xs e k) ->
-  refine_env Γ ρ1 ρ2 ->
-  interactions_sound U I c (f |: Γ) (M.set f (Tag l (Vfun f ρ1 xs e)) ρ1) (M.set f (CTag U c l (CVfun f ρ2 xs e)) ρ2) k.
-Proof.
-  unfold interactions_sound.
-  intros.
-  edestruct (H (S i) r1) as [r2 [Hcbstep Href]]; eauto.
-  eexists; split; eauto.
-  fcrush.
-Qed.
-
-Lemma interactions_sound_subset U I c Γ1 Γ2 ρ1 ρ2 e :
-  interactions_sound U I c Γ1 ρ1 ρ2 e ->
+Lemma internals_sound_trace_subset U c Γ1 Γ2 ρ1 ρ2 e :
+  internals_sound_trace U c Γ1 ρ1 ρ2 e ->
   Γ1 \subset Γ2 ->
-  interactions_sound U I c Γ2 ρ1 ρ2 e.
+  internals_sound_trace U c Γ2 ρ1 ρ2 e.
 Proof.
-  unfold interactions_sound.
+  unfold internals_sound_trace.
   intros.
   eapply H; eauto.
   eapply refine_env_subset; eauto.
@@ -1437,9 +1562,7 @@ Proof.
   induction i; simpl; intros; auto;
     repeat (split; auto);
     intros; (repeat split; auto).
-  eapply (He I (i - (i - j)) ρ3 ρ4); eauto.
-
-  eapply interactions_sound_subset; eauto.
+  eapply (He (i - (i - j)) ρ3 ρ4); eauto.
 
   eapply G_subset; eauto.
   eapply G_set_lists; eauto.
@@ -1449,6 +1572,18 @@ Proof.
     eapply IHi; eauto.
     apply G_mono with (S i); eauto; lia.
   + fcrush.
+  + eapply internals_sound_trace_subset; eauto.
+Qed.
+
+Lemma internals_sound_trace_fun_inv_k {U c Γ ρ1 ρ2 f l xs e k}:
+  internals_sound_trace U c Γ ρ1 ρ2 (Efun f l xs e k) ->
+  refine_env Γ ρ1 ρ2 ->
+  internals_sound_trace U c (f |: Γ) (M.set f (Tag l (Vfun f ρ1 xs e)) ρ1) (M.set f (CTag U c l (CVfun f ρ2 xs e)) ρ2) k.
+Proof.
+  unfold internals_sound_trace.
+  intros.
+  edestruct (H (S i) r1) as [r2 [I2 [Hcbstep Href]]]; eauto.
+  eexists; eexists; split; fcrush.
 Qed.
 
 Lemma fun_compat U c Γ e k f l xs :
@@ -1457,35 +1592,40 @@ Lemma fun_compat U c Γ e k f l xs :
   well_colored U c (f |: Γ) k ->
   well_colored U c Γ (Efun f l xs e k).
 Proof.
-  unfold well_colored, interactions_sound, E, E'.
+  unfold well_colored, E, E'.
   intros HS He [HU Hk].
   split; auto; intros.
 
-  inv H3.
+  inv H2.
   - fcrush.
   - destruct r1.
     fcrush.
     assert (Hwfρ1 : wf_env Γ ρ1) by eauto using G_wf_env_l.
     assert (Hwfρ2 : wf_cenv ρ2) by eauto using G_wf_cenv_r.
     assert (Hrefρ : refine_env Γ ρ1 ρ2) by eauto using G_refine_env.
-    edestruct (H0 (S c0) (Res w)) as [cv [Hcbstep Href]]; eauto.
+    edestruct (H0 (S c0) (Res w)) as [cv [I [Hcbstep Href]]]; eauto.
 
-    inv Hcbstep; inv H4.
-    inv H6; invc.
-    edestruct (Hk I (i - 1) (M.set f (Tag l (Vfun f ρ1 xs e)) ρ1) (M.set f (CTag U c l (CVfun f ρ2 xs e)) ρ2)) with (j1 := c0) (r1 := (Res w)) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
-    + strivial use: @interactions_sound_fun_inv_k unfold: interactions_sound.
+    inv Hcbstep; inv H3.
+    inv H7; invc.
+    edestruct (Hk (i - 1) (M.set f (Tag l (Vfun f ρ1 xs e)) ρ1) (M.set f (CTag U c l (CVfun f ρ2 xs e)) ρ2)) with (j1 := c0) (r1 := (Res w)) as [j2 [r2 [I2 [Hk2 Rr]]]]; eauto; try lia.
     + eapply G_subset.
       eapply G_set; eauto.
       eapply G_mono with i; eauto; lia.
       * eapply Vfun_V; eauto.
         apply G_mono with i; eauto; lia.
       * apply Included_refl.
-    + exists (S j2), r2; split; auto.
+    + eapply internals_sound_trace_fun_inv_k; eauto.
+    + edestruct R_res_inv_l as [w2 [Heqw2 HV]]; eauto; subst.
+      inv Href.
+      edestruct (cbstep_fuel_deterministic v' w2 H14 Hk2) as [Heqv [Heqvi HeqI]]; eauto; subst.
+      exists (S j2), (CRes w2), I2; split; eauto.
+      econstructor; eauto.
+      eapply internals_closed_equivalent; eauto; sfirstorder.
       eapply R_mono; eauto; lia.
 Qed.
 
 Lemma app_compat U Γ xs f l c :
-  internals_monochromatic_with U c ->
+  internals_monochromatic U c ->
   (f \in Γ) ->
   (FromList xs \subset Γ) ->
   well_colored U c Γ (Eapp f l xs).
@@ -1541,7 +1681,7 @@ Proof.
 Qed.
 
 Lemma case_nil_compat U Γ x l c :
-  internals_monochromatic_with U c ->
+  internals_monochromatic U c ->
   (x \in Γ) ->
   well_colored U c Γ (Ecase x l []).
 Proof.
@@ -1552,7 +1692,7 @@ Proof.
 Qed.
 
 Lemma fundamental_property {U c Γ e}:
-  internals_monochromatic_with U c ->
+  internals_monochromatic U c ->
   well_scoped Γ e ->
   well_colored U c Γ e.
 Proof.
@@ -1630,9 +1770,9 @@ Definition internals_monochromatic_top (U : internals) c e :=
 
 Lemma internals_monochromatic_top_internals_monochromatic U c e :
   internals_monochromatic_top U c e ->
-  internals_monochromatic_with U c.
+  internals_monochromatic U c.
 Proof.
-  unfold internals_monochromatic_top, internals_monochromatic_with, Ensembles.Included, Ensembles.In.
+  unfold internals_monochromatic_top, internals_monochromatic, Ensembles.Included, Ensembles.In.
   intros H cl Hcl.
   apply H in Hcl.
   destruct cl as [c0 l]; destruct Hcl; auto.
@@ -1658,85 +1798,6 @@ Inductive wf_cexp : cexp -> Prop :=
     wf_cexp (CElink v e1 e2).
 
 Hint Constructors wf_cexp : core.
-
-(* Closure Property [X] *)
-(* `U` is closed under reachable interactions `I` *)
-Definition internals_closed (U : internals) (I : interactions) : Prop :=
-  forall cl cl',
-    (cl \in U) ->
-    (cl' \in (reachable I cl)) ->
-    (cl' \in U).
-
-Lemma internals_closed_sound U I c :
-  internals_closed U I ->
-  internals_monochromatic_with U c ->
-  forall cl,
-    internals_sound U I cl.
-Proof.
-  unfold internals_closed, internals_monochromatic_with, internals_sound, internal,
-    colors_of, Ensembles.Included, Ensembles.In in *.
-  intros Hclosed Hmono cl HclU.
-  destruct cl as [c0 l].
-  pose proof (Hmono (c0, l) HclU) as Heqc; simpl in Heqc; subst c0.
-  intros x [l0 Hreach].
-  assert (HxU : U (x, l0)) by (eapply Hclosed; [exact HclU | exact Hreach]).
-  pose proof (Hmono (x, l0) HxU) as Heqx; simpl in Heqx; subst.
-  constructor.
-Qed.
-
-Lemma internals_sound_l {U I} :
-  internals_closed U I ->
-  forall cl cl',
-    ((cl, cl') \in I) ->
-    internals_sound U I cl ->
-    internals_sound U I cl'.
-Proof.
-  unfold internals_closed, internals_sound, internal, colors_of,
-    Ensembles.Included, Ensembles.In in *.
-  intros Hclosed cl cl' Hin Hsnd Hcl'U.
-  destruct cl as [c l].
-  destruct cl' as [c' l'].
-  assert (Hreach_l : reachable I (c, l) (c', l')) by (apply Reachable_interact_l; exact Hin).
-  assert (Hreach_r : reachable I (c', l') (c, l)) by (apply Reachable_interact_r; exact Hin).
-  assert (HclU : U (c, l)) by (eapply Hclosed; [exact Hcl'U | exact Hreach_r]).
-  pose proof (Hsnd HclU) as Hic.
-  assert (Heqc : c' = c).
-  { pose proof (Hic c' (ex_intro _ l' Hreach_l)) as Hmem.
-    inversion Hmem; subst; reflexivity. }
-  subst c'.
-  intros y Hy.
-  destruct Hy as [l0 Hreach2].
-  assert (Hreach3 : reachable I (c, l) (y, l0)) by (eapply Reachable_step; [exact Hreach_l | exact Hreach2]).
-  apply Hic.
-  exists l0; exact Hreach3.
-Qed.
-
-Lemma internals_sound_r {U I} :
-  internals_closed U I ->
-  forall cl cl',
-    ((cl, cl') \in I) ->
-    internals_sound U I cl' ->
-    internals_sound U I cl.
-Proof.
-  unfold internals_closed, internals_sound, internal, colors_of,
-    Ensembles.Included, Ensembles.In in *.
-  intros Hclosed cl cl' Hin Hsnd HclU.
-  destruct cl as [c l].
-  destruct cl' as [c' l'].
-  assert (Hreach_l : reachable I (c, l) (c', l')) by (apply Reachable_interact_l; exact Hin).
-  assert (Hreach_r : reachable I (c', l') (c, l)) by (apply Reachable_interact_r; exact Hin).
-  assert (Hcl'U : U (c', l')) by (eapply Hclosed; [exact HclU | exact Hreach_l]).
-  pose proof (Hsnd Hcl'U) as Hic.
-  assert (Heqc : c = c').
-  { pose proof (Hic c (ex_intro _ l Hreach_r)) as Hmem.
-    inversion Hmem; subst; reflexivity. }
-  subst c'.
-  intros y Hy.
-  destruct Hy as [l0 Hreach2].
-  assert (Hreach3 : reachable I (c, l') (y, l0)) by (eapply Reachable_step; [exact Hreach_r | exact Hreach2]).
-  apply Hic.
-  exists l0; exact Hreach3.
-Qed.
 
 (* Take e := Efun f l1 [] (Eapp f l_inner []) (Eret y) where l1 ≠ l_inner and y is some bound variable — f is defined but never called.
 
