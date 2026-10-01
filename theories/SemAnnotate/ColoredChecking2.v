@@ -87,7 +87,11 @@ Definition internals_closed (U : internals) (I : interactions) : Prop :=
     (cl' \in (reachable I cl)) ->
     (cl' \in U).
 
-Lemma internals_closed_empty (U : internals) :
+Lemma empty_internals_closed I :
+  internals_closed (Empty_set _) I.
+Proof. unfold internals_closed. sfirstorder. Qed.
+
+Lemma internals_closed_empty U :
   internals_closed U (Empty_set interaction).
 Proof.
   unfold internals_closed, Ensembles.In.
@@ -1682,13 +1686,12 @@ Proof.
     exists (S j2), r2, (((c0, l0), (c, l)) |: I2); split; eauto.
     econstructor; eauto.
     inv H7; invc.
-    assert (Heqρ : ρ4 = ρ''0) by admit.
-    subst.
+    unfold clval in *; invc.
     edestruct R_res_inv_l as [v2 [Heqv2 HVv]]; eauto; subst.
     edestruct (cbstep_fuel_deterministic v' v2 H19 He0) as [Heqv [Heqvi HeqI]]; eauto; subst.
     eapply internals_closed_equivalent; eauto.
-
-Admitted.
+    eapply Same_set_Union_compat; eauto; sfirstorder.
+Qed.
 
 Lemma case_nil_compat U Γ x l c :
   internals_monochromatic U c ->
@@ -1698,7 +1701,7 @@ Proof.
   unfold well_colored, E, E'.
   intros HU Hx; intros.
   split; auto; intros.
-  inv H3; fcrush.
+  inv H2; fcrush.
 Qed.
 
 Lemma fundamental_property {U c Γ e}:
