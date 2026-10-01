@@ -1634,51 +1634,61 @@ Proof.
   intross HU Hf Hxs; simpl.
   split; auto; intros.
 
-  inv H3.
+  inv H2.
   - fcrush.
   - destruct r1.
     fcrush.
     assert (Hrefρ : refine_env _ ρ1 ρ2) by eauto using G_refine_env.
-    edestruct (H0 (S c0) (Res w)) as [cv [Hcbstep Href]]; eauto.
-    inv Hcbstep; inv H4; inv Href.
-    inv H6; invc.
-    edestruct (G_get H1 f) as [fv2 [Heqfv2 HV]]; eauto.
+    edestruct (H0 (S c0) (Res w)) as [cv [I [Hcbstep Href]]]; eauto.
+    inv Hcbstep; inv H3; inv Href.
+    inv H14; invc.
+    edestruct (G_get H f) as [fv2 [Heqfv2 HV]]; eauto.
     destruct i.
-    inv H2.
+    inv H1.
     rename w into v.
-    destruct fv2; simpl in HV; invc;
-      rename i0 into U0;
-      destruct HV as [Hwf1 [Hwf2 [Hrefv [Heql [HU0 [Heqf [Heqxs [Heqe HV]]]]]]]]; subst; invc.
+    destruct fv2; destruct c0; destruct c2; simpl in HV; invc;
+      rename i0 into U0.
+    2 : { fcrush. }
+    destruct HV as [Hwf1 [Hwf2 [Hrefv [Heql [HU0 [Heqf [Heqxs [Heqe HV]]]]]]]]; subst; invc.
 
-    edestruct (G_get_list H1 xs vs) as [vs2 [Heqvs2 Vvs]]; eauto; invc.
+    edestruct (G_get_list H xs vs) as [vs2 [Heqvs2 Vvs]]; eauto; invc.
 
-    destruct (set_lists_length3 (M.set f'0 (CTag U0 c' l' (CVfun f'0 ρ'0 xs'0 e0)) ρ'0) xs'0 vs2) as [ρ4 Heqρ4].
+    destruct (set_lists_length3 (M.set v0 (CTag U0 c0 l0 (CVfun v0 t l1 e0)) t) l1 vs2) as [ρ4 Heqρ4].
     unfold clval in *.
-    rewrite <- (set_lists_length_eq _ _ _ _ H14); auto.
+    rewrite (set_lists_length_eq _ _ _ _ H13); auto.
+    eapply Forall2_length; eauto.
 
-    assert (HE : E U0 I c' (i - (i - i)) ρ'' ρ4 e0).
+    assert (HE : E U0 c0 (i - (i - i)) ρ'' ρ4 e0).
     {
-      eapply (HV _ i vs vs2); eauto.
+      eapply (HV i vs vs2); eauto.
       apply V_mono_Forall with (S i); auto; lia.
 
-      unfold interactions_sound; intros.
-      edestruct (H0 (S i0) r1) as [r2 [Hcbstep2 Hrefr2]]; eauto.
+      unfold internals_sound_trace; intros.
+      edestruct (H0 (S i0) r1) as [r2 [I2 [Hcbstep2 Hrefr2]]]; eauto.
       inv Hrefr2.
       - inv Hcbstep2.
-        inv H17.
+        inv H16.
         unfold clval in *.
         invc; eauto.
       - inv Hcbstep2.
-        inv H18.
+        inv H17.
         unfold clval in *.
         invc; fcrush.
     }
 
     apply (E_mono _ i) in HE; try lia.
     unfold E, E' in HE.
-    destruct (HE c0 (Res v)) as [j2 [r2 [He0 Rr]]]; try lia; auto.
-    exists (S j2), r2; split; eauto.
-Qed.
+    destruct (HE (S c1) (Res v)) as [j2 [r2 [I2 [He0 Rr]]]]; try lia; auto.
+    exists (S j2), r2, (((c0, l0), (c, l)) |: I2); split; eauto.
+    econstructor; eauto.
+    inv H7; invc.
+    assert (Heqρ : ρ4 = ρ''0) by admit.
+    subst.
+    edestruct R_res_inv_l as [v2 [Heqv2 HVv]]; eauto; subst.
+    edestruct (cbstep_fuel_deterministic v' v2 H19 He0) as [Heqv [Heqvi HeqI]]; eauto; subst.
+    eapply internals_closed_equivalent; eauto.
+
+Admitted.
 
 Lemma case_nil_compat U Γ x l c :
   internals_monochromatic U c ->
