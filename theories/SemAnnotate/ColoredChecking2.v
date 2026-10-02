@@ -1044,7 +1044,7 @@ Definition E' (P : nat -> wval -> clval -> Prop) (U : internals) (c : color) (i 
         R' P (i - j1) r1 r2.
 
 (* U is sound for a particular program trace of e *)
-Definition internals_sound_trace U c Γ ρ1 ρ2 e :=
+Definition analysis_sound U c Γ ρ1 ρ2 e :=
   forall i r1,
     bstep_fuel ρ1 e i r1 ->
     refine_env Γ ρ1 ρ2 ->
@@ -1081,7 +1081,7 @@ Fixpoint V (i : nat) (wv : wval) (cv : clval) {struct i} : Prop :=
                       Forall2 (V (i0 - (i0 - j))) vs1 vs2 ->
                       set_lists xs1 vs1 (M.set f1 (Tag l1 (Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
                       set_lists xs2 vs2 (M.set f2 (CTag U2 c2 l2 (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
-                      internals_sound_trace U2 c2 (occurs_free e1) ρ3 ρ4 e1 ->
+                      analysis_sound U2 c2 (occurs_free e1) ρ3 ρ4 e1 ->
                       E' V U2 c2 (i0 - (i0 - j)) ρ3 ρ4 e1
                 end
 
@@ -1512,19 +1512,19 @@ Proof.
     + apply IHe; eapply free_proj_k_inv; eauto.
 Qed.
 
-Definition well_colored U c Γ e :=
+Definition well_annotated U c Γ e :=
   internals_monochromatic U c /\
   forall i ρ1 ρ2,
     G i Γ ρ1 ρ2 ->
-    internals_sound_trace U c Γ ρ1 ρ2 e ->
+    analysis_sound U c Γ ρ1 ρ2 e ->
     E U c i ρ1 ρ2 e.
 
 Lemma ret_compat U c Γ x :
   internals_monochromatic U c ->
   (x \in Γ) ->
-  well_colored U c Γ (Eret x).
+  well_annotated U c Γ (Eret x).
 Proof.
-  unfold well_colored, E, E', R, R', Ensembles.Included, Ensembles.In.
+  unfold well_annotated, E, E', R, R', Ensembles.Included, Ensembles.In.
   intros; simpl.
   split; auto; intros.
 
@@ -1540,12 +1540,12 @@ Proof.
     eapply V_mono; eauto; lia.
 Qed.
 
-Lemma internals_sound_trace_subset U c Γ1 Γ2 ρ1 ρ2 e :
-  internals_sound_trace U c Γ1 ρ1 ρ2 e ->
+Lemma analysis_sound_subset U c Γ1 Γ2 ρ1 ρ2 e :
+  analysis_sound U c Γ1 ρ1 ρ2 e ->
   Γ1 \subset Γ2 ->
-  internals_sound_trace U c Γ2 ρ1 ρ2 e.
+  analysis_sound U c Γ2 ρ1 ρ2 e.
 Proof.
-  unfold internals_sound_trace.
+  unfold analysis_sound.
   intros.
   eapply H; eauto.
   eapply refine_env_subset; eauto.
@@ -1553,7 +1553,7 @@ Qed.
 
 Lemma Vfun_V Γ f l U c xs e  :
   occurs_free e \subset FromList xs :|: (f |: Γ) ->
-  well_colored U c (FromList xs :|: (f |: Γ)) e ->
+  well_annotated U c (FromList xs :|: (f |: Γ)) e ->
   forall {i ρ1 ρ2},
     wf_val (Tag l (Vfun f ρ1 xs e)) ->
     wf_cval (CTag U c l (CVfun f ρ2 xs e)) ->
@@ -1561,7 +1561,7 @@ Lemma Vfun_V Γ f l U c xs e  :
     G i Γ ρ1 ρ2 ->
     V i (Tag l (Vfun f ρ1 xs e)) (CTag U c l (CVfun f ρ2 xs e)).
 Proof.
-  unfold well_colored.
+  unfold well_annotated.
   intros HS [HU He] i.
   induction i; simpl; intros; auto;
     repeat (split; auto);
@@ -1576,15 +1576,15 @@ Proof.
     eapply IHi; eauto.
     apply G_mono with (S i); eauto; lia.
   + fcrush.
-  + eapply internals_sound_trace_subset; eauto.
+  + eapply analysis_sound_subset; eauto.
 Qed.
 
-Lemma internals_sound_trace_fun_inv_k {U c Γ ρ1 ρ2 f l xs e k}:
-  internals_sound_trace U c Γ ρ1 ρ2 (Efun f l xs e k) ->
+Lemma analysis_sound_fun_inv_k {U c Γ ρ1 ρ2 f l xs e k}:
+  analysis_sound U c Γ ρ1 ρ2 (Efun f l xs e k) ->
   refine_env Γ ρ1 ρ2 ->
-  internals_sound_trace U c (f |: Γ) (M.set f (Tag l (Vfun f ρ1 xs e)) ρ1) (M.set f (CTag U c l (CVfun f ρ2 xs e)) ρ2) k.
+  analysis_sound U c (f |: Γ) (M.set f (Tag l (Vfun f ρ1 xs e)) ρ1) (M.set f (CTag U c l (CVfun f ρ2 xs e)) ρ2) k.
 Proof.
-  unfold internals_sound_trace.
+  unfold analysis_sound.
   intros.
   edestruct (H (S i) r1) as [r2 [I2 [Hcbstep Href]]]; eauto.
   eexists; eexists; split; fcrush.
@@ -1592,11 +1592,11 @@ Qed.
 
 Lemma fun_compat U c Γ e k f l xs :
   occurs_free e \subset FromList xs :|: (f |: Γ) ->
-  well_colored U c (FromList xs :|: (f |: Γ)) e ->
-  well_colored U c (f |: Γ) k ->
-  well_colored U c Γ (Efun f l xs e k).
+  well_annotated U c (FromList xs :|: (f |: Γ)) e ->
+  well_annotated U c (f |: Γ) k ->
+  well_annotated U c Γ (Efun f l xs e k).
 Proof.
-  unfold well_colored, E, E'.
+  unfold well_annotated, E, E'.
   intros HS He [HU Hk].
   split; auto; intros.
 
@@ -1618,7 +1618,7 @@ Proof.
       * eapply Vfun_V; eauto.
         apply G_mono with i; eauto; lia.
       * apply Included_refl.
-    + eapply internals_sound_trace_fun_inv_k; eauto.
+    + eapply analysis_sound_fun_inv_k; eauto.
     + edestruct R_res_inv_l as [w2 [Heqw2 HV]]; eauto; subst.
       inv Href.
       edestruct (cbstep_fuel_deterministic v' w2 H14 Hk2) as [Heqv [Heqvi HeqI]]; eauto; subst.
@@ -1632,9 +1632,9 @@ Lemma app_compat U Γ xs f l c :
   internals_monochromatic U c ->
   (f \in Γ) ->
   (FromList xs \subset Γ) ->
-  well_colored U c Γ (Eapp f l xs).
+  well_annotated U c Γ (Eapp f l xs).
 Proof.
-  unfold well_colored, E, E'.
+  unfold well_annotated, E, E'.
   intross HU Hf Hxs; simpl.
   split; auto; intros.
 
@@ -1667,7 +1667,7 @@ Proof.
       eapply (HV i vs vs2); eauto.
       apply V_mono_Forall with (S i); auto; lia.
 
-      unfold internals_sound_trace; intros.
+      unfold analysis_sound; intros.
       edestruct (H0 (S i0) r1) as [r2 [I2 [Hcbstep2 Hrefr2]]]; eauto.
       inv Hrefr2.
       - inv Hcbstep2.
@@ -1696,9 +1696,9 @@ Qed.
 Lemma case_nil_compat U Γ x l c :
   internals_monochromatic U c ->
   (x \in Γ) ->
-  well_colored U c Γ (Ecase x l []).
+  well_annotated U c Γ (Ecase x l []).
 Proof.
-  unfold well_colored, E, E'.
+  unfold well_annotated, E, E'.
   intros HU Hx; intros.
   split; auto; intros.
   inv H2; fcrush.
@@ -1707,7 +1707,7 @@ Qed.
 Lemma fundamental_property {U c Γ e}:
   internals_monochromatic U c ->
   well_scoped Γ e ->
-  well_colored U c Γ e.
+  well_annotated U c Γ e.
 Proof.
   intros HU H.
   induction H; intros.
@@ -1940,7 +1940,7 @@ Qed.
 Definition G_top := G.
 
 (* Soundness of Analysis *)
-Definition analysis_sound e e' :=
+Definition analysis_sound_top e e' :=
   forall i r1 ρ1 ρ2,
     bstep_fuel ρ1 e i r1 ->
     refine_env (occurs_free e) ρ1 ρ2 ->
@@ -1950,46 +1950,43 @@ Definition analysis_sound e e' :=
       cbstep_top_fuel ρ2 e' i r2 /\
       refine_res r1 r2.
 
-(*
-Lemma interactions_analysis_sound_instantiate I c e :
-  interactions_analysis_sound I e (CEunit c e) ->
+Lemma analysis_sound_top_analysis_sound U c e :
+  analysis_sound_top e (CEunit U c e) ->
   forall ρ1 ρ2,
     wf_env (occurs_free e) ρ1 ->
     wf_cenv ρ2 ->
-    interactions_sound I c (occurs_free e) ρ1 ρ2 e.
+    analysis_sound U c (occurs_free e) ρ1 ρ2 e.
 Proof.
-  unfold interactions_analysis_sound, interactions_sound.
+  unfold analysis_sound_top, analysis_sound.
   intros.
   hauto lq: on use: cbstep_top_fuel_cbstep_fuel.
-  (* NOTE: cbstep_top_fuel_cbstep_fuel now returns `exists I`; this may need adjusting. *)
 Qed.
- *)
 
 Definition well_annotated_top e e' :=
   (occurs_free_top e') \subset (occurs_free e) /\
-  analysis_sound e e' /\
+  analysis_sound_top e e' /\
   forall i ρ1 ρ2,
     G_top i (occurs_free e) ρ1 ρ2 ->
     E_top i ρ1 e ρ2 e'.
 
-Lemma well_annotated_top_subset I e1 e2 :
-  well_annotated_top I e1 e2 ->
+Lemma well_annotated_top_subset e1 e2 :
+  well_annotated_top e1 e2 ->
   occurs_free_top e2 \subset occurs_free e1.
 Proof. unfold well_annotated_top. fcrush. Qed.
 
-Theorem analysis_top I c etop:
-  interactions_diff I ->
-  interactions_analysis_sound I etop (CEunit c etop) ->
-  well_annotated_top I etop (CEunit c etop).
+Theorem analysis_top U c etop:
+  internals_monochromatic U c ->
+  analysis_sound_top etop (CEunit U c etop) ->
+  well_annotated_top etop (CEunit U c etop).
 Proof.
   unfold well_annotated_top.
-  intros; repeat (split; eauto); intros.
+  intross HU; repeat (split; eauto); intros.
   eapply occurs_free_top_cexp; eauto.
   eapply E_E_top; eauto.
   eapply fundamental_property; eauto.
   eapply well_scoped_intro; eauto.
   eapply Included_refl.
-  eapply interactions_analysis_sound_instantiate; eauto.
+  eapply analysis_sound_top_analysis_sound; eauto.
   eapply G_wf_env_l; eauto.
   eapply G_wf_cenv_r; eauto.
 Qed.
