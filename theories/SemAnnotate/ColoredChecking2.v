@@ -1828,13 +1828,12 @@ Qed.
 
 (* Well-formed Top-level Expression
   1. each compilation unit is uniquely colored
-  2. each compilation unit is uniquely labeled
+  2. each compilation unit does *not* need to be uniquely labeled
   3. the internal labels of each compilation unit should be a subset of the labels in each unit paired with the assigned color
  *)
 Inductive wf_cexp : cexp -> Prop :=
 | Wf_cexp :
   forall U c e,
-    unique_label e ->
     internals_monochromatic_top U c e ->
     wf_cexp (CEunit U c e)
 
@@ -2010,6 +2009,7 @@ Qed.
 
 Definition well_annotated_top e e' :=
   (occurs_free_top e') \subset (occurs_free e) /\
+  wf_cexp e' /\
   analysis_sound_top e e' /\
   forall i ρ1 ρ2,
     G_top i (occurs_free e) ρ1 ρ2 ->
@@ -2021,7 +2021,7 @@ Lemma well_annotated_top_subset e1 e2 :
 Proof. unfold well_annotated_top. fcrush. Qed.
 
 Theorem analysis_top U c etop:
-  internals_monochromatic U c ->
+  internals_monochromatic_top U c etop ->
   analysis_sound_top etop (CEunit U c etop) ->
   well_annotated_top etop (CEunit U c etop).
 Proof.
@@ -2030,6 +2030,7 @@ Proof.
   eapply occurs_free_top_cexp; eauto.
   eapply E_E_top; eauto.
   eapply fundamental_property; eauto.
+  eapply internals_monochromatic_top_internals_monochromatic; eauto.
   eapply well_scoped_intro; eauto.
   eapply Included_refl.
   eapply analysis_sound_top_analysis_sound; eauto.
@@ -2038,23 +2039,25 @@ Proof.
 Qed.
 
 Lemma well_annotated_top_well_annotated U c e :
-  internals_monochromatic U c ->
   well_annotated_top e (CEunit U c e) ->
   well_annotated U c (occurs_free e) e.
 Proof.
   unfold well_annotated_top, well_annotated.
-  intros HU [HS [HA HE]].
+  intros [HS [Hwf [HA HE]]].
+  inv Hwf.
   split; auto; intros.
+  eapply internals_monochromatic_top_internals_monochromatic; eauto.
   eapply E_top_E; eauto.
 Qed.
 
 Lemma well_annotated_well_annotated_top U c e :
   well_annotated U c (occurs_free e) e ->
+  wf_cexp (CEunit U c e) ->
   analysis_sound_top e (CEunit U c e) ->
   well_annotated_top e (CEunit U c e).
 Proof.
   unfold well_annotated_top, well_annotated, G_top.
-  intros [HU HE] HA.
+  intros [HU HE] Hwf HA.
   repeat (split; auto); intros.
   eapply occurs_free_top_cexp; eauto.
   eapply E_E_top; eauto.
@@ -2245,13 +2248,14 @@ Lemma preserves_linking f x e1 e1' e2 e2' :
   f <> x ->
   ~ (f \in occurs_free e1) ->
   ~ (f \in occurs_free e2) ->
+  unique_color e1' e2' ->
   well_annotated_top e1 e1' ->
   well_annotated_top e2 e2' ->
   well_annotated_top (link f x e1 e2) (clink x e1' e2').
 Proof.
-  intros Hfx Hf1 Hf2 Htr1 Htr2.
-  destruct Htr1 as [HFV1 [Hsnd1 HE1]].
-  destruct Htr2 as [HFV2 [Hsnd2 HE2]].
+  intros Hfx Hf1 Hf2 HUC Htr1 Htr2.
+  destruct Htr1 as [HFV1 [Hsnd1 [Hwf1 HE1]]].
+  destruct Htr2 as [HFV2 [Hsnd2 [Hwf2 HE2]]].
 
   assert (Hf1' : ~ (f \in occurs_free_top e1')) by sfirstorder.
   assert (Hf2' : ~ (f \in occurs_free_top e2')) by sfirstorder.
@@ -2260,6 +2264,8 @@ Proof.
   repeat split.
   - unfold Ensembles.Included, Ensembles.In in *.
     sauto lq: on drew: off.
+
+  - eauto.
 
   - eapply analysis_sound_top_preserves_linking; eauto.
 
