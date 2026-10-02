@@ -1812,84 +1812,67 @@ Inductive wf_cexp : cexp -> Prop :=
 
 Hint Constructors wf_cexp : core.
 
-(* Take e := Efun f l1 [] (Eapp f l_inner []) (Eret y) where l1 ≠ l_inner and y is some bound variable — f is defined but never called.
-
-wf_cexp (CEunit U c e) only requires unique_label e (trivially satisfiable) and U ⊆ {(c, l) | has_label e l}. Since has_label e = {l1, l_inner}, we can pick U := {(c, l_inner)} — a label that only occurs inside f's dead body.
-cbstep U I c ρ e i r: Cbstep_fun only demands internals_sound U I (c, l1), which holds vacuously since (c,l1) ∉ U. Execution proceeds straight into the continuation Eret y, never touching l_inner at all. So this succeeds for any I, including...
-I := {((c, l_inner), (c2, l_other))} for some c2 ≠ c — a "junk" edge that cbstep never has to check because the dead code containing l_inner is never reached.
-Then (c, l_inner) ∈ U, (c2, l_other) ∈ reachable I (c, l_inner), but (c2, l_other) ∉ U — so internals_closed U I fails, even though wf_cexp (CEunit U c e) and cbstep U I c ρ e i r both hold.
-
-The root issue: cbstep only walks the single dynamic execution path, so it never constrains labels belonging to un-invoked functions/branches — but wf_cexp (via has_label) allows U to include labels from anywhere in e, dead code included. internals_closed is really a static, whole-program property, closer to the (currently unused) valid_interactions judgment than to anything a single cbstep derivation can pin down. *)
-
-Lemma wf_cexp_closed U c e :
-  wf_cexp (CEunit U c e) ->
-  forall I ρ i r,
-    cbstep U I c ρ e i r ->
-    internals_closed U I.
-Proof.
-Abort.
-
 (* Top-level Checking Semantics *)
-Inductive cbstep_top (I : interactions) (ρ : cenv) : cexp -> fuel -> cres -> Prop :=
-| Cbstep_exp_top :
-  forall {U e c i r},
-    cbstep U I c ρ e i r ->
-    cbstep_top I ρ (CEunit U c e) i r
-
+Inductive cbstep_top (ρ : cenv) : cexp -> fuel -> cres -> Prop :=
 | Cbstep_link_top_trivial :
   forall {x e k},
-    cbstep_top I ρ (CElink x e k) 0 COOT
+    cbstep_top ρ (CElink x e k) 0 COOT
 
 | Cbstep_link_top_Res :
   forall {x e k i' i r v},
-    cbstep_top_fuel I ρ e i (CRes v) ->
-    cbstep_top_fuel I (M.set x v ρ) k i' r ->
-    cbstep_top I ρ (CElink x e k) (S (i + i')) r
+    cbstep_top_fuel ρ e i (CRes v) ->
+    cbstep_top_fuel (M.set x v ρ) k i' r ->
+    cbstep_top ρ (CElink x e k) (S (i + i')) r
 
 | Cbstep_link_top_OOT :
   forall {x e k i},
-    cbstep_top_fuel I ρ e i COOT ->
-    cbstep_top I ρ (CElink x e k) (S i) COOT
+    cbstep_top_fuel ρ e i COOT ->
+    cbstep_top ρ (CElink x e k) (S i) COOT
 
-with cbstep_top_fuel (I : interactions) (ρ : cenv) : cexp -> fuel -> cres -> Prop :=
-| CbstepTF_OOT :
-  forall {e},
-    cbstep_top_fuel I ρ e 0 COOT
+with cbstep_top_fuel (ρ : cenv) : cexp -> fuel -> cres -> Prop :=
+| CbstepTF_unit :
+  forall {U I c e i r},
+    cbstep_fuel U c ρ e i r I ->
+    cbstep_top_fuel ρ (CEunit U c e) i r
 
-| CbstepTF_Step :
-  forall {e i r},
-    cbstep_top I ρ e i r ->
-    cbstep_top_fuel I ρ e (S i) r.
+| CbstepTF_link_OOT :
+  forall {x e k},
+    cbstep_top_fuel ρ (CElink x e k) 0 COOT
+
+| CbstepTF_link_Step :
+  forall {x e k i r},
+    cbstep_top ρ (CElink x e k) i r ->
+    cbstep_top_fuel ρ (CElink x e k) (S i) r.
 
 Hint Constructors cbstep_top : core.
 Hint Constructors cbstep_top_fuel : core.
 
 (* The step-index is aligned between the two semantics. *)
 Lemma cbstep_fuel_cbstep_top_fuel U I c ρ e j r:
-  cbstep_fuel U I c ρ e j r ->
-  cbstep_top_fuel I ρ (CEunit U c e) j r.
-Proof. intros H; inv H; eauto. Qed.
-
-Lemma cbstep_top_fuel_cbstep_fuel U I c ρ e j r:
-  cbstep_top_fuel I ρ (CEunit U c e) j r ->
-  cbstep_fuel U I c ρ e j r.
+  cbstep_fuel U c ρ e j r I ->
+  cbstep_top_fuel ρ (CEunit U c e) j r.
 Proof.
-  intros H; inv H; eauto.
-  fcrush.
+  intros H. eapply CbstepTF_unit; eauto.
 Qed.
 
-Lemma cbstep_top_wf_res I ρ e i r :
+Lemma cbstep_top_fuel_cbstep_fuel U c ρ e j r:
+  cbstep_top_fuel ρ (CEunit U c e) j r ->
+  exists I, cbstep_fuel U c ρ e j r I.
+Proof.
+  intros H. inv H.
+  eexists; eauto.
+Qed.
+
+Lemma cbstep_top_wf_res ρ e i r :
   wf_cenv ρ ->
-  cbstep_top I ρ e i r ->
+  cbstep_top ρ e i r ->
   wf_cres r
-with cbstep_top_fuel_wf_res I ρ e i r :
+with cbstep_top_fuel_wf_res ρ e i r :
   wf_cenv ρ ->
-  cbstep_top_fuel I ρ e i r ->
+  cbstep_top_fuel ρ e i r ->
   wf_cres r.
 Proof.
   - intros Hw H. inv H.
-    + (* Cbstep_exp_top *)
-      eapply cbstep_wf_res; eauto.
     + (* Cbstep_link_top_trivial *)
       constructor.
     + (* Cbstep_link_top_Res *)
@@ -1901,50 +1884,51 @@ Proof.
     + (* Cbstep_link_top_OOT *)
       constructor.
   - intros Hw H. inv H.
-    + (* CbstepTF_OOT *)
+    + (* CbstepTF_unit *)
+      match goal with H : cbstep_fuel _ _ _ _ _ _ _ |- _ => inv H end;
+        [ constructor | eapply cbstep_wf_res; eauto ].
+    + (* CbstepTF_link_OOT *)
       constructor.
-    + (* CbstepTF_Step *)
+    + (* CbstepTF_link_Step *)
       eapply cbstep_top_wf_res; eauto.
 Qed.
 
 (* Cross-language Logical Relations *)
 
-Definition E_top' (P : nat -> wval -> clval -> Prop) (I : interactions) (i : nat) (ρ1 : env) (e1 : exp) (ρ2 : cenv) (e2 : cexp) : Prop :=
+Definition E_top' (P : nat -> wval -> clval -> Prop) (i : nat) (ρ1 : env) (e1 : exp) (ρ2 : cenv) (e2 : cexp) : Prop :=
   forall j1 r1,
     j1 <= i ->
     bstep_fuel ρ1 e1 j1 r1 ->
     exists j2 r2,
-      cbstep_top_fuel I ρ2 e2 j2 r2 /\
+      cbstep_top_fuel ρ2 e2 j2 r2 /\
       R' P (i - j1) r1 r2.
 
 Definition E_top := E_top' V.
 
-Lemma E_E_top I c i ρ1 ρ2 e :
-  E I c i ρ1 ρ2 e ->
-  E_top I i ρ1 e ρ2 (CEunit c e).
+Lemma E_E_top U c i ρ1 ρ2 e :
+  E U c i ρ1 ρ2 e ->
+  E_top i ρ1 e ρ2 (CEunit U c e).
+Proof.
+  unfold E, E_top, E', E_top'.
+  intros.
+  edestruct H as [j2 [r2 [I2 [Hcbstep HR]]]]; eauto.
+Qed.
+
+Lemma E_top_E U c i ρ1 ρ2 e :
+  E_top i ρ1 e ρ2 (CEunit U c e) ->
+  E U c i ρ1 ρ2 e.
 Proof.
   unfold E, E_top, E', E_top'.
   intros.
   edestruct H as [j2 [r2 [Hcbstep HR]]]; eauto.
-  exists j2, r2; split; eauto.
-  eapply cbstep_fuel_cbstep_top_fuel; eauto.
+  inv Hcbstep.
+  exists j2, r2, I; split; eauto.
 Qed.
 
-Lemma E_top_E I c i ρ1 ρ2 e :
-  E_top I i ρ1 e ρ2 (CEunit c e) ->
-  E I c i ρ1 ρ2 e.
-Proof.
-  unfold E, E_top, E', E_top'.
-  intros.
-  edestruct H as [j2 [r2 [Hcbstep HR]]]; eauto.
-  exists j2, r2; split; eauto.
-  eapply cbstep_top_fuel_cbstep_fuel; eauto.
-Qed.
-
-Lemma E_top_mono {I ρ1 ρ2 e1 e2} i j:
-  E_top I i ρ1 e1 ρ2 e2 ->
+Lemma E_top_mono {ρ1 ρ2 e1 e2} i j:
+  E_top i ρ1 e1 ρ2 e2 ->
   j <= i ->
-  E_top I j ρ1 e1 ρ2 e2.
+  E_top j ρ1 e1 ρ2 e2.
 Proof.
   unfold E_top, E_top'.
   intros.
@@ -1956,17 +1940,17 @@ Qed.
 Definition G_top := G.
 
 (* Soundness of Analysis *)
-(* L is large enough to incorporate all program traces. *)
-Definition interactions_analysis_sound I e e' :=
+Definition analysis_sound e e' :=
   forall i r1 ρ1 ρ2,
     bstep_fuel ρ1 e i r1 ->
     refine_env (occurs_free e) ρ1 ρ2 ->
     wf_env (occurs_free e) ρ1 ->
     wf_cenv ρ2 ->
     exists r2,
-      cbstep_top_fuel I ρ2 e' i r2 /\
+      cbstep_top_fuel ρ2 e' i r2 /\
       refine_res r1 r2.
 
+(*
 Lemma interactions_analysis_sound_instantiate I c e :
   interactions_analysis_sound I e (CEunit c e) ->
   forall ρ1 ρ2,
@@ -1977,27 +1961,28 @@ Proof.
   unfold interactions_analysis_sound, interactions_sound.
   intros.
   hauto lq: on use: cbstep_top_fuel_cbstep_fuel.
+  (* NOTE: cbstep_top_fuel_cbstep_fuel now returns `exists I`; this may need adjusting. *)
 Qed.
+ *)
 
-Definition analysis_correct_top I e e' :=
+Definition well_annotated_top e e' :=
   (occurs_free_top e') \subset (occurs_free e) /\
-  interactions_diff I /\
-  interactions_analysis_sound I e e' /\
+  analysis_sound e e' /\
   forall i ρ1 ρ2,
     G_top i (occurs_free e) ρ1 ρ2 ->
-    E_top I i ρ1 e ρ2 e'.
+    E_top i ρ1 e ρ2 e'.
 
-Lemma analysis_correct_top_subset I e1 e2 :
-  analysis_correct_top I e1 e2 ->
+Lemma well_annotated_top_subset I e1 e2 :
+  well_annotated_top I e1 e2 ->
   occurs_free_top e2 \subset occurs_free e1.
-Proof. unfold analysis_correct_top. fcrush. Qed.
+Proof. unfold well_annotated_top. fcrush. Qed.
 
 Theorem analysis_top I c etop:
   interactions_diff I ->
   interactions_analysis_sound I etop (CEunit c etop) ->
-  analysis_correct_top I etop (CEunit c etop).
+  well_annotated_top I etop (CEunit c etop).
 Proof.
-  unfold analysis_correct_top.
+  unfold well_annotated_top.
   intros; repeat (split; eauto); intros.
   eapply occurs_free_top_cexp; eauto.
   eapply E_E_top; eauto.
@@ -2014,9 +1999,9 @@ Lemma preserves_linking f x I1 I2 e1 e1' e2 e2' :
   f <> x ->
   ~ (f \in occurs_free e1) ->
   ~ (f \in occurs_free e2) ->
-  analysis_correct_top I1 e1 e1' ->
-  analysis_correct_top I2 e2 e2' ->
-  analysis_correct_top (I1 :|: I2) (link f x e1 e2) (clink x e1' e2').
+  well_annotated_top I1 e1 e1' ->
+  well_annotated_top I2 e2 e2' ->
+  well_annotated_top (I1 :|: I2) (link f x e1 e2) (clink x e1' e2').
 Proof.
 Abort.
 
