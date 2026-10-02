@@ -486,6 +486,20 @@ Proof.
     fcrush.
 Qed.
 
+(* Extending the source environment with a variable that is not in [Γ]
+   preserves refinement. *)
+Lemma refine_env_set_unused x v {Γ ρ1 ρ2} :
+  refine_env Γ ρ1 ρ2 ->
+  ~ (x \in Γ) ->
+  refine_env Γ (M.set x v ρ1) ρ2.
+Proof.
+  intros Henv Hx.
+  constructor; intros y Hy.
+  destruct (M.elt_eq x y) as [<-|Hne]; [ contradiction |].
+  rewrite M.gso by auto.
+  inv Henv; eauto.
+Qed.
+
 Lemma refine_env_set_lists xs vs vs' {Γ ρ1 ρ2 ρ1' ρ2'} :
   Forall2 refine_val vs vs' ->
   refine_env Γ ρ1 ρ2 ->
@@ -1278,6 +1292,31 @@ Proof.
     fcrush.
 Qed.
 
+(* Binding a variable that is not in [Γ1] on the source side only
+   preserves the environment relation. *)
+Lemma G_set_unused {i Γ1 ρ1 ρ2} y v :
+  G i Γ1 ρ1 ρ2 ->
+  ~ (y \in Γ1) ->
+  wf_val v ->
+  G i Γ1 (M.set y v ρ1) ρ2.
+Proof.
+  unfold G.
+  intros HG Hy Hv.
+  destruct HG as [Hwf1 [Hwf2 [Href HGv]]].
+  split; [| split; [| split ] ].
+  - eapply wf_env_subset.
+    + eapply wf_env_set; eassumption.
+    + unfold Ensembles.Included, Ensembles.In.
+      intros z Hz. right. assumption.
+  - exact Hwf2.
+  - eapply refine_env_set_unused; eassumption.
+  - intros z Hz.
+    destruct (HGv z Hz) as [v1 [v2 [Hg1 [Hg2 HV]]]].
+    exists v1, v2.
+    rewrite M.gso by (intros Heq; subst; contradiction).
+    split; [ exact Hg1 | split; [ exact Hg2 | exact HV ] ].
+Qed.
+
 Lemma G_set_lists {i Γ1 ρ1 ρ2}:
   G i Γ1 ρ1 ρ2 ->
   forall {xs vs1 vs2 ρ3 ρ4},
@@ -1890,7 +1929,6 @@ Proof.
 Qed.
 
 (* Cross-language Logical Relations *)
-
 Definition E_top' (P : nat -> wval -> clval -> Prop) (i : nat) (ρ1 : env) (e1 : exp) (ρ2 : cenv) (e2 : cexp) : Prop :=
   forall j1 r1,
     j1 <= i ->
@@ -1958,6 +1996,18 @@ Proof.
   hauto lq: on use: cbstep_top_fuel_cbstep_fuel.
 Qed.
 
+Lemma analysis_sound_analysis_sound_top U c e :
+  (forall ρ1 ρ2,
+    wf_env (occurs_free e) ρ1 ->
+    wf_cenv ρ2 ->
+    analysis_sound U c (occurs_free e) ρ1 ρ2 e) ->
+  analysis_sound_top e (CEunit U c e).
+Proof.
+  unfold analysis_sound_top, analysis_sound.
+  intros.
+  hauto lq: on use: cbstep_top_fuel_cbstep_fuel.
+Qed.
+
 Definition well_annotated_top e e' :=
   (occurs_free_top e') \subset (occurs_free e) /\
   analysis_sound_top e e' /\
@@ -1987,13 +2037,322 @@ Proof.
   eapply G_wf_cenv_r; eauto.
 Qed.
 
+Lemma well_annotated_top_well_annotated U c e :
+  internals_monochromatic U c ->
+  well_annotated_top e (CEunit U c e) ->
+  well_annotated U c (occurs_free e) e.
+Proof.
+  unfold well_annotated_top, well_annotated.
+  intros HU [HS [HA HE]].
+  split; auto; intros.
+  eapply E_top_E; eauto.
+Qed.
+
+Lemma well_annotated_well_annotated_top U c e :
+  well_annotated U c (occurs_free e) e ->
+  analysis_sound_top e (CEunit U c e) ->
+  well_annotated_top e (CEunit U c e).
+Proof.
+  unfold well_annotated_top, well_annotated, G_top.
+  intros [HU HE] HA.
+  repeat (split; auto); intros.
+  eapply occurs_free_top_cexp; eauto.
+  eapply E_E_top; eauto.
+  eapply HE; eauto.
+  eapply analysis_sound_top_analysis_sound; eauto.
+  eapply G_wf_env_l; eauto.
+  eapply G_wf_cenv_r; eauto.
+Qed.
+
 (* Linking Preservation *)
-Lemma preserves_linking f x I1 I2 e1 e1' e2 e2' :
+
+(* Evaluating a linked program either runs out of fuel before the body of
+   [f] is entered, or it evaluates [e1] (under the environment extended with
+   the closure for [f]) and, if that returns, continues with [e2] under [x]
+   bound to the result.  The step indices line up with [cbstep_top_fuel] on
+   [CElink]. *)
+Lemma bstep_fuel_link_inv f x e1 e2 ρ i r :
+  bstep_fuel ρ (Efun f l0 [] e1 (Eletapp x f l0 [] e2)) i r ->
+  (i = 0 /\ r = OOT) \/
+  (i = 1 /\ r = OOT) \/
+  (exists c c' v,
+      i = S (S (c + c')) /\
+      bstep_fuel (M.set f (Tag l0 (Vfun f ρ [] e1)) ρ) e1 c (Res v) /\
+      bstep_fuel (M.set x v (M.set f (Tag l0 (Vfun f ρ [] e1)) ρ)) e2 c' r) \/
+  (exists c,
+      i = S (S c) /\ r = OOT /\
+      bstep_fuel (M.set f (Tag l0 (Vfun f ρ [] e1)) ρ) e1 c OOT).
+Proof.
+  intros H.
+  inv H.
+  { left; split; reflexivity. }
+  match goal with
+  | [ Hb : bstep _ (Efun _ _ _ _ _) _ _ |- _ ] => inv Hb
+  end.
+  match goal with
+  | [ Hb : bstep_fuel _ (Eletapp _ _ _ _ _) _ _ |- _ ] => inv Hb
+  end.
+  { right; left; split; reflexivity. }
+  match goal with
+  | [ Hb : bstep _ (Eletapp _ _ _ _ _) _ _ |- _ ] => inv Hb
+  end;
+    repeat match goal with
+      | [ Hg : M.get _ (M.set _ _ _) = Some _ |- _ ] => rewrite M.gss in Hg; inv Hg
+      | [ Hg : get_list [] _ = Some _ |- _ ] => simpl in Hg; inv Hg
+      | [ Hs : set_lists [] [] _ = Some _ |- _ ] => simpl in Hs; inv Hs
+      end.
+
+  - (* BStep_letapp_Res *)
+    right; right; left.
+    eexists; eexists; eexists.
+    split; [ reflexivity | split; eassumption ].
+
+  - (* BStep_letapp_OOT *)
+    right; right; right.
+    eexists.
+    split; [ reflexivity | split; [ reflexivity | eassumption ] ].
+Qed.
+
+Lemma analysis_sound_top_preserves_linking f x e1 e1' e2 e2' :
   f <> x ->
   ~ (f \in occurs_free e1) ->
   ~ (f \in occurs_free e2) ->
-  well_annotated_top I1 e1 e1' ->
-  well_annotated_top I2 e2 e2' ->
-  well_annotated_top (I1 :|: I2) (link f x e1 e2) (clink x e1' e2').
+  ~ (f \in occurs_free_top e1') ->
+  ~ (f \in occurs_free_top e2') ->
+  analysis_sound_top e1 e1' ->
+  analysis_sound_top e2 e2' ->
+  analysis_sound_top (link f x e1 e2) (clink x e1' e2').
 Proof.
-Abort.
+  intros Hfx Hf1 Hf2 Hf1' Hf2' H1 H2.
+  unfold analysis_sound_top, link, clink.
+  intros i r1 ρ1 ρ2 Hbstep Href Hwfρ1 Hwfρ2.
+
+  (* [occurs_free (link f x e1 e2)] contains [occurs_free e1] and all of
+     [occurs_free e2] except [x], because [f] is free in neither. *)
+  assert (HSe1 : occurs_free e1 \subset
+                   occurs_free (Efun f l0 [] e1 (Eletapp x f l0 [] e2))).
+  { unfold Ensembles.Included, Ensembles.In.
+    sauto lq: on drew: off. }
+
+  assert (HSe2 : occurs_free e2 \subset
+                   (x |: occurs_free (Efun f l0 [] e1 (Eletapp x f l0 [] e2)))).
+  { unfold Ensembles.Included, Ensembles.In.
+    intros y Hy.
+    destruct (M.elt_eq x y); subst.
+    - fcrush.
+    - sauto lq: on drew: off. }
+
+  (* [f] is bound by [link], hence not free in it *)
+  assert (Hfnotin : ~ (f \in occurs_free (Efun f l0 [] e1 (Eletapp x f l0 [] e2)))).
+  { unfold Ensembles.In.
+    intros HC; inv HC; congruence. }
+
+  (* The closure [link] allocates for [f] is well formed, and since [f] is
+     not free in the linked program, binding it changes neither
+     well-formedness nor refinement of the source environment. *)
+  assert (Hwfclo : wf_val (Tag l0 (Vfun f ρ1 [] e1))).
+  { constructor.
+    eapply (WF_Vfun f ρ1 [] e1
+              (occurs_free (Efun f l0 [] e1 (Eletapp x f l0 [] e2)))).
+    - exact Hwfρ1.
+    - apply free_fun_e_subset. }
+
+  assert (Hwfρf : wf_env (occurs_free (Efun f l0 [] e1 (Eletapp x f l0 [] e2)))
+                    (M.set f (Tag l0 (Vfun f ρ1 [] e1)) ρ1)).
+  { eapply wf_env_subset.
+    - eapply wf_env_set; eassumption.
+    - unfold Ensembles.Included, Ensembles.In.
+      intros y Hy. right. assumption. }
+
+  assert (Hrefρf : refine_env (occurs_free (Efun f l0 [] e1 (Eletapp x f l0 [] e2)))
+                     (M.set f (Tag l0 (Vfun f ρ1 [] e1)) ρ1) ρ2)
+    by (eapply refine_env_set_unused; eassumption).
+
+  assert (Hwf1 : wf_env (occurs_free e1) (M.set f (Tag l0 (Vfun f ρ1 [] e1)) ρ1))
+    by (eapply wf_env_subset; eassumption).
+
+  assert (Href1 : refine_env (occurs_free e1)
+                    (M.set f (Tag l0 (Vfun f ρ1 [] e1)) ρ1) ρ2)
+    by (eapply refine_env_subset; eassumption).
+
+  apply bstep_fuel_link_inv in Hbstep.
+  destruct Hbstep
+    as [[-> ->]
+       | [[-> ->]
+       | [[c [c' [v [-> [Hbody Hcont]]]]]
+       | [c [-> [-> Hbody]]]]]].
+
+  - (* no fuel at all *)
+    exists COOT; split.
+    + apply CbstepTF_link_OOT.
+    + constructor.
+
+  - (* out of fuel right after allocating the closure for [f] *)
+    exists COOT; split.
+    + apply CbstepTF_link_Step.
+      apply Cbstep_link_top_trivial.
+    + constructor.
+
+  - (* [e1] returns, then [e2] runs with [x] bound to its result *)
+    edestruct (H1 c (Res v) _ _ Hbody Href1 Hwf1 Hwfρ2) as [r2 [Hc1 Hr1]].
+
+    assert (Hex : exists v2, r2 = CRes v2 /\ refine_val v v2).
+    { inv Hr1. eexists; split; [ reflexivity | eassumption ]. }
+    destruct Hex as [v2 [-> Hrv]].
+
+    assert (Hwfv : wf_val v).
+    { assert (Hwfr : wf_res (Res v))
+        by (eapply bstep_fuel_wf_res;
+            [ exact Hwf1 | apply Included_refl | exact Hbody ]).
+      inv Hwfr; assumption. }
+
+    assert (Hwfv2 : wf_cval v2).
+    { assert (Hwfr2 : wf_cres (CRes v2))
+        by (eapply cbstep_top_fuel_wf_res; [ exact Hwfρ2 | exact Hc1 ]).
+      inv Hwfr2; assumption. }
+
+    assert (Href2 : refine_env (occurs_free e2)
+                      (M.set x v (M.set f (Tag l0 (Vfun f ρ1 [] e1)) ρ1))
+                      (M.set x v2 ρ2)).
+    { eapply refine_env_subset.
+      - eapply refine_env_set; [ exact Hrefρf | exact Hrv ].
+      - exact HSe2. }
+
+    assert (Hwf2 : wf_env (occurs_free e2)
+                     (M.set x v (M.set f (Tag l0 (Vfun f ρ1 [] e1)) ρ1))).
+    { eapply wf_env_subset.
+      - eapply wf_env_set; [ exact Hwfρf | exact Hwfv ].
+      - exact HSe2. }
+
+    assert (Hwfρ2' : wf_cenv (M.set x v2 ρ2))
+      by (eapply wf_cenv_set; [ exact Hwfρ2 | exact Hwfv2 ]).
+
+    edestruct (H2 c' r1 _ _ Hcont Href2 Hwf2 Hwfρ2') as [r3 [Hc2 Hr2]].
+
+    exists r3; split; [| exact Hr2 ].
+    apply CbstepTF_link_Step.
+    eapply Cbstep_link_top_Res; [ exact Hc1 | exact Hc2 ].
+
+  - (* [e1] runs out of fuel *)
+    edestruct (H1 c OOT _ _ Hbody Href1 Hwf1 Hwfρ2) as [r2 [Hc1 Hr1]].
+    inv Hr1.
+    exists COOT; split; [| constructor ].
+    apply CbstepTF_link_Step.
+    eapply Cbstep_link_top_OOT; exact Hc1.
+Qed.
+
+Lemma preserves_linking f x e1 e1' e2 e2' :
+  f <> x ->
+  ~ (f \in occurs_free e1) ->
+  ~ (f \in occurs_free e2) ->
+  well_annotated_top e1 e1' ->
+  well_annotated_top e2 e2' ->
+  well_annotated_top (link f x e1 e2) (clink x e1' e2').
+Proof.
+  intros Hfx Hf1 Hf2 Htr1 Htr2.
+  destruct Htr1 as [HFV1 [Hsnd1 HE1]].
+  destruct Htr2 as [HFV2 [Hsnd2 HE2]].
+
+  assert (Hf1' : ~ (f \in occurs_free_top e1')) by sfirstorder.
+  assert (Hf2' : ~ (f \in occurs_free_top e2')) by sfirstorder.
+
+  unfold well_annotated_top, link, clink.
+  repeat split.
+  - unfold Ensembles.Included, Ensembles.In in *.
+    sauto lq: on drew: off.
+
+  - eapply analysis_sound_top_preserves_linking; eauto.
+
+  - unfold G_top, E_top, E_top'.
+    intros i ρ1 ρ2 HG j1 r1 Hj1 Hbstep.
+
+    assert (HSe1 : occurs_free e1 \subset
+                     occurs_free (Efun f l0 [] e1 (Eletapp x f l0 [] e2))).
+    { unfold Ensembles.Included, Ensembles.In.
+      sauto lq: on drew: off. }
+
+    assert (HSe2 : occurs_free e2 \subset
+                     (x |: occurs_free (Efun f l0 [] e1 (Eletapp x f l0 [] e2)))).
+    { unfold Ensembles.Included, Ensembles.In.
+      intros y Hy.
+      destruct (M.elt_eq x y); subst.
+      - fcrush.
+      - sauto lq: on drew: off. }
+
+    (* [f] is bound by [link], hence not free in it *)
+    assert (Hfnotin : ~ (f \in occurs_free (Efun f l0 [] e1 (Eletapp x f l0 [] e2)))).
+    { unfold Ensembles.In.
+      intros HC; inv HC; congruence. }
+
+    (* the closure [link] allocates for [f] *)
+    assert (Hwfclo : wf_val (Tag l0 (Vfun f ρ1 [] e1))).
+    { constructor.
+      eapply (WF_Vfun f ρ1 [] e1
+                (occurs_free (Efun f l0 [] e1 (Eletapp x f l0 [] e2)))).
+      - eapply G_wf_env_l; exact HG.
+      - apply free_fun_e_subset. }
+
+    (* since [f] is not free in the linked program, binding it keeps [G] *)
+    assert (HGe1 : G_top i (occurs_free e1)
+                     (M.set f (Tag l0 (Vfun f ρ1 [] e1)) ρ1) ρ2).
+    { unfold G_top.
+      eapply G_subset.
+      - eapply G_set_unused; [ exact HG | exact Hfnotin | exact Hwfclo ].
+      - exact HSe1. }
+
+    apply bstep_fuel_link_inv in Hbstep.
+    destruct Hbstep
+      as [[-> ->]
+         | [[-> ->]
+         | [[c [c' [v [-> [Hbody Hcont]]]]]
+         | [c [-> [-> Hbody]]]]]].
+
+    + (* no fuel at all *)
+      exists 0, COOT; split.
+      * apply CbstepTF_link_OOT.
+      * exact I.
+
+    + (* out of fuel right after allocating the closure for [f] *)
+      exists 0, COOT; split.
+      * apply CbstepTF_link_OOT.
+      * exact I.
+
+    + (* [e1] returns, then [e2] runs with [x] bound to its result *)
+      assert (Hlec : c <= i) by lia.
+      edestruct (HE1 i _ _ HGe1 c (Res v) Hlec Hbody)
+        as [j2 [r2 [Hc1 HR1]]].
+      destruct (R_res_inv_l _ _ _ HR1) as [v2 [-> HV]].
+
+      assert (Hlec' : c' <= i - S (S c)) by lia.
+      assert (HGe2 : G_top (i - S (S c)) (occurs_free e2)
+                       (M.set x v (M.set f (Tag l0 (Vfun f ρ1 [] e1)) ρ1))
+                       (M.set x v2 ρ2)).
+      { unfold G_top.
+        eapply G_subset.
+        - eapply G_set.
+          + eapply G_set_unused.
+            * eapply G_mono; [ exact HG | lia ].
+            * exact Hfnotin.
+            * exact Hwfclo.
+          + eapply V_mono; [ exact HV | lia ].
+        - exact HSe2. }
+
+      edestruct (HE2 (i - S (S c)) _ _ HGe2 c' r1 Hlec' Hcont)
+        as [j2' [r3 [Hc2 HR2]]].
+
+      exists (S (S (j2 + j2'))), r3; split.
+      * apply CbstepTF_link_Step.
+        eapply Cbstep_link_top_Res; [ exact Hc1 | exact Hc2 ].
+      * eapply R_mono; [ exact HR2 | lia ].
+
+    + (* [e1] runs out of fuel *)
+      assert (Hlec : c <= i) by lia.
+      edestruct (HE1 i _ _ HGe1 c OOT Hlec Hbody)
+        as [j2 [r2 [Hc1 HR1]]].
+      destruct r2 as [| v2]; [| exfalso; exact HR1 ].
+
+      exists (S (S j2)), COOT; split.
+      * apply CbstepTF_link_Step.
+        eapply Cbstep_link_top_OOT; exact Hc1.
+      * exact I.
+Qed.
