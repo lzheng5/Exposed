@@ -324,34 +324,30 @@ Proof.
                                                 r = CRes v -> r' = CRes v' ->
                                                 v = v' /\ i = i' /\ I <--> I');
     intros; subst.
-Admitted.
-
-(*
   - inv H0; inv H1; invc; fcrush.
-  - inv H1.
+  - inv H0.
     edestruct IHcbstep; eauto; subst.
-  - inv H5; invc.
+  - inv H3; invc.
     edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto; subst.
     hauto lq: on use: Extensionality_Ensembles unfold: Same_set, Included, interactions.
-  - inv H6; invc.
+  - inv H4; invc.
     edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto; subst.
     edestruct IHcbstep0 as [Heqv' [Heqi' HeqI']]; eauto; subst.
     hauto l: on use: Extensionality_Ensembles unfold: Same_set, Included, interactions.
   - fcrush.
-  - inv H2; invc.
+  - inv H1; invc.
     edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto.
-  - inv H4; invc.
+  - inv H2; invc.
     edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto; subst.
     hauto lq: on use: Extensionality_Ensembles unfold: Same_set, Included, interactions.
-  - inv H4; invc.
-    destruct (find_tag_deterministic H0 H9); subst.
+  - inv H2; invc.
+    destruct (find_tag_deterministic H0 H10); subst.
     edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto; subst.
     hauto lq: on use: Extensionality_Ensembles unfold: Same_set, Included, interactions.
   - fcrush.
-  - inv H0;
+  - inv H2;
       edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto.
 Qed.
- *)
 
 Lemma cbstep_fuel_deterministic_aux v v' {U I I' c ρ e i i' r r'}:
   cbstep_fuel U c ρ e i r I ->
@@ -2001,107 +1997,3 @@ Lemma preserves_linking f x I1 I2 e1 e1' e2 e2' :
   well_annotated_top (I1 :|: I2) (link f x e1 e2) (clink x e1' e2').
 Proof.
 Abort.
-
-(*
-
-
-(* Reachable labels of a given color *)
-(* If we allow reflexivity, (c, l) \in reachable I (c, l) holds for every l,
-   which would make reachable_labels I c the set of all labels regardless of I. *)
-Definition reachable_labels (I : interactions) (c : color) : labels :=
-  fun l => exists l' c', ((c', l) \in reachable I (c, l')).
-
-(* Reachable colors of a given label *)
-Definition reachable_colors (I : interactions) (l : label) : colors :=
-  fun c => exists c' l', ((c, l') \in reachable I (c', l)).
-
-Definition web_map := M.t web.
-
-(* Converting [interactions] to [web_map] *)
-
-(* Labels of a given color appearing on either side of a pair in I. *)
-Definition labels_of_color (I : interactions) (c : color) : labels :=
-  fun l => exists cl, (((c, l), cl) \in I) \/ ((cl, (c, l)) \in I).
-
-
-(* A blue label is tainted iff it can reach a red label through a chain of
-   blue-blue interactions. The transitive closure is captured by the recursive
-   `Tainted_blue` rule. *)
-Inductive tainted (I : interactions) : label -> Prop :=
-| Tainted_red :
-    forall l r,
-      cinteract I (Blue, l) (Red, r) ->
-      tainted I l
-
-| Tainted_blue :
-    forall l l',
-      cinteract I (Blue, l) (Blue, l') ->
-      tainted I l' ->
-      tainted I l.
-
-Hint Constructors tainted : core.
-
-(* Equivalence among non-tainted blue labels: the reflexive/symmetric/transitive
-   closure of blue-blue interaction restricted to non-tainted labels.
-   Symmetry of `BE_step` is inherited from `cinteract`. *)
-Inductive blue_equiv (I : interactions) : label -> label -> Prop :=
-| BE_refl :
-    forall l,
-      (l \in labels_of_color I Blue) ->
-      ~ tainted I l ->
-      blue_equiv I l l
-
-| BE_step :
-    forall l1 l2,
-      cinteract I (Blue, l1) (Blue, l2) ->
-      ~ tainted I l1 ->
-      ~ tainted I l2 ->
-      blue_equiv I l1 l2
-
-| BE_trans :
-    forall l1 l2 l3,
-      blue_equiv I l1 l2 ->
-      blue_equiv I l2 l3 ->
-      blue_equiv I l1 l3.
-
-Hint Constructors blue_equiv : core.
-
-(* W is a valid web map for the colored label set I. *)
-Inductive interactions_to_web_map (I : interactions) (W : web_map) : Prop :=
-| IS_to_WM :
-    (* (1) Totality: every blue label of I is mapped by W. *)
-    (forall l,
-        (l \in labels_of_color I Blue) ->
-        exists w, W ! l = Some w) ->
-    (* (2) Tainted blue labels map to exposed webs. *)
-    (forall l w,
-        tainted I l ->
-        W ! l = Some w ->
-        (w \in Exposed)) ->
-    (* (3) Non-tainted blue labels map to non-exposed webs
-       (these are the internal class representatives). *)
-    (forall l w,
-        (l \in labels_of_color I Blue) ->
-        ~ tainted I l ->
-        W ! l = Some w ->
-        ~ (w \in Exposed)) ->
-    (* (4) Equivalent non-tainted blue labels share the same web (the rep). *)
-    (forall l1 l2 w1 w2,
-        blue_equiv I l1 l2 ->
-        W ! l1 = Some w1 ->
-        W ! l2 = Some w2 ->
-        w1 = w2) ->
-    (* (5) Distinct equivalence classes get distinct reps: if two non-tainted
-       blue labels share a web, they must be in the same class. *)
-    (forall l1 l2 w,
-        (l1 \in labels_of_color I Blue) ->
-        (l2 \in labels_of_color I Blue) ->
-        ~ tainted I l1 ->
-        ~ tainted I l2 ->
-        W ! l1 = Some w ->
-        W ! l2 = Some w ->
-        blue_equiv I l1 l2) ->
-    interactions_to_web_map I W.
-
-Hint Constructors interactions_to_web_map : core.
-*)
