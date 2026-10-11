@@ -484,20 +484,20 @@ Proof. srun eauto using cbstep_fuel_deterministic_aux. Qed.
    This is the *global* counterpart of the "unique colored context" condition
    built into `interaction_sound`: there, two interacting labels of the same
    color are forced to agree on their internal set, but only where they
-   actually interact.  `color_context` forces every occurrence of a color to agree. *)
-Definition color_context := color -> internals.
+   actually interact.  `internals_context` forces every occurrence of a color to agree. *)
+Definition internals_context := color -> internals.
 
 (* Each unit's internal set only mentions that unit's own color. *)
-Definition color_context_monochromatic (Θ : color_context) : Prop :=
+Definition internals_context_monochromatic (Θ : internals_context) : Prop :=
   forall c, internals_monochromatic (Θ c) c.
 
 (* A label is in `Θ c0` only if `c0` is its own color. *)
-Lemma color_context_monochromatic_In {Θ c0 c l} :
-  color_context_monochromatic Θ ->
+Lemma internals_context_monochromatic_In {Θ c0 c l} :
+  internals_context_monochromatic Θ ->
   ((c, l) \in Θ c0) ->
   c0 = c.
 Proof.
-  unfold color_context_monochromatic, internals_monochromatic.
+  unfold internals_context_monochromatic, internals_monochromatic.
   intros HΘ Hin.
   symmetry; exact (HΘ c0 (c, l) Hin).
 Qed.
@@ -505,14 +505,14 @@ Qed.
 (* Unique Color Context / Well-formedness *)
 (* Every tag occurring in a value, or in an environment, assigns to its color
    the internal set that `Θ` prescribes for it. *)
-Inductive unique_context (Θ : color_context) : clval -> Prop :=
+Inductive unique_context (Θ : internals_context) : clval -> Prop :=
 | UC_TAG :
   forall U c l v,
     U <--> Θ c ->
     unique_context' Θ v ->
     unique_context Θ (CTag U c l v)
 
-with unique_context' (Θ : color_context) : cval -> Prop :=
+with unique_context' (Θ : internals_context) : cval -> Prop :=
 | UC_CVfun :
   forall f ρ xs e,
     unique_cenv Θ ρ ->
@@ -528,7 +528,7 @@ with unique_context' (Θ : color_context) : cval -> Prop :=
     unique_context' Θ (CVconstr t vs) ->
     unique_context' Θ (CVconstr t (v :: vs))
 
-with unique_cenv (Θ : color_context) : cenv -> Prop :=
+with unique_cenv (Θ : internals_context) : cenv -> Prop :=
 | UC_cenv :
   forall ρ,
     (forall x v, ρ ! x = Some v -> unique_context Θ v) ->
@@ -611,7 +611,7 @@ Qed.
    internal set.  The local `interaction_sound` side condition at each call
    site suffices, once the color context is globally consistent. *)
 Lemma cbstep_respect Θ :
-  color_context_monochromatic Θ ->
+  internals_context_monochromatic Θ ->
   forall U c ρ e i r I,
     cbstep U c ρ e i r I ->
     U <--> Θ c ->
@@ -664,15 +664,15 @@ Proof.
     + (* internal interaction: both endpoints live in the one set for c *)
       subst c'.
       split; intros Hmem.
-      * pose proof (color_context_monochromatic_In HΘ Hmem) as Heq0; subst c0.
+      * pose proof (internals_context_monochromatic_In HΘ Hmem) as Heq0; subst c0.
         apply (proj1 HU); apply (proj1 Hiff); apply (proj2 HU'); exact Hmem.
-      * pose proof (color_context_monochromatic_In HΘ Hmem) as Heq0; subst c0.
+      * pose proof (internals_context_monochromatic_In HΘ Hmem) as Heq0; subst c0.
         apply (proj1 HU'); apply (proj2 Hiff); apply (proj2 HU); exact Hmem.
     + (* foreign interaction: neither endpoint is in any unit's set *)
       split; intros Hmem; exfalso.
-      * pose proof (color_context_monochromatic_In HΘ Hmem) as Heq0; subst c0.
+      * pose proof (internals_context_monochromatic_In HΘ Hmem) as Heq0; subst c0.
         apply Hn_i_i; apply (proj2 HU'); exact Hmem.
-      * pose proof (color_context_monochromatic_In HΘ Hmem) as Heq0; subst c0.
+      * pose proof (internals_context_monochromatic_In HΘ Hmem) as Heq0; subst c0.
         apply Hn_e_e; apply (proj2 HU); exact Hmem.
 
   - (* CbstepF_OOT: nothing is recorded *)
@@ -685,7 +685,7 @@ Proof.
 Qed.
 
 Lemma cbstep_fuel_respect Θ :
-  color_context_monochromatic Θ ->
+  internals_context_monochromatic Θ ->
   forall U c ρ e i r I,
     cbstep_fuel U c ρ e i r I ->
     U <--> Θ c ->
@@ -702,7 +702,7 @@ Proof.
 Qed.
 
 Lemma cbstep_closed Θ U c ρ e i r I :
-  color_context_monochromatic Θ ->
+  internals_context_monochromatic Θ ->
   U <--> Θ c ->
   unique_cenv Θ ρ ->
   cbstep U c ρ e i r I ->
@@ -715,7 +715,7 @@ Proof.
 Qed.
 
 Lemma cbstep_fuel_closed Θ U c ρ e i r I :
-  color_context_monochromatic Θ ->
+  internals_context_monochromatic Θ ->
   U <--> Θ c ->
   unique_cenv Θ ρ ->
   cbstep_fuel U c ρ e i r I ->
@@ -727,20 +727,422 @@ Proof.
   exact (cbstep_fuel_respect Θ HΘ U c ρ e i r I Hstep HU Hρ c).
 Qed.
 
+(*
+(* Top Level *)
+
+(* Top-level Compilation Unit & Linking *)
+Inductive cexp : Type :=
+| CEunit : internals -> exp -> cexp
+| CElink : var -> cexp -> cexp -> cexp.
+
+Hint Constructors cexp : core.
+
+(* Linking *)
+Definition clink x e1 e2 : cexp := CElink x e1 e2.
+
+Inductive occurs_free_top : cexp -> vars :=
+| Free_cexp :
+  forall e U x,
+    occurs_free e x ->
+    occurs_free_top (CEunit U e) x
+
+| Free_clink1 :
+  forall v x e1 e2,
+    occurs_free_top e1 x ->
+    occurs_free_top (CElink v e1 e2) x
+
+| Free_clink2 :
+  forall v x e1 e2,
+    v <> x ->
+    occurs_free_top e2 x ->
+    occurs_free_top (CElink v e1 e2) x.
+
+Hint Constructors occurs_free_top : core.
+
+Lemma occurs_free_top_cexp U e :
+  (occurs_free_top (CEunit U e)) <--> (occurs_free e).
+Proof. split; unfold Ensembles.Included, Ensembles.In; fcrush. Qed.
+
+(* Top-level Checking Semantics *)
+Inductive cbstep_top (ρ : cenv) : cexp -> fuel -> cres -> Prop :=
+| Cbstep_link_top_trivial :
+  forall {x e k},
+    cbstep_top ρ (CElink x e k) 0 COOT
+
+| Cbstep_link_top_Res :
+  forall {x e k i' i r v},
+    cbstep_top_fuel ρ e i (CRes v) ->
+    cbstep_top_fuel (M.set x v ρ) k i' r ->
+    cbstep_top ρ (CElink x e k) (S (i + i')) r
+
+| Cbstep_link_top_OOT :
+  forall {x e k i},
+    cbstep_top_fuel ρ e i COOT ->
+    cbstep_top ρ (CElink x e k) (S i) COOT
+
+with cbstep_top_fuel (ρ : cenv) : cexp -> fuel -> cres -> Prop :=
+| CbstepTF_unit :
+  forall {U I e i r},
+    cbstep_fuel U c ρ e i r I ->
+    cbstep_top_fuel ρ (CEunit U e) i r
+
+| CbstepTF_link_OOT :
+  forall {x e k},
+    cbstep_top_fuel ρ (CElink x e k) 0 COOT
+
+| CbstepTF_link_Step :
+  forall {x e k i r},
+    cbstep_top ρ (CElink x e k) i r ->
+    cbstep_top_fuel ρ (CElink x e k) (S i) r.
+
+Hint Constructors cbstep_top : core.
+Hint Constructors cbstep_top_fuel : core.
+*)
+
 (* Bipartite Interaction *)
 Definition interactions_bipartite (I : interactions) : Prop :=
   forall cl1 cl2,
     ((cl1, cl2) \in I) ->
     cl1 <> cl2.
 
-(* TODO: show if the program is uniquely labeled and uniquely colored, then we get I satisfying interactions_diff. *)
-Lemma cbstep_bipartite Θ U c ρ e i r I :
-  color_context_monochromatic Θ ->
-  U <--> Θ c ->
-  unique_cenv Θ ρ ->
-  unique_label e ->
-  cbstep_fuel U c ρ e i r I ->
-  interactions_bipartite I.
+Lemma interactions_bipartite_empty :
+  interactions_bipartite (Empty_set interaction).
+Proof. intros cl1 cl2 Hin; destruct Hin. Qed.
+
+(* Introduction and elimination labels *)
+(* An interaction ((c', l'), (c, l)) always has an *introduction* label on the
+   left -- `l'` was attached to a closure by `Cbstep_fun`, so it comes from an
+   `Efun` node -- and an *elimination* label on the right -- `l` is the label of
+   the `Eapp` node being executed.  Separating the two syntactically is what
+   makes the two endpoints distinguishable. *)
+Inductive intro_label : exp -> labels :=
+| Intro_fun1 :
+  forall f l xs e k,
+    intro_label (Efun f l xs e k) l
+
+| Intro_fun2 :
+  forall f l0 l1 xs e k,
+    intro_label e l1 ->
+    intro_label (Efun f l0 xs e k) l1
+
+| Intro_fun3 :
+  forall f l0 l1 xs e k,
+    intro_label k l1 ->
+    intro_label (Efun f l0 xs e k) l1
+
+| Intro_letapp :
+  forall x f l0 l1 xs k,
+    intro_label k l1 ->
+    intro_label (Eletapp x f l0 xs k) l1
+
+| Intro_constr :
+  forall x l0 l1 t xs k,
+    intro_label k l1 ->
+    intro_label (Econstr x l0 t xs k) l1
+
+| Intro_proj :
+  forall x l0 l1 n y e,
+    intro_label e l1 ->
+    intro_label (Eproj x l0 n y e) l1
+
+| Intro_case_hd :
+  forall y l0 l1 t e cl,
+    intro_label e l1 ->
+    intro_label (Ecase y l0 ((t, e) :: cl)) l1
+
+| Intro_case_tl :
+  forall y l0 l1 t e cl,
+    intro_label (Ecase y l0 cl) l1 ->
+    intro_label (Ecase y l0 ((t, e) :: cl)) l1.
+
+Inductive elim_label : exp -> labels :=
+| Elim_app1 :
+  forall f l xs,
+    elim_label (Eapp f l xs) l
+
+| Elim_letapp1 :
+  forall x f l xs k,
+    elim_label (Eletapp x f l xs k) l
+
+| Elim_letapp2 :
+  forall x f l0 l1 xs k,
+    elim_label k l1 ->
+    elim_label (Eletapp x f l0 xs k) l1
+
+| Elim_fun1 :
+  forall f l0 l1 xs e k,
+    elim_label e l1 ->
+    elim_label (Efun f l0 xs e k) l1
+
+| Elim_fun2 :
+  forall f l0 l1 xs e k,
+    elim_label k l1 ->
+    elim_label (Efun f l0 xs e k) l1
+
+| Elim_constr :
+  forall x l0 l1 t xs k,
+    elim_label k l1 ->
+    elim_label (Econstr x l0 t xs k) l1
+
+| Elim_proj :
+  forall x l0 l1 n y e,
+    elim_label e l1 ->
+    elim_label (Eproj x l0 n y e) l1
+
+| Elim_case_hd :
+  forall y l0 l1 t e cl,
+    elim_label e l1 ->
+    elim_label (Ecase y l0 ((t, e) :: cl)) l1
+
+| Elim_case_tl :
+  forall y l0 l1 t e cl,
+    elim_label (Ecase y l0 cl) l1 ->
+    elim_label (Ecase y l0 ((t, e) :: cl)) l1.
+
+Hint Constructors intro_label : core.
+Hint Constructors elim_label : core.
+
+Lemma intro_label_has_label e :
+  intro_label e \subset has_label e.
 Proof.
-  (* We need to extend unique_context' for CVfun to incorporate unique_label for the function body *)
-Abort.
+  intros l Hl.
+  induction Hl; eauto.
+Qed.
+
+Lemma elim_label_has_label e :
+  elim_label e \subset has_label e.
+Proof.
+  intros l Hl.
+  induction Hl; eauto.
+Qed.
+
+(* Label Context *)
+(* Assigns to each color the labels that the compilation unit can use. *)
+Definition labels_context := color -> labels.
+
+(* `Λ c` maps to the introduction labels of the compilation unit containing `e`. *)
+(* The unit of color `c` draws its closure labels from `Λ c`, and never applies
+   a value at one of them.  Both halves are inherited by *subexpressions*, and
+   neither mentions a running environment -- that is what makes the invariant
+   survive `set_lists`, where arguments cross unit boundaries. *)
+Definition labels_separated (Λ : labels_context) (c : color) (e : exp) : Prop :=
+  (intro_label e \subset Λ c) /\
+  (forall l, (l \in elim_label e) -> ~ (l \in Λ c)).
+
+Lemma labels_separated_fun_label {Λ c f l xs e k} :
+  labels_separated Λ c (Efun f l xs e k) ->
+  l \in Λ c.
+Proof. intros [Hintro Helim]; apply Hintro; apply Intro_fun1. Qed.
+
+Lemma labels_separated_fun_body {Λ c f l xs e k} :
+  labels_separated Λ c (Efun f l xs e k) ->
+  labels_separated Λ c e.
+Proof.
+  intros [Hintro Helim]; split.
+  - intros l1 Hl1; apply Hintro; apply Intro_fun2; exact Hl1.
+  - intros l1 Hl1; apply Helim; apply Elim_fun1; exact Hl1.
+Qed.
+
+Lemma labels_separated_fun_cont {Λ c f l xs e k} :
+  labels_separated Λ c (Efun f l xs e k) ->
+  labels_separated Λ c k.
+Proof.
+  intros [Hintro Helim]; split.
+  - intros l1 Hl1; apply Hintro; apply Intro_fun3; exact Hl1.
+  - intros l1 Hl1; apply Helim; apply Elim_fun2; exact Hl1.
+Qed.
+
+Lemma labels_separated_app_label {Λ c f l xs} :
+  labels_separated Λ c (Eapp f l xs) ->
+  ~ (l \in Λ c).
+Proof. intros [Hintro Helim]; apply Helim; apply Elim_app1. Qed.
+
+(* Every closure carries a label drawn from its own unit's introduction labels,
+   and a body that keeps introduction and elimination labels apart. *)
+Inductive intro_labeled (Λ : labels_context) : clval -> Prop :=
+| IL_TAG :
+  forall U c l v,
+    (l \in Λ c) ->
+    intro_labeled' Λ c v ->
+    intro_labeled Λ (CTag U c l v)
+
+with intro_labeled' (Λ : labels_context) : color -> cval -> Prop :=
+| IL_CVfun :
+  forall c f ρ xs e,
+    intro_cenv Λ ρ ->
+    labels_separated Λ c e ->
+    intro_labeled' Λ c (CVfun f ρ xs e)
+
+| IL_CVconstr_nil :
+  forall c t,
+    intro_labeled' Λ c (CVconstr t [])
+
+| IL_CVconstr :
+  forall c t v vs,
+    intro_labeled Λ v ->
+    intro_labeled' Λ c (CVconstr t vs) ->
+    intro_labeled' Λ c (CVconstr t (v :: vs))
+
+with intro_cenv (Λ : labels_context) : cenv -> Prop :=
+| IL_cenv :
+  forall ρ,
+    (forall x v, ρ ! x = Some v -> intro_labeled Λ v) ->
+    intro_cenv Λ ρ.
+
+Hint Constructors intro_labeled : core.
+Hint Constructors intro_labeled' : core.
+Hint Constructors intro_cenv : core.
+
+Scheme intro_labeled_mut := Induction for intro_labeled Sort Prop
+with intro_labeled'_mut := Induction for intro_labeled' Sort Prop
+with intro_cenv_mut := Induction for intro_cenv Sort Prop.
+
+Lemma intro_labeled_CTag_inv {Λ U c l v} :
+  intro_labeled Λ (CTag U c l v) ->
+  (l \in Λ c) /\ intro_labeled' Λ c v.
+Proof. intros Hil; inv Hil; split; assumption. Qed.
+
+Lemma intro_labeled_CVfun_inv {Λ c f ρ xs e} :
+  intro_labeled' Λ c (CVfun f ρ xs e) ->
+  intro_cenv Λ ρ /\ labels_separated Λ c e.
+Proof. intros Hil; inv Hil; split; assumption. Qed.
+
+Lemma intro_cenv_get {Λ ρ} :
+  intro_cenv Λ ρ ->
+  forall x v,
+    ρ ! x = Some v ->
+    intro_labeled Λ v.
+Proof. fcrush. Qed.
+
+Lemma intro_cenv_get_list {Λ ρ} :
+  intro_cenv Λ ρ ->
+  forall xs vs,
+    get_list xs ρ = Some vs ->
+    Forall (intro_labeled Λ) vs.
+Proof.
+  intros Henv xs.
+  induction xs as [| x xs IHxs]; simpl; intros vs Hget; fcrush.
+Qed.
+
+Lemma intro_cenv_set {Λ ρ} x v :
+  intro_cenv Λ ρ ->
+  intro_labeled Λ v ->
+  intro_cenv Λ (M.set x v ρ).
+Proof.
+  intros Henv Hv.
+  inv Henv.
+  constructor; intros y w Hget.
+  destruct (M.elt_eq x y); subst.
+  - rewrite M.gss in *; fcrush.
+  - rewrite M.gso in *; fcrush.
+Qed.
+
+Lemma intro_cenv_set_lists {Λ} :
+  forall ρ,
+    intro_cenv Λ ρ ->
+    forall vs xs ρ',
+      Forall (intro_labeled Λ) vs ->
+      set_lists xs vs ρ = Some ρ' ->
+      intro_cenv Λ ρ'.
+Proof.
+  intros ρ Henv vs.
+  induction vs as [| v vs IHvs]; intros xs ρ' Hvs Hset.
+  - destruct xs as [| x xs]; simpl in Hset; [| discriminate Hset].
+    inv Hset; assumption.
+  - destruct xs as [| x xs]; simpl in Hset; [discriminate Hset |].
+    destruct (set_lists xs vs ρ) as [ρ'' |] eqn:Heqρ''; [| discriminate Hset].
+    inv Hset.
+    inv Hvs.
+    match goal with
+    | [Hv : intro_labeled Λ v, Hvs' : Forall (intro_labeled Λ) vs |- _] =>
+        exact (intro_cenv_set x v (IHvs xs ρ'' Hvs' Heqρ'') Hv)
+    end.
+Qed.
+
+Lemma cbstep_bipartite Λ :
+  forall U c ρ e i r I,
+    cbstep U c ρ e i r I ->
+    intro_cenv Λ ρ ->
+    labels_separated Λ c e ->
+    interactions_bipartite I.
+Proof.
+  intros U c ρ e i r I Hstep.
+  induction Hstep as
+    [ U c ρ x v Hget
+    | U c ρ I f l xs e k i r IHfuel
+    | U c ρ I' U' f f' c' l l' xs ρ' xs' e vs ρ'' i r
+        Hget Hgetl Hsetl IHfuel Hsnd
+    | U c ρ e Hmono
+    | U c ρ I e i r Hmono IHstep ]
+    using cbstep_ind'
+    with (P := fun U c ρ e i r I =>
+                 intro_cenv Λ ρ ->
+                 labels_separated Λ c e ->
+                 interactions_bipartite I)
+         (P0 := fun U c ρ e i r I =>
+                  intro_cenv Λ ρ ->
+                  labels_separated Λ c e ->
+                  interactions_bipartite I).
+
+  - (* Cbstep_ret: nothing is recorded *)
+    intros Hρ Hsep.
+    apply interactions_bipartite_empty.
+
+  - (* Cbstep_fun: the closure's label comes from Λ c *)
+    intros Hρ Hsep.
+    apply IHfuel.
+    + apply intro_cenv_set; [exact Hρ |].
+      apply IL_TAG; [exact (labels_separated_fun_label Hsep) |].
+      apply IL_CVfun; [exact Hρ | exact (labels_separated_fun_body Hsep)].
+    + exact (labels_separated_fun_cont Hsep).
+
+  - (* Cbstep_app *)
+    intros Hρ Hsep.
+    pose proof (intro_cenv_get Hρ f _ Hget) as Hclo.
+    destruct (intro_labeled_CTag_inv Hclo) as [Hl' Hfun].
+    destruct (intro_labeled_CVfun_inv Hfun) as [Hρ' Hsep'].
+    pose proof (intro_cenv_get_list Hρ xs vs Hgetl) as Hvs.
+    pose proof (intro_cenv_set f' (CTag U' c' l' (CVfun f' ρ' xs' e)) Hρ' Hclo)
+      as Hρ'f.
+    pose proof (intro_cenv_set_lists _ Hρ'f vs xs' ρ'' Hvs Hsetl) as Hρ''.
+    pose proof (IHfuel Hρ'' Hsep') as HI'.
+    intros cl1 cl2 Hin.
+    inv Hin.
+    + (* the interaction just recorded: an intro label against an elim label *)
+      match goal with [Hsing : _ \in [set _] |- _] => inv Hsing end.
+      intros Heq; inv Heq.
+      exact (labels_separated_app_label Hsep Hl').
+    + match goal with [HI : _ \in I' |- _] => exact (HI' cl1 cl2 HI) end.
+
+  - (* CbstepF_OOT: nothing is recorded *)
+    intros Hρ Hsep.
+    apply interactions_bipartite_empty.
+
+  - (* CbstepF_Step *)
+    intros Hρ Hsep.
+    exact (IHstep Hρ Hsep).
+Qed.
+
+Lemma cbstep_fuel_bipartite Λ :
+  forall U c ρ e i r I,
+    cbstep_fuel U c ρ e i r I ->
+    intro_cenv Λ ρ ->
+    labels_separated Λ c e ->
+    interactions_bipartite I.
+Proof.
+  intros U c ρ e i r I Hstep Hρ Hsep.
+  inv Hstep.
+  - apply interactions_bipartite_empty.
+  - match goal with
+    | [Hs : cbstep _ _ _ _ _ _ _ |- _] =>
+        exact (cbstep_bipartite Λ _ _ _ _ _ _ _ Hs Hρ Hsep)
+    end.
+Qed.
+
+(* TODO: the remaining, purely syntactic bridge.  For a uniquely labeled unit
+   `e`, taking Λ c := intro_label e discharges `labels_separated Λ c e`:
+     Lemma unique_label_separated e :
+       unique_label e ->
+       forall l, (l \in intro_label e) -> ~ (l \in elim_label e).
+   It follows from `Unique_fun` (an `Efun` label occurs in neither subtree) and
+   the two `_has_label` subset lemmas above, by `unique_label_mut`. *)
