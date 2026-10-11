@@ -134,8 +134,19 @@ Definition interactions_respect (U : internals) (c : color) (I : interactions) :
     ((cl_i, cl_e) \in I) ->
     (cinternal U c cl_i <-> cinternal U c cl_e).
 
-(* Reachability starting from an internal label never leaves the unit --- in
-   particular it never changes color. *)
+Lemma interactions_respect_union U c I1 I2 :
+  interactions_respect U c I1 ->
+  interactions_respect U c I2 ->
+  interactions_respect U c (I1 :|: I2).
+Proof.
+  unfold interactions_respect.
+  intros H1 H2 cl_i cl_e Hin.
+  inv Hin.
+  - match goal with [HI : _ \in I1 |- _] => exact (H1 cl_i cl_e HI) end.
+  - match goal with [HI : _ \in I2 |- _] => exact (H2 cl_i cl_e HI) end.
+Qed.
+
+(* Reachability starting from an internal label never leaves the unit --- in particular it never changes color. *)
 Lemma interactions_respect_reachable {U c I} :
   interactions_respect U c I ->
   forall cl cl',
@@ -209,7 +220,7 @@ Proof.
 Qed.
 
 (* Soundness transfers along a single interaction, in either direction. *)
-Lemma internals_closed_sound_l {U c I} :
+Lemma internals_repsect_sound_l {U c I} :
   interactions_respect U c I ->
   forall cl cl',
     ((cl, cl') \in I) ->
@@ -220,7 +231,7 @@ Proof.
   exact (interactions_respect_internal Hres cl' (proj1 (Hres cl cl' Hin) Hcint)).
 Qed.
 
-Lemma internals_closed_sound_r {U c I} :
+Lemma internals_repsect_sound_r {U c I} :
   interactions_respect U c I ->
   forall cl cl',
     ((cl, cl') \in I) ->
@@ -708,10 +719,11 @@ Proof.
   exact (cbstep_fuel_respect Θ U c ρ e i r I Hstep HU Hρ c).
 Qed.
 
-(*
 (* Top Level *)
+(* The top-level consists of two phases: coloring and running. *)
 
 (* Top-level Compilation Unit & Linking *)
+(* This is what an analysis should annotate the compilation unit with *)
 Inductive cexp : Type :=
 | CEunit : internals -> exp -> cexp
 | CElink : var -> cexp -> cexp -> cexp.
@@ -744,41 +756,205 @@ Lemma occurs_free_top_cexp U e :
   (occurs_free_top (CEunit U e)) <--> (occurs_free e).
 Proof. split; unfold Ensembles.Included, Ensembles.In; fcrush. Qed.
 
-(* Top-level Checking Semantics *)
-Inductive cbstep_top (ρ : cenv) : cexp -> fuel -> cres -> Prop :=
-| Cbstep_link_top_trivial :
-  forall {x e k},
-    cbstep_top ρ (CElink x e k) 0 COOT
+(* Phase 1: Coloring *)
+(* Colored Linking Tree *)
+(* The result of the preprocessing step.  A `cexp` is colorless: a unit only
+   declares the internal labels it claims.  Colors are artificial names handed
+   out once, at link time, so that the *dynamic* semantics can tell two units
+   apart; nothing in a unit's own source mentions them. *)
+Inductive ccexp : Type :=
+| CCunit : internals -> color -> exp -> ccexp
+| CClink : var -> ccexp -> ccexp -> ccexp.
 
-| Cbstep_link_top_Res :
-  forall {x e k i' i r v},
-    cbstep_top_fuel ρ e i (CRes v) ->
-    cbstep_top_fuel (M.set x v ρ) k i' r ->
-    cbstep_top ρ (CElink x e k) (S (i + i')) r
+Hint Constructors ccexp : core.
 
-| Cbstep_link_top_OOT :
-  forall {x e k i},
-    cbstep_top_fuel ρ e i COOT ->
-    cbstep_top ρ (CElink x e k) (S i) COOT
+(* `coloring c1 ce c2 cce` hands the colors `c1, c1+1, ..., c2-1` to the units
+   of `ce`, left to right.  The counter is the whole point: it makes the
+   assignment *injective*, which is exactly what `interaction_sound` leans on
+   when it concludes, from two labels sharing a color, that they are governed
+   by one and the same internal set. *)
+Inductive coloring : color -> cexp -> color -> ccexp -> Prop :=
+| Coloring_unit :
+  forall c U e,
+    coloring c (CEunit U e) (S c) (CCunit U c e)
 
-with cbstep_top_fuel (ρ : cenv) : cexp -> fuel -> cres -> Prop :=
+| Coloring_link :
+  forall c1 c2 c3 x e1 e2 cce1 cce2,
+    coloring c1 e1 c2 cce1 ->
+    coloring c2 e2 c3 cce2 ->
+    coloring c1 (CElink x e1 e2) c3 (CClink x cce1 cce2).
+
+Hint Constructors coloring : core.
+
+(* `(c, U)` is one of the units of `cce`. *)
+Inductive has_unit : ccexp -> color -> internals -> Prop :=
+| Has_unit_unit :
+  forall U c e,
+    has_unit (CCunit U c e) c U
+
+| Has_unit_link1 :
+  forall x cce1 cce2 c U,
+    has_unit cce1 c U ->
+    has_unit (CClink x cce1 cce2) c U
+
+| Has_unit_link2 :
+  forall x cce1 cce2 c U,
+    has_unit cce2 c U ->
+    has_unit (CClink x cce1 cce2) c U.
+
+Hint Constructors has_unit : core.
+
+Lemma coloring_monotone {c1 ce c2 cce} :
+  coloring c1 ce c2 cce ->
+  c1 <= c2.
+Proof. intros Hcol; induction Hcol; lia. Qed.
+
+Lemma coloring_range {c1 ce c2 cce} :
+  coloring c1 ce c2 cce ->
+  forall c U, has_unit cce c U -> c1 <= c < c2.
+Proof.
+  intros Hcol.
+  induction Hcol as [c U e | c1 c2 c3 x e1 e2 cce1 cce2 Hc1 IH1 Hc2 IH2];
+    intros c0 U0 Hunit.
+  - inv Hunit; lia.
+  - inv Hunit.
+    + match goal with
+      | [Hu : has_unit cce1 c0 U0 |- _] => destruct (IH1 c0 U0 Hu) as [Hlo Hhi]
+      end.
+      pose proof (coloring_monotone Hc2) as Hm; lia.
+    + match goal with
+      | [Hu : has_unit cce2 c0 U0 |- _] => destruct (IH2 c0 U0 Hu) as [Hlo Hhi]
+      end.
+      pose proof (coloring_monotone Hc1) as Hm; lia.
+Qed.
+
+(* Distinct units get distinct colors, so a color names at most one unit. *)
+Lemma coloring_unique {c1 ce c2 cce} :
+  coloring c1 ce c2 cce ->
+  forall c U U',
+    has_unit cce c U ->
+    has_unit cce c U' ->
+    U = U'.
+Proof.
+  intros Hcol.
+  induction Hcol as [c U e | c1 c2 c3 x e1 e2 cce1 cce2 Hc1 IH1 Hc2 IH2];
+    intros c0 U0 U0' Hu Hu'.
+  - inv Hu; inv Hu'; reflexivity.
+  - inv Hu; inv Hu'.
+    + match goal with
+      | [Ha : has_unit cce1 c0 U0, Hb : has_unit cce1 c0 U0' |- _] =>
+          exact (IH1 c0 U0 U0' Ha Hb)
+      end.
+    + exfalso.
+      match goal with
+      | [Ha : has_unit cce1 c0 U0, Hb : has_unit cce2 c0 U0' |- _] =>
+          destruct (coloring_range Hc1 c0 U0 Ha) as [Hlo Hhi];
+          destruct (coloring_range Hc2 c0 U0' Hb) as [Hlo' Hhi']
+      end; lia.
+    + exfalso.
+      match goal with
+      | [Ha : has_unit cce2 c0 U0, Hb : has_unit cce1 c0 U0' |- _] =>
+          destruct (coloring_range Hc2 c0 U0 Ha) as [Hlo Hhi];
+          destruct (coloring_range Hc1 c0 U0' Hb) as [Hlo' Hhi']
+      end; lia.
+    + match goal with
+      | [Ha : has_unit cce2 c0 U0, Hb : has_unit cce2 c0 U0' |- _] =>
+          exact (IH2 c0 U0 U0' Ha Hb)
+      end.
+Qed.
+
+(* The internals context is *read off* the colored tree rather than supplied:
+   `Θ c` is the internal set of the unit that was handed the color `c`. *)
+Definition ctx_of (cce : ccexp) : internals_context :=
+  fun c => fun l => exists U, has_unit cce c U /\ (l \in U).
+
+(* `Θ` agrees with the coloring of `cce`. *)
+Definition internals_context_of (Θ : internals_context) (cce : ccexp) : Prop :=
+  forall c U, has_unit cce c U -> U <--> Θ c.
+
+Lemma ctx_of_correct {c1 ce c2 cce} :
+  coloring c1 ce c2 cce ->
+  internals_context_of (ctx_of cce) cce.
+Proof.
+  intros Hcol c U Hunit.
+  unfold ctx_of, Ensembles.In.
+  split; intros l Hl.
+  - exists U; split; [exact Hunit | exact Hl].
+  - destruct Hl as [U' [Hunit' Hl']].
+    rewrite <- (coloring_unique Hcol c U' U Hunit' Hunit); exact Hl'.
+Qed.
+
+(* Top-level Checking Semantics for the *Colored* Top-level Expression *)
+(* The colors are already in the tree, so the top-level semantics does not
+   mention `Θ` at all: it just runs each unit at the color preprocessing gave
+   it, and unions the interactions the units record.  `Θ` reappears only in the theorems,
+   through `internals_context_of`. *)
+Inductive cbstep_top (ρ : cenv) : ccexp -> fuel -> cres -> interactions -> Prop :=
+| CbstepT_link_Res :
+  forall {x cce1 cce2 i1 i2 v r I1 I2},
+    cbstep_top_fuel ρ cce1 i1 (CRes v) I1 ->
+    cbstep_top_fuel (M.set x v ρ) cce2 i2 r I2 ->
+    cbstep_top ρ (CClink x cce1 cce2) (S (i1 + i2)) r (I1 :|: I2)
+
+| CbstepT_link_OOT :
+  forall {x cce1 cce2 i I1},
+    cbstep_top_fuel ρ cce1 i COOT I1 ->
+    cbstep_top ρ (CClink x cce1 cce2) (S i) COOT I1
+
+with cbstep_top_fuel (ρ : cenv) : ccexp -> fuel -> cres -> interactions -> Prop :=
 | CbstepTF_unit :
-  forall {U I e i r},
+  forall {U c e i r I},
     cbstep_fuel U c ρ e i r I ->
-    cbstep_top_fuel ρ (CEunit U e) i r
+    cbstep_top_fuel ρ (CCunit U c e) i r I
 
 | CbstepTF_link_OOT :
-  forall {x e k},
-    cbstep_top_fuel ρ (CElink x e k) 0 COOT
+  forall {x cce1 cce2},
+    cbstep_top_fuel ρ (CClink x cce1 cce2) 0 COOT (Empty_set _)
 
 | CbstepTF_link_Step :
-  forall {x e k i r},
-    cbstep_top ρ (CElink x e k) i r ->
-    cbstep_top_fuel ρ (CElink x e k) (S i) r.
+  forall {x cce1 cce2 i r I},
+    cbstep_top ρ (CClink x cce1 cce2) i r I ->
+    cbstep_top_fuel ρ (CClink x cce1 cce2) (S i) r I.
 
 Hint Constructors cbstep_top : core.
 Hint Constructors cbstep_top_fuel : core.
-*)
+
+Scheme cbstep_top_ind' := Minimality for cbstep_top Sort Prop
+with cbstep_top_fuel_ind' := Minimality for cbstep_top_fuel Sort Prop.
+
+(* The step-index is aligned between the two semantics. *)
+Lemma cbstep_fuel_cbstep_top_fuel U I c ρ e j r:
+  cbstep_fuel U c ρ e j r I ->
+  cbstep_top_fuel ρ (CCunit U c e) j r I.
+Proof.
+  intros H. eapply CbstepTF_unit; eauto.
+Qed.
+
+Lemma cbstep_top_fuel_cbstep_fuel U c ρ e j r I:
+  cbstep_top_fuel ρ (CCunit U c e) j r I ->
+  cbstep_fuel U c ρ e j r I.
+Proof. intros H. fcrush. Qed.
+
+(* TODO: the glue that carries `unique_cenv` across a link.  `CbstepT_link_Res`
+   binds the result of one unit into the next unit's environment, so the
+   top-level theorem needs the per-unit result to agree with Θ:
+
+     Lemma cbstep_unique_res Θ U c ρ e i v I :
+       U <--> Θ c ->
+       unique_cenv Θ ρ ->
+       cbstep U c ρ e i (CRes v) I ->
+       unique_context Θ v.
+
+   It is the analogue of `cbstep_wf_res`, by `cbstep_ind'`.  With it, the
+   top-level statement follows by induction on `cbstep_top_ind'`, using
+   `cbstep_fuel_respect` at each unit and `interactions_respect_union` at each
+   link:
+
+     Theorem cbstep_top_closed Θ ρ cce i r I :
+       internals_context_of Θ cce ->
+       unique_cenv Θ ρ ->
+       cbstep_top ρ cce i r I ->
+       forall c U, has_unit cce c U -> internals_closed U c I. *)
 
 (* Bipartite Interaction *)
 Definition interactions_bipartite (I : interactions) : Prop :=
