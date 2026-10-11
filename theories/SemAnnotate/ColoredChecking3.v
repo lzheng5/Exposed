@@ -68,43 +68,43 @@ Definition external (I : interactions) (cl : clabel) : Prop :=
   ~ internal I cl.
 
 (* Internal Label Set *)
-Definition internals : Type := clabels.
+Definition internals : Type := labels.
 
-(* `U` contains labels of only a single color, `c`, which is the attached to each compilation units. *)
-Definition internals_monochromatic (U : internals) (c : color) : Prop :=
-  forall cl, (cl \in U) -> fst cl = c.
+(* Internal with respect to `U` paired with its corresponding color `c` *)
+Definition cinternal (U : internals) (c : color) (cl : clabel) : Prop :=
+  fst cl = c /\ (snd cl \in U).
 
 (* `U` only contains internal labels in `I`. *)
 Definition internals_sound (U : internals) (I : interactions) (cl : clabel) : Prop :=
-  (cl \in U) -> internal I cl.
+  (snd cl \in U) -> internal I cl.
 
 (* Closure Property *)
-(* `U` is closed under reachable interactions `I`.
-    Note that `U` is not necessarily all the internal events in `I`. *)
-Definition internals_closed (U : internals) (I : interactions) : Prop :=
-  forall cl cl',
-    (cl \in U) ->
-    (cl' \in (reachable I cl)) ->
-    (cl' \in U).
+(* `U` paired with `c` is closed under reachable interactions `I`.
+    Note that `U` is not necessarily the most precise internal events in `I`. *)
+Definition internals_closed (U : internals) (c : color) (I : interactions) : Prop :=
+  forall l cl',
+    (l \in U) ->
+    (cl' \in (reachable I (c, l))) ->
+    cinternal U c cl'.
 
-Lemma empty_internals_closed I :
-  internals_closed (Empty_set _) I.
+Lemma empty_internals_closed c I :
+  internals_closed (Empty_set _) c I.
 Proof. unfold internals_closed. sfirstorder. Qed.
 
-Lemma internals_closed_empty U :
-  internals_closed U (Empty_set interaction).
+Lemma internals_closed_empty U c :
+  internals_closed U c (Empty_set interaction).
 Proof.
-  unfold internals_closed, Ensembles.In.
-  intros cl cl' HclU Hreach.
-  assert (Heq : cl' = cl).
+  unfold internals_closed, cinternal, Ensembles.In.
+  intros l cl' HclU Hreach.
+  assert (Heq : cl' = (c, l)).
   { clear HclU.
     induction Hreach as [| ? Hin | ? Hin | ? ? ? IH1 ? IH2]; sfirstorder. }
-  subst; exact HclU.
+  fcrush.
 Qed.
 
-Lemma internals_closed_equivalent U I I' :
+Lemma internals_closed_equivalent U c I I' :
   I <--> I' ->
-  (internals_closed U I <-> internals_closed U I').
+  (internals_closed U c I <-> internals_closed U c I').
 Proof.
   intros [Hsub Hsub'].
   assert (Hreach : forall (J J' : interactions),
@@ -116,137 +116,132 @@ Proof.
       | apply Reachable_interact_l; apply HJ; exact Hin
       | apply Reachable_interact_r; apply HJ; exact Hin
       | eapply Reachable_step; eauto ]. }
-  unfold internals_closed.
-  split; intros Hclosed cl cl' HclU Hr.
-  - eapply Hclosed; [exact HclU |].
+  unfold internals_closed, cinternal.
+  split; intros Hclosed l cl' HlU Hr.
+  - eapply Hclosed; [exact HlU |].
     eapply (Hreach I' I); eauto.
-  - eapply Hclosed; [exact HclU |].
+  - eapply Hclosed; [exact HlU |].
     eapply (Hreach I I'); eauto.
 Qed.
 
-Lemma internals_mono_closed_sound U I c :
-  internals_closed U I ->
-  internals_monochromatic U c ->
-  forall cl,
-    internals_sound U I cl.
+(* Edge-wise characterization of closure *)
+(* `U` respects `I` when every *single* interaction of `I` joins two colored
+   labels that are either both internal to the unit wearing `c` or both not:
+   reachability can then never leave the unit.  This is the form that the
+   checking semantics produces one interaction at a time. *)
+Definition interactions_respect (U : internals) (c : color) (I : interactions) : Prop :=
+  forall cl_i cl_e,
+    ((cl_i, cl_e) \in I) ->
+    (cinternal U c cl_i <-> cinternal U c cl_e).
+
+(* Reachability starting from an internal label never leaves the unit --- in
+   particular it never changes color. *)
+Lemma interactions_respect_reachable {U c I} :
+  interactions_respect U c I ->
+  forall cl cl',
+    (cl' \in reachable I cl) ->
+    cinternal U c cl ->
+    cinternal U c cl'.
 Proof.
-  unfold internals_closed, internals_monochromatic, internals_sound, internal,
-    colors_of, Ensembles.Included, Ensembles.In in *.
-  intros Hclosed Hmono cl HclU.
-  destruct cl as [c0 l].
-  pose proof (Hmono (c0, l) HclU) as Heqc; simpl in Heqc; subst c0.
-  intros x [l0 Hreach].
-  assert (HxU : U (x, l0)) by (eapply Hclosed; [exact HclU | exact Hreach]).
-  pose proof (Hmono (x, l0) HxU) as Heqx; simpl in Heqx; subst.
+  unfold interactions_respect.
+  intros Hres cl cl' Hreach.
+  induction Hreach as [x | x y Hin | x y Hin | x y z Hxy IHxy Hyz IHyz].
+  - intros Hx; exact Hx.
+  - intros Hx; exact (proj1 (Hres x y Hin) Hx).
+  - intros Hx; exact (proj2 (Hres y x Hin) Hx).
+  - intros Hx; apply IHyz, IHxy, Hx.
+Qed.
+
+Lemma interactions_respect_closed U c I :
+  interactions_respect U c I ->
+  internals_closed U c I.
+Proof.
+  unfold internals_closed, cinternal.
+  intros Hres l cl' HlU Hreach.
+  pose proof (interactions_respect_reachable Hres (c, l) cl' Hreach
+                (conj eq_refl HlU)) as [Hc Hl].
+  fcrush.
+Qed.
+
+Lemma internals_closed_respect U c I :
+  internals_closed U c I ->
+  interactions_respect U c I.
+Proof.
+  unfold internals_closed, interactions_respect, cinternal.
+  intros Hclosed cl_i cl_e Hin.
+  split; intros [Heq Hc].
+  - hauto lq: on use: surjective_pairing, Reachable_interact_l unfold: Ensembles.In, snd, clabel.
+  - qauto use: surjective_pairing, Reachable_interact_r unfold: Ensembles.In, snd, clabel.
+Qed.
+
+Theorem internals_closed_iff_respect U c I :
+  internals_closed U c I <-> interactions_respect U c I.
+Proof.
+  split; [exact (internals_closed_respect U c I)
+         | exact (interactions_respect_closed U c I)].
+Qed.
+
+Lemma interactions_respect_internal {U c I} :
+  interactions_respect U c I ->
+  forall cl,
+    cinternal U c cl ->
+    internal I cl.
+Proof.
+  intros Hres cl Hcint.
+  destruct cl as [c0 l0].
+  destruct Hcint as [Hc Hl]; simpl in Hc, Hl; subst c0.
+  unfold internal, colors_of, Ensembles.Included, Ensembles.In.
+  intros x [l1 Hreach].
+  pose proof (interactions_respect_reachable Hres (c, l0) (x, l1) Hreach
+                (conj eq_refl Hl)) as [Hx Hl1].
+  simpl in Hx; subst x.
   constructor.
 Qed.
 
-Lemma internals_closed_sound_l {U I} :
-  internals_closed U I ->
-  forall cl cl',
-    ((cl, cl') \in I) ->
-    internals_sound U I cl ->
-    internals_sound U I cl'.
-Proof.
-  unfold internals_closed, internals_sound, internal, colors_of,
-    Ensembles.Included, Ensembles.In in *.
-  intros Hclosed cl cl' Hin Hsnd Hcl'U.
-  destruct cl as [c l].
-  destruct cl' as [c' l'].
-  assert (Hreach_l : reachable I (c, l) (c', l')) by (apply Reachable_interact_l; exact Hin).
-  assert (Hreach_r : reachable I (c', l') (c, l)) by (apply Reachable_interact_r; exact Hin).
-  assert (HclU : U (c, l)) by (eapply Hclosed; [exact Hcl'U | exact Hreach_r]).
-  pose proof (Hsnd HclU) as Hic.
-  assert (Heqc : c' = c).
-  { pose proof (Hic c' (ex_intro _ l' Hreach_l)) as Hmem.
-    inversion Hmem; subst; reflexivity. }
-  subst c'.
-  intros y Hy.
-  destruct Hy as [l0 Hreach2].
-  assert (Hreach3 : reachable I (c, l) (y, l0)) by (eapply Reachable_step; [exact Hreach_l | exact Hreach2]).
-  apply Hic.
-  exists l0; exact Hreach3.
-Qed.
-
-Lemma internals_closed_sound_r {U I} :
-  internals_closed U I ->
-  forall cl cl',
-    ((cl, cl') \in I) ->
-    internals_sound U I cl' ->
+Lemma interactions_respect_sound {U c I} :
+  interactions_respect U c I ->
+  forall cl,
+    fst cl = c ->
     internals_sound U I cl.
 Proof.
-  unfold internals_closed, internals_sound, internal, colors_of,
-    Ensembles.Included, Ensembles.In in *.
-  intros Hclosed cl cl' Hin Hsnd HclU.
-  destruct cl as [c l].
-  destruct cl' as [c' l'].
-  assert (Hreach_l : reachable I (c, l) (c', l')) by (apply Reachable_interact_l; exact Hin).
-  assert (Hreach_r : reachable I (c', l') (c, l)) by (apply Reachable_interact_r; exact Hin).
-  assert (Hcl'U : U (c', l')) by (eapply Hclosed; [exact HclU | exact Hreach_l]).
-  pose proof (Hsnd Hcl'U) as Hic.
-  assert (Heqc : c = c').
-  { pose proof (Hic c (ex_intro _ l Hreach_r)) as Hmem.
-    inversion Hmem; subst; reflexivity. }
-  subst c'.
-  intros y Hy.
-  destruct Hy as [l0 Hreach2].
-  assert (Hreach3 : reachable I (c, l') (y, l0)) by (eapply Reachable_step; [exact Hreach_r | exact Hreach2]).
-  apply Hic.
-  exists l0; exact Hreach3.
+  intros Hres cl Hc Hmem.
+  exact (interactions_respect_internal Hres cl (conj Hc Hmem)).
 Qed.
 
-(* Edge-wise characterization of closure *)
-(* `U` is closed under `I` exactly when every *single* interaction of `I` joins
-   two labels that are either both internal to `U` or both outside of it:
-   reachability can then never leave `U`.  This is the form that the checking
-   semantics produces one interaction at a time. *)
-Definition interactions_respect (U : internals) (I : interactions) : Prop :=
-  forall cl_i cl_e, ((cl_i, cl_e) \in I) -> ((cl_i \in U) <-> (cl_e \in U)).
-
-Lemma interactions_respect_closed U I :
-  interactions_respect U I ->
-  internals_closed U I.
+(* Soundness transfers along a single interaction, in either direction. *)
+Lemma internals_closed_sound_l {U c I} :
+  interactions_respect U c I ->
+  forall cl cl',
+    ((cl, cl') \in I) ->
+    cinternal U c cl ->
+    internal I cl'.
 Proof.
-  unfold interactions_respect, internals_closed, Ensembles.In.
-  intros Hres cl cl' HclU Hreach.
-  revert HclU.
-  induction Hreach as [x | x y Hin | x y Hin | x y z Hxy IHxy Hyz IHyz].
-  - intros HxU; exact HxU.
-  - intros HxU; exact (proj1 (Hres x y Hin) HxU).
-  - intros HxU; exact (proj2 (Hres y x Hin) HxU).
-  - intros HxU; apply IHyz, IHxy, HxU.
+  intros Hres cl cl' Hin Hcint.
+  exact (interactions_respect_internal Hres cl' (proj1 (Hres cl cl' Hin) Hcint)).
 Qed.
 
-(* The converse: a single interaction of `I` is itself a reachability step, in
-   both directions, so closure already forces every edge to be respected. *)
-Lemma internals_closed_respect U I :
-  internals_closed U I ->
-  interactions_respect U I.
+Lemma internals_closed_sound_r {U c I} :
+  interactions_respect U c I ->
+  forall cl cl',
+    ((cl, cl') \in I) ->
+    cinternal U c cl' ->
+    internal I cl.
 Proof.
-  unfold internals_closed, interactions_respect, Ensembles.In.
-  intros Hclosed cl_i cl_e Hin.
-  split; intros Hmem.
-  - exact (Hclosed cl_i cl_e Hmem (Reachable_interact_l I cl_i cl_e Hin)).
-  - exact (Hclosed cl_e cl_i Hmem (Reachable_interact_r I cl_e cl_i Hin)).
+  intros Hres cl cl' Hin Hcint.
+  exact (interactions_respect_internal Hres cl (proj2 (Hres cl cl' Hin) Hcint)).
 Qed.
 
-Theorem internals_closed_iff_respect U I :
-  internals_closed U I <-> interactions_respect U I.
-Proof.
-  split; [exact (internals_closed_respect U I) | exact (interactions_respect_closed U I)].
-Qed.
-
-Lemma interactions_respect_empty U :
-  interactions_respect U (Empty_set interaction).
+Lemma interactions_respect_empty U c :
+  interactions_respect U c (Empty_set interaction).
 Proof.
   unfold interactions_respect, Ensembles.In.
   intros cl_i cl_e Hin; destruct Hin.
 Qed.
 
-Lemma interactions_respect_add U cl_i cl_e I :
-  ((cl_i \in U) <-> (cl_e \in U)) ->
-  interactions_respect U I ->
-  interactions_respect U ((cl_i, cl_e) |: I).
+Lemma interactions_respect_add U c cl_i cl_e I :
+  (cinternal U c cl_i <-> cinternal U c cl_e) ->
+  interactions_respect U c I ->
+  interactions_respect U c ((cl_i, cl_e) |: I).
 Proof.
   unfold interactions_respect.
   intros Hiff Hres cl_i' cl_e' Hin.
@@ -256,16 +251,18 @@ Proof.
   - match goal with [HI : _ \in I |- _] => exact (Hres cl_i' cl_e' HI) end.
 Qed.
 
-Lemma interactions_respect_Same_set U U' I :
+Lemma interactions_respect_Same_set U U' c I :
   U <--> U' ->
-  interactions_respect U' I ->
-  interactions_respect U I.
+  interactions_respect U' c I ->
+  interactions_respect U c I.
 Proof.
-  unfold interactions_respect, Ensembles.In.
+  unfold interactions_respect, cinternal, Ensembles.In.
   intros [Hsub Hsub'] Hres cl_i cl_e Hin.
-  split; intros Hmem.
-  - apply Hsub'; apply (proj1 (Hres cl_i cl_e Hin)); apply Hsub; exact Hmem.
-  - apply Hsub'; apply (proj2 (Hres cl_i cl_e Hin)); apply Hsub; exact Hmem.
+  split; intros [Hc Hmem].
+  - destruct (proj1 (Hres cl_i cl_e Hin) (conj Hc (Hsub _ Hmem))) as [Hc' Hmem'].
+    exact (conj Hc' (Hsub' _ Hmem')).
+  - destruct (proj2 (Hres cl_i cl_e Hin) (conj Hc (Hsub _ Hmem))) as [Hc' Hmem'].
+    exact (conj Hc' (Hsub' _ Hmem')).
 Qed.
 
 (* Tagged Value *)
@@ -296,31 +293,30 @@ Inductive cres : Type :=
 Hint Constructors cres : core.
 
 Definition interaction_sound (U_i : internals) (cl_i : clabel)
-                                     (U_e : internals) (cl_e : clabel) : Prop :=
+                             (U_e : internals) (cl_e : clabel) : Prop :=
   match cl_i, cl_e with
-  | (c_i, _), (c_e, _) =>
+  | (c_i, l_i), (c_e, l_e) =>
       (* Same color: the interaction stays within one compilation unit, so
          both endpoints are governed by one and the same internal set. *)
       (c_i = c_e ->
-         (U_i <--> U_e) /\ ((cl_i \in U_i) <-> (cl_e \in U_e)))
+         (U_i <--> U_e) /\ ((l_i \in U_i) <-> (l_e \in U_e)))
       /\
       (* Different colors: a foreign interaction, so neither endpoint may be
          claimed as internal by either unit. *)
       (c_i <> c_e ->
-         ~ (cl_i \in U_i) /\ ~ (cl_i \in U_e) /\
-         ~ (cl_e \in U_i) /\ ~ (cl_e \in U_e))
+         ~ (l_i \in U_i) /\ ~ (l_i \in U_e) /\
+         ~ (l_e \in U_i) /\ ~ (l_e \in U_e))
   end.
 
 (* Colors are decidable, so the two implications above can always be turned
    into the corresponding case split. *)
 Lemma interaction_sound_inv U_i c_i l_i U_e c_e l_e :
   interaction_sound U_i (c_i, l_i) U_e (c_e, l_e) ->
-  (c_i = c_e /\ (U_i <--> U_e) /\
-     (((c_i, l_i) \in U_i) <-> ((c_e, l_e) \in U_e)))
+  (c_i = c_e /\ (U_i <--> U_e) /\ ((l_i \in U_i) <-> (l_e \in U_e)))
   \/
   (c_i <> c_e /\
-     ~ ((c_i, l_i) \in U_i) /\ ~ ((c_i, l_i) \in U_e) /\
-     ~ ((c_e, l_e) \in U_i) /\ ~ ((c_e, l_e) \in U_e)).
+     ~ (l_i \in U_i) /\ ~ (l_i \in U_e) /\
+     ~ (l_e \in U_i) /\ ~ (l_e \in U_e)).
 Proof.
   intros [Hsame Hdiff].
   destruct (Nat.eq_dec c_i c_e) as [Heq | Hneq].
@@ -328,11 +324,11 @@ Proof.
     destruct (Hsame Heq) as [Hset Hiff].
     split; [exact Heq | split; [exact Hset | exact Hiff]].
   - right.
-    destruct (Hdiff Hneq) as [Hcl_i_U_i [Hcl_i_U_e [Hcl_e_U_i Hcl_e_U_e]]].
+    destruct (Hdiff Hneq) as [Hl_i_U_i [Hl_i_U_e [Hl_e_U_i Hl_e_U_e]]].
     split; [exact Hneq
-           | split; [exact Hcl_i_U_i
-           | split; [exact Hcl_i_U_e
-           | split; [exact Hcl_e_U_i | exact Hcl_e_U_e]]]].
+           | split; [exact Hl_i_U_i
+           | split; [exact Hl_i_U_e
+           | split; [exact Hl_e_U_i | exact Hl_e_U_e]]]].
 Qed.
 
 (* If the introduction site is internal, the interaction is internal: the
@@ -340,12 +336,12 @@ Qed.
    site is internal as well. *)
 Lemma interaction_sound_intro U_i c_i l_i U_e c_e l_e :
   interaction_sound U_i (c_i, l_i) U_e (c_e, l_e) ->
-  ((c_i, l_i) \in U_i) ->
-  c_i = c_e /\ (U_i <--> U_e) /\ ((c_e, l_e) \in U_e).
+  (l_i \in U_i) ->
+  c_i = c_e /\ (U_i <--> U_e) /\ (l_e \in U_e).
 Proof.
   intros Hsnd Hin.
   destruct (interaction_sound_inv _ _ _ _ _ _ Hsnd)
-    as [[Heq [Hset Hiff]] | [_ [Hcl_i_U_i _]]].
+    as [[Heq [Hset Hiff]] | [_ [Hl_i_U_i _]]].
   - split; [exact Heq | split; [exact Hset | apply (proj1 Hiff); exact Hin]].
   - contradiction.
 Qed.
@@ -353,12 +349,12 @@ Qed.
 (* Symmetrically for the elimination site. *)
 Lemma interaction_sound_elim U_i c_i l_i U_e c_e l_e :
   interaction_sound U_i (c_i, l_i) U_e (c_e, l_e) ->
-  ((c_e, l_e) \in U_e) ->
-  c_i = c_e /\ (U_i <--> U_e) /\ ((c_i, l_i) \in U_i).
+  (l_e \in U_e) ->
+  c_i = c_e /\ (U_i <--> U_e) /\ (l_i \in U_i).
 Proof.
   intros Hsnd Hin.
   destruct (interaction_sound_inv _ _ _ _ _ _ Hsnd)
-    as [[Heq [Hset Hiff]] | [_ [_ [_ [_ Hcl_e_U_e]]]]].
+    as [[Heq [Hset Hiff]] | [_ [_ [_ [_ Hl_e_U_e]]]]].
   - split; [exact Heq | split; [exact Hset | apply (proj2 Hiff); exact Hin]].
   - contradiction.
 Qed.
@@ -389,12 +385,10 @@ Inductive cbstep (U : internals) (c : color) (ρ : cenv) : exp -> fuel -> cres -
 with cbstep_fuel (U : internals) (c : color) (ρ : cenv) : exp -> fuel -> cres -> interactions -> Prop :=
 | CbstepF_OOT :
   forall {e},
-    internals_monochromatic U c ->
     cbstep_fuel U c ρ e 0 COOT (Empty_set _)
 
 | CbstepF_Step :
   forall {I e i r},
-    internals_monochromatic U c ->
     cbstep U c ρ e i r I ->
     cbstep_fuel U c ρ e (S i) r I.
 
@@ -451,7 +445,9 @@ Proof.
 *)
 
   - fcrush.
-  - inv H1;
+  - match goal with
+    | [Hs : cbstep_fuel _ _ _ _ _ _ _ |- _] => inv Hs
+    end;
       edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto.
 Qed.
 
@@ -462,9 +458,13 @@ Lemma cbstep_fuel_deterministic_aux v v' {U I I' c ρ e i i' r r'}:
   r' = CRes v' ->
   (v = v' /\ i = i' /\ I <--> I').
 Proof.
-  intros.
-  inv H; inv H0; try discriminate.
-  edestruct (cbstep_deterministic_aux v v' H4 H1) as [Heqv [Heqi HeqI]]; eauto.
+  intros Hstep Hstep' Heqr Heqr'; subst.
+  inv Hstep; inv Hstep'.
+  match goal with
+  | [Hs : cbstep _ _ _ _ _ (CRes v) _, Hs' : cbstep _ _ _ _ _ (CRes v') _ |- _] =>
+      edestruct (cbstep_deterministic_aux v v' Hs Hs') as [Heqv [Heqi HeqI]];
+        subst; eauto
+  end.
 Qed.
 
 Theorem cbstep_deterministic v v' {U I I' c ρ e i i'}:
@@ -486,21 +486,6 @@ Proof. srun eauto using cbstep_fuel_deterministic_aux. Qed.
    color are forced to agree on their internal set, but only where they
    actually interact.  `internals_context` forces every occurrence of a color to agree. *)
 Definition internals_context := color -> internals.
-
-(* Each unit's internal set only mentions that unit's own color. *)
-Definition internals_context_monochromatic (Θ : internals_context) : Prop :=
-  forall c, internals_monochromatic (Θ c) c.
-
-(* A label is in `Θ c0` only if `c0` is its own color. *)
-Lemma internals_context_monochromatic_In {Θ c0 c l} :
-  internals_context_monochromatic Θ ->
-  ((c, l) \in Θ c0) ->
-  c0 = c.
-Proof.
-  unfold internals_context_monochromatic, internals_monochromatic.
-  intros HΘ Hin.
-  symmetry; exact (HΘ c0 (c, l) Hin).
-Qed.
 
 (* Unique Color Context / Well-formedness *)
 (* Every tag occurring in a value, or in an environment, assigns to its color
@@ -611,30 +596,29 @@ Qed.
    internal set.  The local `interaction_sound` side condition at each call
    site suffices, once the color context is globally consistent. *)
 Lemma cbstep_respect Θ :
-  internals_context_monochromatic Θ ->
   forall U c ρ e i r I,
     cbstep U c ρ e i r I ->
     U <--> Θ c ->
     unique_cenv Θ ρ ->
-    forall c0, interactions_respect (Θ c0) I.
+    forall c0, interactions_respect (Θ c0) c0 I.
 Proof.
-  intros HΘ U c ρ e i r I Hstep.
+  intros U c ρ e i r I Hstep.
   induction Hstep as
     [ U c ρ x v Hget
     | U c ρ I f l xs e k i r IHfuel
     | U c ρ I' U' f f' c' l l' xs ρ' xs' e vs ρ'' i r
         Hget Hgetl Hsetl IHfuel Hsnd
-    | U c ρ e Hmono
-    | U c ρ I e i r Hmono IHstep ]
+    | U c ρ e
+    | U c ρ I e i r IHstep ]
     using cbstep_ind'
     with (P := fun U c ρ e i r I =>
                  U <--> Θ c ->
                  unique_cenv Θ ρ ->
-                 forall c0, interactions_respect (Θ c0) I)
+                 forall c0, interactions_respect (Θ c0) c0 I)
          (P0 := fun U c ρ e i r I =>
                   U <--> Θ c ->
                   unique_cenv Θ ρ ->
-                  forall c0, interactions_respect (Θ c0) I).
+                  forall c0, interactions_respect (Θ c0) c0 I).
 
   - (* Cbstep_ret: nothing is recorded *)
     intros HU Hρ c0.
@@ -661,19 +645,19 @@ Proof.
     apply interactions_respect_add; [| exact (HI' c0)].
     destruct (interaction_sound_inv _ _ _ _ _ _ H)
       as [[Heqc [Hsets Hiff]] | [Hneqc [Hn_i_i [Hn_i_e [Hn_e_i Hn_e_e]]]]].
-    + (* internal interaction: both endpoints live in the one set for c *)
+    + (* internal interaction: the colors agree, so both endpoints are
+         internal to the same unit, or neither is *)
       subst c'.
-      split; intros Hmem.
-      * pose proof (internals_context_monochromatic_In HΘ Hmem) as Heq0; subst c0.
+      split; intros [Hc0 Hmem]; simpl in Hc0, Hmem; subst c0.
+      * split; [reflexivity | simpl].
         apply (proj1 HU); apply (proj1 Hiff); apply (proj2 HU'); exact Hmem.
-      * pose proof (internals_context_monochromatic_In HΘ Hmem) as Heq0; subst c0.
+      * split; [reflexivity | simpl].
         apply (proj1 HU'); apply (proj2 Hiff); apply (proj2 HU); exact Hmem.
-    + (* foreign interaction: neither endpoint is in any unit's set *)
-      split; intros Hmem; exfalso.
-      * pose proof (internals_context_monochromatic_In HΘ Hmem) as Heq0; subst c0.
-        apply Hn_i_i; apply (proj2 HU'); exact Hmem.
-      * pose proof (internals_context_monochromatic_In HΘ Hmem) as Heq0; subst c0.
-        apply Hn_e_e; apply (proj2 HU); exact Hmem.
+    + (* foreign interaction: neither endpoint is internal to any unit, so the
+         colors recorded in `cinternal` make both sides of the iff false *)
+      split; intros [Hc0 Hmem]; simpl in Hc0, Hmem; subst c0; exfalso.
+      * apply Hn_i_i; apply (proj2 HU'); exact Hmem.
+      * apply Hn_e_e; apply (proj2 HU); exact Hmem.
 
   - (* CbstepF_OOT: nothing is recorded *)
     intros HU Hρ c0.
@@ -685,46 +669,43 @@ Proof.
 Qed.
 
 Lemma cbstep_fuel_respect Θ :
-  internals_context_monochromatic Θ ->
   forall U c ρ e i r I,
     cbstep_fuel U c ρ e i r I ->
     U <--> Θ c ->
     unique_cenv Θ ρ ->
-    forall c0, interactions_respect (Θ c0) I.
+    forall c0, interactions_respect (Θ c0) c0 I.
 Proof.
-  intros HΘ U c ρ e i r I Hstep HU Hρ c0.
+  intros U c ρ e i r I Hstep HU Hρ c0.
   inv Hstep.
   - apply interactions_respect_empty.
   - match goal with
     | [Hs : cbstep _ _ _ _ _ _ _ |- _] =>
-        exact (cbstep_respect Θ HΘ _ _ _ _ _ _ _ Hs HU Hρ c0)
+        exact (cbstep_respect Θ _ _ _ _ _ _ _ Hs HU Hρ c0)
     end.
 Qed.
 
 Lemma cbstep_closed Θ U c ρ e i r I :
-  internals_context_monochromatic Θ ->
   U <--> Θ c ->
   unique_cenv Θ ρ ->
   cbstep U c ρ e i r I ->
-  internals_closed U I.
+  internals_closed U c I.
 Proof.
-  intros HΘ HU Hρ Hstep.
+  intros HU Hρ Hstep.
   apply interactions_respect_closed.
-  apply (interactions_respect_Same_set U (Θ c) I HU).
-  exact (cbstep_respect Θ HΘ U c ρ e i r I Hstep HU Hρ c).
+  apply (interactions_respect_Same_set U (Θ c) c I HU).
+  exact (cbstep_respect Θ U c ρ e i r I Hstep HU Hρ c).
 Qed.
 
 Lemma cbstep_fuel_closed Θ U c ρ e i r I :
-  internals_context_monochromatic Θ ->
   U <--> Θ c ->
   unique_cenv Θ ρ ->
   cbstep_fuel U c ρ e i r I ->
-  internals_closed U I.
+  internals_closed U c I.
 Proof.
-  intros HΘ HU Hρ Hstep.
+  intros HU Hρ Hstep.
   apply interactions_respect_closed.
-  apply (interactions_respect_Same_set U (Θ c) I HU).
-  exact (cbstep_fuel_respect Θ HΘ U c ρ e i r I Hstep HU Hρ c).
+  apply (interactions_respect_Same_set U (Θ c) c I HU).
+  exact (cbstep_fuel_respect Θ U c ρ e i r I Hstep HU Hρ c).
 Qed.
 
 (*
@@ -1072,8 +1053,8 @@ Proof.
     | U c ρ I f l xs e k i r IHfuel
     | U c ρ I' U' f f' c' l l' xs ρ' xs' e vs ρ'' i r
         Hget Hgetl Hsetl IHfuel Hsnd
-    | U c ρ e Hmono
-    | U c ρ I e i r Hmono IHstep ]
+    | U c ρ e
+    | U c ρ I e i r IHstep ]
     using cbstep_ind'
     with (P := fun U c ρ e i r I =>
                  intro_cenv Λ ρ ->
@@ -1090,7 +1071,7 @@ Proof.
 
   - (* Cbstep_fun: the closure's label comes from Λ c *)
     intros Hρ Hsep.
-    apply IHfuel.
+    apply IHHstep.
     + apply intro_cenv_set; [exact Hρ |].
       apply IL_TAG; [exact (labels_separated_fun_label Hsep) |].
       apply IL_CVfun; [exact Hρ | exact (labels_separated_fun_body Hsep)].
@@ -1105,7 +1086,7 @@ Proof.
     pose proof (intro_cenv_set f' (CTag U' c' l' (CVfun f' ρ' xs' e)) Hρ' Hclo)
       as Hρ'f.
     pose proof (intro_cenv_set_lists _ Hρ'f vs xs' ρ'' Hvs Hsetl) as Hρ''.
-    pose proof (IHfuel Hρ'' Hsep') as HI'.
+    pose proof (Hsnd Hρ'' Hsep') as HI'.
     intros cl1 cl2 Hin.
     inv Hin.
     + (* the interaction just recorded: an intro label against an elim label *)
@@ -1120,7 +1101,7 @@ Proof.
 
   - (* CbstepF_Step *)
     intros Hρ Hsep.
-    exact (IHstep Hρ Hsep).
+    exact (IHIHstep Hρ Hsep).
 Qed.
 
 Lemma cbstep_fuel_bipartite Λ :
