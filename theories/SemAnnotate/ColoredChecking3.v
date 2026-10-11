@@ -616,11 +616,11 @@ Proof.
   intros U c ρ e i r I Hstep.
   induction Hstep as
     [ U c ρ x v Hget
-    | U c ρ I f l xs e k i r IHfuel
+    | U c ρ I f l xs e k i r Hfuel IHfuel
     | U c ρ I' U' f f' c' l l' xs ρ' xs' e vs ρ'' i r
-        Hget Hgetl Hsetl IHfuel Hsnd
+        Hget Hgetl Hsetl Hfuel IHfuel Hsnd
     | U c ρ e
-    | U c ρ I e i r IHstep ]
+    | U c ρ I e i r Hsub IHstep ]
     using cbstep_ind'
     with (P := fun U c ρ e i r I =>
                  U <--> Θ c ->
@@ -640,7 +640,7 @@ Proof.
     pose proof (unique_cenv_set f (CTag U c l (CVfun f ρ xs e)) Hρ
                   (UC_TAG Θ U c l (CVfun f ρ xs e) HU
                      (UC_CVfun Θ f ρ xs e Hρ))) as Hρf.
-    exact (IHHstep HU Hρf c0).
+    eauto.
 
   - (* Cbstep_app *)
     intros HU Hρ c0.
@@ -652,9 +652,9 @@ Proof.
     pose proof (unique_cenv_set f' (CTag U' c' l' (CVfun f' ρ' xs' e)) Hρ' Hclo)
       as Hρ'f.
     pose proof (unique_cenv_set_lists _ Hρ'f vs xs' ρ'' Hvs Hsetl) as Hρ''.
-    pose proof (Hsnd HU' Hρ'') as HI'.
+    pose proof (IHfuel HU' Hρ'') as HI'.
     apply interactions_respect_add; [| exact (HI' c0)].
-    destruct (interaction_sound_inv _ _ _ _ _ _ H)
+    destruct (interaction_sound_inv _ _ _ _ _ _ Hsnd)
       as [[Heqc [Hsets Hiff]] | [Hneqc [Hn_i_i [Hn_i_e [Hn_e_i Hn_e_e]]]]].
     + (* internal interaction: the colors agree, so both endpoints are
          internal to the same unit, or neither is *)
@@ -676,7 +676,7 @@ Proof.
 
   - (* CbstepF_Step *)
     intros HU Hρ c0.
-    exact (IHIHstep HU Hρ c0).
+    eauto.
 Qed.
 
 Lemma cbstep_fuel_respect Θ :
@@ -717,6 +717,90 @@ Proof.
   apply interactions_respect_closed.
   apply (interactions_respect_Same_set U (Θ c) c I HU).
   exact (cbstep_fuel_respect Θ U c ρ e i r I Hstep HU Hρ c).
+Qed.
+
+(* A returned value agrees with Θ as well.  The result is not fixed to `CRes v`
+   by any constructor, so the induction carries it as an equation, as in
+   `cbstep_deterministic_aux`. *)
+Lemma cbstep_unique_res_aux Θ :
+  forall U c ρ e i r I,
+    cbstep U c ρ e i r I ->
+    forall v,
+      r = CRes v ->
+      U <--> Θ c ->
+      unique_cenv Θ ρ ->
+      unique_context Θ v.
+Proof.
+  intros U c ρ e i r I Hstep.
+  induction Hstep as
+    [ U c ρ x v Hget
+    | U c ρ I f l xs e k i r Hfuel IHfuel
+    | U c ρ I' U' f f' c' l l' xs ρ' xs' e vs ρ'' i r
+        Hget Hgetl Hsetl Hfuel IHfuel Hsnd
+    | U c ρ e
+    | U c ρ I e i r Hsub IHstep ]
+    using cbstep_ind'
+    with (P := fun U c ρ e i r I =>
+                 forall v, r = CRes v ->
+                 U <--> Θ c -> unique_cenv Θ ρ -> unique_context Θ v)
+         (P0 := fun U c ρ e i r I =>
+                  forall v, r = CRes v ->
+                  U <--> Θ c -> unique_cenv Θ ρ -> unique_context Θ v).
+
+  - (* Cbstep_ret: the value comes straight out of the environment *)
+    intros v0 Heqr HU Hρ.
+    inv Heqr.
+    eapply unique_cenv_get; eauto.
+
+  - (* Cbstep_fun: the new binding agrees with Θ, so the IH applies *)
+    intros v0 Heqr HU Hρ.
+    pose proof (unique_cenv_set f (CTag U c l (CVfun f ρ xs e)) Hρ
+                  (UC_TAG Θ U c l (CVfun f ρ xs e) HU
+                     (UC_CVfun Θ f ρ xs e Hρ))) as Hρf.
+    eauto.
+
+  - (* Cbstep_app: the callee runs at its own color, with its own internals *)
+    intros v0 Heqr HU Hρ.
+    pose proof (unique_cenv_get Hρ f _ Hget) as Hclo.
+    destruct (unique_context_CTag_inv Hclo) as [HU' Hfun].
+    pose proof (unique_context_CVfun_inv Hfun) as Hρ'.
+    pose proof (unique_cenv_get_list Hρ xs vs Hgetl) as Hvs.
+    pose proof (unique_cenv_set f' (CTag U' c' l' (CVfun f' ρ' xs' e)) Hρ' Hclo)
+      as Hρ'f.
+    pose proof (unique_cenv_set_lists _ Hρ'f vs xs' ρ'' Hvs Hsetl) as Hρ''.
+    eauto.
+
+  - (* CbstepF_OOT: no value is returned *)
+    intros v0 Heqr HU Hρ.
+    discriminate Heqr.
+
+  - (* CbstepF_Step *)
+    intros v0 Heqr HU Hρ.
+    eauto.
+Qed.
+
+Lemma cbstep_unique_res Θ U c ρ e i v I :
+  U <--> Θ c ->
+  unique_cenv Θ ρ ->
+  cbstep U c ρ e i (CRes v) I ->
+  unique_context Θ v.
+Proof.
+  intros HU Hρ Hstep.
+  exact (cbstep_unique_res_aux Θ U c ρ e i (CRes v) I Hstep v eq_refl HU Hρ).
+Qed.
+
+Lemma cbstep_fuel_unique_res Θ U c ρ e i v I :
+  U <--> Θ c ->
+  unique_cenv Θ ρ ->
+  cbstep_fuel U c ρ e i (CRes v) I ->
+  unique_context Θ v.
+Proof.
+  intros HU Hρ Hstep.
+  inv Hstep.
+  match goal with
+  | [Hs : cbstep _ _ _ _ _ (CRes v) _ |- _] =>
+      exact (cbstep_unique_res Θ U c ρ e _ v _ HU Hρ Hs)
+  end.
 Qed.
 
 (* Top Level *)
@@ -804,7 +888,7 @@ Inductive has_unit : ccexp -> color -> internals -> Prop :=
 
 Hint Constructors has_unit : core.
 
-Lemma coloring_monotone {c1 ce c2 cce} :
+Lemma coloring_mono {c1 ce c2 cce} :
   coloring c1 ce c2 cce ->
   c1 <= c2.
 Proof. intros Hcol; induction Hcol; lia. Qed.
@@ -821,11 +905,11 @@ Proof.
     + match goal with
       | [Hu : has_unit cce1 c0 U0 |- _] => destruct (IH1 c0 U0 Hu) as [Hlo Hhi]
       end.
-      pose proof (coloring_monotone Hc2) as Hm; lia.
+      pose proof (coloring_mono Hc2) as Hm; lia.
     + match goal with
       | [Hu : has_unit cce2 c0 U0 |- _] => destruct (IH2 c0 U0 Hu) as [Hlo Hhi]
       end.
-      pose proof (coloring_monotone Hc1) as Hm; lia.
+      pose proof (coloring_mono Hc1) as Hm; lia.
 Qed.
 
 (* Distinct units get distinct colors, so a color names at most one unit. *)
@@ -887,13 +971,14 @@ Qed.
 (* Top-level Checking Semantics for the *Colored* Top-level Expression *)
 (* The colors are already in the tree, so the top-level semantics does not
    mention `Θ` at all: it just runs each unit at the color preprocessing gave
-   it, and unions the interactions the units record.  `Θ` reappears only in the theorems,
-   through `internals_context_of`. *)
+   it, and unions the interactions the units record.
+   `Θ` reappears only in the theorems, through `internals_context_of`. *)
 Inductive cbstep_top (ρ : cenv) : ccexp -> fuel -> cres -> interactions -> Prop :=
 | CbstepT_link_Res :
-  forall {x cce1 cce2 i1 i2 v r I1 I2},
-    cbstep_top_fuel ρ cce1 i1 (CRes v) I1 ->
-    cbstep_top_fuel (M.set x v ρ) cce2 i2 r I2 ->
+  forall {x cce1 cce2 i1 i2 U c l v r I1 I2},
+    cbstep_top_fuel ρ cce1 i1 (CRes (CTag U c l v)) I1 ->
+    ~ (l \in U) -> (* Values crossing the program boundary are foreign values. *)
+    cbstep_top_fuel (M.set x (CTag U c l v) ρ) cce2 i2 r I2 ->
     cbstep_top ρ (CClink x cce1 cce2) (S (i1 + i2)) r (I1 :|: I2)
 
 | CbstepT_link_OOT :
@@ -935,28 +1020,213 @@ Lemma cbstep_top_fuel_cbstep_fuel U c ρ e j r I:
   cbstep_fuel U c ρ e j r I.
 Proof. intros H. fcrush. Qed.
 
-(* TODO: the glue that carries `unique_cenv` across a link.  `CbstepT_link_Res`
-   binds the result of one unit into the next unit's environment, so the
-   top-level theorem needs the per-unit result to agree with Θ:
+(* `internals_context_of` reads off a single unit, and restricts to subtrees. *)
+Lemma internals_context_of_unit {Θ U c e} :
+  internals_context_of Θ (CCunit U c e) ->
+  U <--> Θ c.
+Proof. intros HΘ; exact (HΘ c U (Has_unit_unit U c e)). Qed.
 
-     Lemma cbstep_unique_res Θ U c ρ e i v I :
-       U <--> Θ c ->
-       unique_cenv Θ ρ ->
-       cbstep U c ρ e i (CRes v) I ->
-       unique_context Θ v.
+Lemma internals_context_of_link1 {Θ x cce1 cce2} :
+  internals_context_of Θ (CClink x cce1 cce2) ->
+  internals_context_of Θ cce1.
+Proof.
+  intros HΘ c U Hunit.
+  exact (HΘ c U (Has_unit_link1 x cce1 cce2 c U Hunit)).
+Qed.
 
-   It is the analogue of `cbstep_wf_res`, by `cbstep_ind'`.  With it, the
-   top-level statement follows by induction on `cbstep_top_ind'`, using
-   `cbstep_fuel_respect` at each unit and `interactions_respect_union` at each
-   link:
+Lemma internals_context_of_link2 {Θ x cce1 cce2} :
+  internals_context_of Θ (CClink x cce1 cce2) ->
+  internals_context_of Θ cce2.
+Proof.
+  intros HΘ c U Hunit.
+  exact (HΘ c U (Has_unit_link2 x cce1 cce2 c U Hunit)).
+Qed.
 
-     Theorem cbstep_top_closed Θ ρ cce i r I :
-       internals_context_of Θ cce ->
-       unique_cenv Θ ρ ->
-       cbstep_top ρ cce i r I ->
-       forall c U, has_unit cce c U -> internals_closed U c I. *)
+(* A value returned by a linked program agrees with Θ.  As in
+   `cbstep_unique_res_aux`, no constructor fixes the result to `CRes v`, so the
+   induction carries it as an equation. *)
+Lemma cbstep_top_unique_res_aux Θ :
+  forall ρ cce i r I,
+    cbstep_top ρ cce i r I ->
+    internals_context_of Θ cce ->
+    unique_cenv Θ ρ ->
+    forall v, r = CRes v -> unique_context Θ v.
+Proof.
+  intros ρ cce i r I Hstep.
+  induction Hstep as
+    [ ρ x cce1 cce2 i1 i2 U c l v r I1 I2 Hfuel1 IH1 Hforeign Hfuel2 IH2
+    | ρ x cce1 cce2 i I1 Hfuel1 IH1
+    | ρ U c e i r I Hfuel
+    | ρ x cce1 cce2
+    | ρ x cce1 cce2 i r I Htop IHtop ]
+    using cbstep_top_ind'
+    with (P := fun ρ cce i r I =>
+                 internals_context_of Θ cce ->
+                 unique_cenv Θ ρ ->
+                 forall v, r = CRes v -> unique_context Θ v)
+         (P0 := fun ρ cce i r I =>
+                  internals_context_of Θ cce ->
+                  unique_cenv Θ ρ ->
+                  forall v, r = CRes v -> unique_context Θ v).
+
+  - (* CbstepT_link_Res: the linked value agrees with Θ, so the second unit
+       still runs in a Θ-consistent environment *)
+    intros HΘ Hρ v0 Heqr.
+    pose proof (IH1 (internals_context_of_link1 HΘ) Hρ (CTag U c l v) eq_refl)
+      as Hclo.
+    pose proof (unique_cenv_set x (CTag U c l v) Hρ Hclo) as Hρx.
+    exact (IH2 (internals_context_of_link2 HΘ) Hρx v0 Heqr).
+
+  - (* CbstepT_link_OOT: no value is returned *)
+    intros HΘ Hρ v0 Heqr; discriminate Heqr.
+
+  - (* CbstepTF_unit *)
+    intros HΘ Hρ v0 Heqr; subst r.
+    exact (cbstep_fuel_unique_res Θ U c ρ e i v0 I
+             (internals_context_of_unit HΘ) Hρ Hfuel).
+
+  - (* CbstepTF_link_OOT: no value is returned *)
+    intros HΘ Hρ v0 Heqr; discriminate Heqr.
+
+  - (* CbstepTF_link_Step *)
+    intros HΘ Hρ v0 Heqr.
+    exact (IHtop HΘ Hρ v0 Heqr).
+Qed.
+
+Lemma cbstep_top_unique_res Θ ρ cce i v I :
+  internals_context_of Θ cce ->
+  unique_cenv Θ ρ ->
+  cbstep_top ρ cce i (CRes v) I ->
+  unique_context Θ v.
+Proof.
+  intros HΘ Hρ Hstep.
+  exact (cbstep_top_unique_res_aux Θ ρ cce i (CRes v) I Hstep HΘ Hρ v eq_refl).
+Qed.
+
+Lemma cbstep_top_fuel_unique_res Θ ρ cce i v I :
+  internals_context_of Θ cce ->
+  unique_cenv Θ ρ ->
+  cbstep_top_fuel ρ cce i (CRes v) I ->
+  unique_context Θ v.
+Proof.
+  intros HΘ Hρ Hstep.
+  inv Hstep.
+  - match goal with
+    | [Hs : cbstep_fuel _ _ _ _ _ (CRes v) _ |- _] =>
+        exact (cbstep_fuel_unique_res Θ _ _ _ _ _ v _
+                 (internals_context_of_unit HΘ) Hρ Hs)
+    end.
+  - match goal with
+    | [Hs : cbstep_top _ _ _ (CRes v) _ |- _] =>
+        exact (cbstep_top_unique_res Θ _ _ _ v _ HΘ Hρ Hs)
+    end.
+Qed.
+
+(* Top-level Closure Property *)
+(* Each unit of the linked program respects *every* unit's internal set: the
+   per-unit theorem applies at each `CCunit`, and linking only unions what the
+   two sides recorded.  Carrying `unique_cenv` across a link is exactly what
+   `cbstep_top_fuel_unique_res` provides. *)
+Lemma cbstep_top_respect Θ :
+  forall ρ cce i r I,
+    cbstep_top ρ cce i r I ->
+    internals_context_of Θ cce ->
+    unique_cenv Θ ρ ->
+    forall c0, interactions_respect (Θ c0) c0 I.
+Proof.
+  intros ρ cce i r I Hstep.
+  induction Hstep as
+    [ ρ x cce1 cce2 i1 i2 U c l v r I1 I2 Hfuel1 IH1 Hforeign Hfuel2 IH2
+    | ρ x cce1 cce2 i I1 Hfuel1 IH1
+    | ρ U c e i r I Hfuel
+    | ρ x cce1 cce2
+    | ρ x cce1 cce2 i r I Htop IHtop ]
+    using cbstep_top_ind'
+    with (P := fun ρ cce i r I =>
+                 internals_context_of Θ cce ->
+                 unique_cenv Θ ρ ->
+                 forall c0, interactions_respect (Θ c0) c0 I)
+         (P0 := fun ρ cce i r I =>
+                  internals_context_of Θ cce ->
+                  unique_cenv Θ ρ ->
+                  forall c0, interactions_respect (Θ c0) c0 I).
+
+  - (* CbstepT_link_Res *)
+    intros HΘ Hρ c0.
+    pose proof (internals_context_of_link1 HΘ) as HΘ1.
+    pose proof (internals_context_of_link2 HΘ) as HΘ2.
+    pose proof (cbstep_top_fuel_unique_res Θ ρ cce1 i1 (CTag U c l v) I1
+                  HΘ1 Hρ Hfuel1) as Hclo.
+    pose proof (unique_cenv_set x (CTag U c l v) Hρ Hclo) as Hρx.
+    exact (interactions_respect_union (Θ c0) c0 I1 I2
+             (IH1 HΘ1 Hρ c0) (IH2 HΘ2 Hρx c0)).
+
+  - (* CbstepT_link_OOT: only the first unit ran *)
+    intros HΘ Hρ c0.
+    exact (IH1 (internals_context_of_link1 HΘ) Hρ c0).
+
+  - (* CbstepTF_unit: hand off to the per-unit theorem *)
+    intros HΘ Hρ c0.
+    exact (cbstep_fuel_respect Θ U c ρ e i r I Hfuel
+             (internals_context_of_unit HΘ) Hρ c0).
+
+  - (* CbstepTF_link_OOT: nothing is recorded *)
+    intros HΘ Hρ c0.
+    apply interactions_respect_empty.
+
+  - (* CbstepTF_link_Step *)
+    intros HΘ Hρ c0.
+    exact (IHtop HΘ Hρ c0).
+Qed.
+
+Lemma cbstep_top_fuel_respect Θ ρ cce i r I :
+  cbstep_top_fuel ρ cce i r I ->
+  internals_context_of Θ cce ->
+  unique_cenv Θ ρ ->
+  forall c0, interactions_respect (Θ c0) c0 I.
+Proof.
+  intros Hstep HΘ Hρ c0.
+  inv Hstep.
+  - match goal with
+    | [Hs : cbstep_fuel _ _ _ _ _ _ _ |- _] =>
+        exact (cbstep_fuel_respect Θ _ _ _ _ _ _ _ Hs
+                 (internals_context_of_unit HΘ) Hρ c0)
+    end.
+  - apply interactions_respect_empty.
+  - match goal with
+    | [Hs : cbstep_top _ _ _ _ _ |- _] =>
+        exact (cbstep_top_respect Θ _ _ _ _ _ Hs HΘ Hρ c0)
+    end.
+Qed.
+
+(* Every unit of the linked program is closed under the interactions the whole
+   program records --- not just under its own. *)
+Lemma cbstep_top_closed Θ ρ cce i r I :
+  internals_context_of Θ cce ->
+  unique_cenv Θ ρ ->
+  cbstep_top ρ cce i r I ->
+  forall c U, has_unit cce c U -> internals_closed U c I.
+Proof.
+  intros HΘ Hρ Hstep c U Hunit.
+  apply interactions_respect_closed.
+  apply (interactions_respect_Same_set U (Θ c) c I (HΘ c U Hunit)).
+  exact (cbstep_top_respect Θ ρ cce i r I Hstep HΘ Hρ c).
+Qed.
+
+Lemma cbstep_top_fuel_closed Θ ρ cce i r I :
+  internals_context_of Θ cce ->
+  unique_cenv Θ ρ ->
+  cbstep_top_fuel ρ cce i r I ->
+  forall c U, has_unit cce c U -> internals_closed U c I.
+Proof.
+  intros HΘ Hρ Hstep c U Hunit.
+  apply interactions_respect_closed.
+  apply (interactions_respect_Same_set U (Θ c) c I (HΘ c U Hunit)).
+  exact (cbstep_top_fuel_respect Θ ρ cce i r I Hstep HΘ Hρ c).
+Qed.
 
 (* Bipartite Interaction *)
+(* The interactions form a bipartite graph *)
 Definition interactions_bipartite (I : interactions) : Prop :=
   forall cl1 cl2,
     ((cl1, cl2) \in I) ->
