@@ -404,6 +404,81 @@ Hint Constructors cbstep_fuel : core.
 Scheme cbstep_ind' := Minimality for cbstep Sort Prop
 with cbstep_fuel_ind' := Minimality for cbstep_fuel Sort Prop.
 
+Lemma cbstep_deterministic_aux v v' {U I I' c ρ e i i' r r'}:
+  cbstep U c ρ e i r I ->
+  cbstep U c ρ e i' r' I' ->
+  r = CRes v ->
+  r' = CRes v' ->
+  (v = v' /\ i = i' /\ I <--> I').
+Proof.
+  intros H.
+  generalize dependent v'.
+  generalize dependent r'.
+  generalize dependent i'.
+  generalize dependent v.
+  generalize dependent I'.
+  induction H using cbstep_ind' with (P := fun U c ρ e i r I =>
+                                             forall I' v i' r' v',
+                                               cbstep U c ρ e i' r' I' ->
+                                               r = CRes v -> r' = CRes v' ->
+                                               v = v' /\ i = i' /\ I <--> I')
+                                     (P0 := fun U c ρ e i r I =>
+                                              forall I' v i' r' v',
+                                                cbstep_fuel U c ρ e i' r' I' ->
+                                                r = CRes v -> r' = CRes v' ->
+                                                v = v' /\ i = i' /\ I <--> I');
+    intros; subst.
+  - inv H0; inv H1; invc; fcrush.
+  - inv H0.
+    edestruct IHcbstep; eauto; subst.
+  - inv H4; invc.
+    edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto; subst.
+    hauto l: on use: Extensionality_Ensembles unfold: Same_set, Included, interactions.
+  (* - inv H6; invc.
+    edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto; subst.
+    edestruct IHcbstep0 as [Heqv' [Heqi' HeqI']]; eauto; subst.
+    hauto l: on use: Extensionality_Ensembles unfold: Same_set, Included, interactions.
+  - fcrush.
+  - inv H1; invc.
+    edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto.
+  - inv H4; invc.
+    edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto; subst.
+    hauto lq: on use: Extensionality_Ensembles unfold: Same_set, Included, interactions.
+  - inv H4; invc.
+    destruct (find_tag_deterministic H0 H9); subst.
+    edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto; subst.
+    hauto lq: on use: Extensionality_Ensembles unfold: Same_set, Included, interactions.
+*)
+
+  - fcrush.
+  - inv H1;
+      edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto.
+Qed.
+
+Lemma cbstep_fuel_deterministic_aux v v' {U I I' c ρ e i i' r r'}:
+  cbstep_fuel U c ρ e i r I ->
+  cbstep_fuel U c ρ e i' r' I' ->
+  r = CRes v ->
+  r' = CRes v' ->
+  (v = v' /\ i = i' /\ I <--> I').
+Proof.
+  intros.
+  inv H; inv H0; try discriminate.
+  edestruct (cbstep_deterministic_aux v v' H4 H1) as [Heqv [Heqi HeqI]]; eauto.
+Qed.
+
+Theorem cbstep_deterministic v v' {U I I' c ρ e i i'}:
+  cbstep U c ρ e i (CRes v) I ->
+  cbstep U c ρ e i' (CRes v') I' ->
+  (v = v' /\ i = i' /\ I <--> I').
+Proof. srun eauto using cbstep_deterministic_aux. Qed.
+
+Theorem cbstep_fuel_deterministic v v' {U I I' c ρ e i i'}:
+  cbstep_fuel U c ρ e i (CRes v) I ->
+  cbstep_fuel U c ρ e i' (CRes v') I' ->
+  (v = v' /\ i = i' /\ I <--> I').
+Proof. srun eauto using cbstep_fuel_deterministic_aux. Qed.
+
 (* Color Context *)
 (* Assigns to each color the internal set of the compilation unit wearing it.
    This is the *global* counterpart of the "unique colored context" condition
@@ -531,6 +606,7 @@ Proof.
     end.
 Qed.
 
+(* Interaction Closure Property *)
 (* Each interaction recorded by the checking semantics respects *every* unit's
    internal set.  The local `interaction_sound` side condition at each call
    site suffices, once the color context is globally consistent. *)
@@ -650,3 +726,21 @@ Proof.
   apply (interactions_respect_Same_set U (Θ c) I HU).
   exact (cbstep_fuel_respect Θ HΘ U c ρ e i r I Hstep HU Hρ c).
 Qed.
+
+(* Bipartite Interaction *)
+Definition interactions_bipartite (I : interactions) : Prop :=
+  forall cl1 cl2,
+    ((cl1, cl2) \in I) ->
+    cl1 <> cl2.
+
+(* TODO: show if the program is uniquely labeled and uniquely colored, then we get I satisfying interactions_diff. *)
+Lemma cbstep_bipartite Θ U c ρ e i r I :
+  color_context_monochromatic Θ ->
+  U <--> Θ c ->
+  unique_cenv Θ ρ ->
+  unique_label e ->
+  cbstep_fuel U c ρ e i r I ->
+  interactions_bipartite I.
+Proof.
+  (* We need to extend unique_context' for CVfun to incorporate unique_label for the function body *)
+Abort.
