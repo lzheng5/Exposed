@@ -303,6 +303,7 @@ Inductive cres : Type :=
 
 Hint Constructors cres : core.
 
+(* The Key Invariant *)
 Definition interaction_sound (U_i : internals) (cl_i : clabel)
                              (U_e : internals) (cl_e : clabel) : Prop :=
   match cl_i, cl_e with
@@ -490,7 +491,7 @@ Theorem cbstep_fuel_deterministic v v' {U I I' c ρ e i i'}:
   (v = v' /\ i = i' /\ I <--> I').
 Proof. srun eauto using cbstep_fuel_deterministic_aux. Qed.
 
-(* Color Context *)
+(* Internals Context *)
 (* Assigns to each color the internal set of the compilation unit wearing it.
    This is the *global* counterpart of the "unique colored context" condition
    built into `interaction_sound`: there, two interacting labels of the same
@@ -949,19 +950,19 @@ Qed.
 
 (* The internals context is *read off* the colored tree rather than supplied:
    `Θ c` is the internal set of the unit that was handed the color `c`. *)
-Definition ctx_of (cce : ccexp) : internals_context :=
+Definition ictx_of (cce : ccexp) : internals_context :=
   fun c => fun l => exists U, has_unit cce c U /\ (l \in U).
 
 (* `Θ` agrees with the coloring of `cce`. *)
 Definition internals_context_of (Θ : internals_context) (cce : ccexp) : Prop :=
   forall c U, has_unit cce c U -> U <--> Θ c.
 
-Lemma ctx_of_correct {c1 ce c2 cce} :
+Lemma ictx_of_correct {c1 ce c2 cce} :
   coloring c1 ce c2 cce ->
-  internals_context_of (ctx_of cce) cce.
+  internals_context_of (ictx_of cce) cce.
 Proof.
   intros Hcol c U Hunit.
-  unfold ctx_of, Ensembles.In.
+  unfold ictx_of, Ensembles.In.
   split; intros l Hl.
   - exists U; split; [exact Hunit | exact Hl].
   - destruct Hl as [U' [Hunit' Hl']].
@@ -1226,7 +1227,7 @@ Proof.
 Qed.
 
 (* Bipartite Interaction *)
-(* The interactions form a bipartite graph *)
+(* The interactions form a bipartite graph if each compilation unit is uniquely labeled *)
 Definition interactions_bipartite (I : interactions) : Prop :=
   forall cl1 cl2,
     ((cl1, cl2) \in I) ->
@@ -1566,10 +1567,501 @@ Proof.
     end.
 Qed.
 
-(* TODO: the remaining, purely syntactic bridge.  For a uniquely labeled unit
-   `e`, taking Λ c := intro_label e discharges `labels_separated Λ c e`:
-     Lemma unique_label_separated e :
-       unique_label e ->
-       forall l, (l \in intro_label e) -> ~ (l \in elim_label e).
-   It follows from `Unique_fun` (an `Efun` label occurs in neither subtree) and
-   the two `_has_label` subset lemmas above, by `unique_label_mut`. *)
+(* The purely syntactic bridge *)
+(* An `Ecase`'s branches contribute exactly the labels that `unique_label_case`
+   accumulates in `L`. *)
+Lemma unique_label_case_subset {cl L} :
+  unique_label_case cl L ->
+  forall y l0,
+    (intro_label (Ecase y l0 cl) \subset L) /\ (elim_label (Ecase y l0 cl) \subset L).
+Proof.
+  intros Hcase.
+  induction Hcase as [| t e cl L Hdisj Huniq Hcase IH]; intros y l0.
+  - split; intros l Hl; inv Hl.
+  - destruct (IH y l0) as [Hintro Helim].
+    split; intros l Hl; inv Hl.
+    + left; apply intro_label_has_label; assumption.
+    + right; apply Hintro; assumption.
+    + left; apply elim_label_has_label; assumption.
+    + right; apply Helim; assumption.
+Qed.
+
+(* `inv` leaves membership facts as raw applications (`elim_label e l`) while
+   the premises of `unique_label` carry them as `Ensembles.In`.  Ltac matches
+   syntactically, so normalize to the raw form before matching on either. *)
+Ltac label_norm := try (unfold Ensembles.In in *).
+
+(* Reduce every `intro_label` / `elim_label` fact in the context to the
+   `has_label` fact it implies. *)
+Ltac label_has :=
+  repeat match goal with
+         | [H : intro_label ?e1 ?x |- _] =>
+             apply (intro_label_has_label e1 x) in H; unfold Ensembles.In in H
+         | [H : elim_label ?e1 ?x |- _] =>
+             apply (elim_label_has_label e1 x) in H; unfold Ensembles.In in H
+         end.
+
+(* The ways an introduction label and an elimination label of a uniquely
+   labeled expression could coincide, each ruled out by a premise of
+   `unique_label`.  The induction hypotheses are applied by an explicit clause
+   rather than by `eauto`: their conclusion is headed by `not`, which `eauto`
+   does not unfold, so it would never see that they prove `False`. *)
+Ltac label_contra :=
+  label_norm;
+  first
+    [ (* both labels sit in the same subterm *)
+      match goal with
+      | [IH : forall lz, intro_label ?e1 lz -> ~ elim_label ?e1 lz,
+         Hi : intro_label ?e1 ?x, He : elim_label ?e1 ?x |- False] =>
+          exact (IH x Hi He)
+      | [IH : forall yz lz0 lz, intro_label (Ecase yz lz0 ?cl1) lz ->
+                                ~ elim_label (Ecase yz lz0 ?cl1) lz,
+         Hi : intro_label (Ecase ?y1 ?l1 ?cl1) ?x,
+         He : elim_label (Ecase ?y1 ?l1 ?cl1) ?x |- False] =>
+          exact (IH y1 l1 x Hi He)
+      end
+
+    | (* one label in a case branch, the other in the remaining branches *)
+      match goal with
+      | [Hd : Disjoint _ (has_label ?e1) ?L1, Hc : unique_label_case ?cl1 ?L1,
+         Hi : intro_label ?e1 ?x,
+         He : elim_label (Ecase ?y ?l1 ?cl1) ?x |- False] =>
+          exact (Disjoint_In_l _ _ x Hd (intro_label_has_label e1 x Hi)
+                   (proj2 (unique_label_case_subset Hc y l1) x He))
+      | [Hd : Disjoint _ (has_label ?e1) ?L1, Hc : unique_label_case ?cl1 ?L1,
+         Hi : intro_label (Ecase ?y ?l1 ?cl1) ?x,
+         He : elim_label ?e1 ?x |- False] =>
+          exact (Disjoint_In_l _ _ x Hd (elim_label_has_label e1 x He)
+                   (proj1 (unique_label_case_subset Hc y l1) x Hi))
+      end
+
+    | (* otherwise both labels are `has_label` facts, and either the node's own
+         label does not occur in that subterm, or the two subterms are
+         disjoint *)
+      label_has;
+      match goal with
+      | [Hn : ~ has_label ?e1 ?x, H : has_label ?e1 ?x |- False] =>
+          exact (Hn H)
+      | [Hd : Disjoint _ (has_label ?e1) (has_label ?e2),
+         H1 : has_label ?e1 ?x, H2 : has_label ?e2 ?x |- False] =>
+          exact (Disjoint_In_l _ _ x Hd H1 H2)
+      end
+
+    | solve [eauto] ].
+
+(* Unique labeling is exactly what separates introduction from elimination:
+   an `Efun` label can never also be an `Eapp` label. *)
+Lemma unique_label_separated e :
+  unique_label e ->
+  forall l, (l \in intro_label e) -> ~ (l \in elim_label e).
+Proof.
+  intros Huniq.
+  induction Huniq using unique_label_mut
+    with (P := fun e0 _ => forall l,
+                 (l \in intro_label e0) -> ~ (l \in elim_label e0))
+         (P0 := fun cl L _ => forall y l0 l,
+                  (l \in intro_label (Ecase y l0 cl)) ->
+                  ~ (l \in elim_label (Ecase y l0 cl))).
+
+  - (* Unique_ret: nothing is introduced *)
+    intros lab Hintro; inv Hintro.
+
+  - (* Unique_fun *)
+    intros lab Hintro Helim.
+    inv Hintro; inv Helim; label_contra.
+
+  - (* Unique_app: nothing is introduced *)
+    intros lab Hintro; inv Hintro.
+
+  - (* Unique_letapp *)
+    intros lab Hintro Helim.
+    inv Hintro; inv Helim; label_contra.
+
+  - (* Unique_constr *)
+    intros lab Hintro Helim.
+    inv Hintro; inv Helim; label_contra.
+
+  - (* Unique_proj *)
+    intros lab Hintro Helim.
+    inv Hintro; inv Helim; label_contra.
+
+  - (* Unique_case: the branches carry it *)
+    intros lab Hintro Helim; label_contra.
+
+  - (* Unique_case_nil: nothing is introduced *)
+    intros y l0 lab Hintro; inv Hintro.
+
+  - (* Unique_case_tl *)
+    intros y l0 lab Hintro Helim.
+    inv Hintro; inv Helim; label_contra.
+Qed.
+
+(* Top-level Bipartite Interaction *)
+
+(* Each unit of a colored tree, paired with its code. *)
+Inductive has_code : ccexp -> color -> exp -> Prop :=
+| Has_code_unit :
+  forall U c e,
+    has_code (CCunit U c e) c e
+
+| Has_code_link1 :
+  forall x cce1 cce2 c e,
+    has_code cce1 c e ->
+    has_code (CClink x cce1 cce2) c e
+
+| Has_code_link2 :
+  forall x cce1 cce2 c e,
+    has_code cce2 c e ->
+    has_code (CClink x cce1 cce2) c e.
+
+Hint Constructors has_code : core.
+
+Lemma coloring_range_code {c1 ce c2 cce} :
+  coloring c1 ce c2 cce ->
+  forall c e, has_code cce c e -> c1 <= c < c2.
+Proof.
+  intros Hcol.
+  induction Hcol as [c U e | c1 c2 c3 x e1 e2 cce1 cce2 Hc1 IH1 Hc2 IH2];
+    intros c0 e0 Hcode.
+  - inv Hcode; lia.
+  - inv Hcode.
+    + match goal with
+      | [Hu : has_code cce1 c0 e0 |- _] => destruct (IH1 c0 e0 Hu) as [Hlo Hhi]
+      end.
+      pose proof (coloring_mono Hc2) as Hm; lia.
+    + match goal with
+      | [Hu : has_code cce2 c0 e0 |- _] => destruct (IH2 c0 e0 Hu) as [Hlo Hhi]
+      end.
+      pose proof (coloring_mono Hc1) as Hm; lia.
+Qed.
+
+Lemma coloring_unique_code {c1 ce c2 cce} :
+  coloring c1 ce c2 cce ->
+  forall c e e',
+    has_code cce c e ->
+    has_code cce c e' ->
+    e = e'.
+Proof.
+  intros Hcol.
+  induction Hcol as [c U e | c1 c2 c3 x e1 e2 cce1 cce2 Hc1 IH1 Hc2 IH2];
+    intros c0 e0 e0' Hu Hu'.
+  - inv Hu; inv Hu'; reflexivity.
+  - inv Hu; inv Hu'.
+    + match goal with
+      | [Ha : has_code cce1 c0 e0, Hb : has_code cce1 c0 e0' |- _] =>
+          exact (IH1 c0 e0 e0' Ha Hb)
+      end.
+    + exfalso.
+      match goal with
+      | [Ha : has_code cce1 c0 e0, Hb : has_code cce2 c0 e0' |- _] =>
+          destruct (coloring_range_code Hc1 c0 e0 Ha) as [Hlo Hhi];
+          destruct (coloring_range_code Hc2 c0 e0' Hb) as [Hlo' Hhi']
+      end; lia.
+    + exfalso.
+      match goal with
+      | [Ha : has_code cce2 c0 e0, Hb : has_code cce1 c0 e0' |- _] =>
+          destruct (coloring_range_code Hc2 c0 e0 Ha) as [Hlo Hhi];
+          destruct (coloring_range_code Hc1 c0 e0' Hb) as [Hlo' Hhi']
+      end; lia.
+    + match goal with
+      | [Ha : has_code cce2 c0 e0, Hb : has_code cce2 c0 e0' |- _] =>
+          exact (IH2 c0 e0 e0' Ha Hb)
+      end.
+Qed.
+
+(* `Λ` agrees with the coloring of `cce`. *)
+Definition labels_context_of (Λ : labels_context) (cce : ccexp) : Prop :=
+  forall c e, has_code cce c e -> labels_separated Λ c e.
+
+Lemma labels_context_of_unit {Λ U c e} :
+  labels_context_of Λ (CCunit U c e) ->
+  labels_separated Λ c e.
+Proof. intros HΛ; exact (HΛ c e (Has_code_unit U c e)). Qed.
+
+Lemma labels_context_of_link1 {Λ x cce1 cce2} :
+  labels_context_of Λ (CClink x cce1 cce2) ->
+  labels_context_of Λ cce1.
+Proof.
+  intros HΛ c e Hcode.
+  exact (HΛ c e (Has_code_link1 x cce1 cce2 c e Hcode)).
+Qed.
+
+Lemma labels_context_of_link2 {Λ x cce1 cce2} :
+  labels_context_of Λ (CClink x cce1 cce2) ->
+  labels_context_of Λ cce2.
+Proof.
+  intros HΛ c e Hcode.
+  exact (HΛ c e (Has_code_link2 x cce1 cce2 c e Hcode)).
+Qed.
+
+(* The introduction labels of each unit, read off the colored tree. *)
+Definition lctx_of (cce : ccexp) : labels_context :=
+  fun c => fun l => exists e, has_code cce c e /\ (l \in intro_label e).
+
+(* Uniquely labeled units give a separated labels context: a label can only be
+   an introduction label of its own unit, and there it is not an elimination
+   label. *)
+Lemma lctx_of_correct {c1 ce c2 cce} :
+  coloring c1 ce c2 cce ->
+  (forall c e, has_code cce c e -> unique_label e) ->
+  labels_context_of (lctx_of cce) cce.
+Proof.
+  intros Hcol Huniq c e Hcode.
+  unfold lctx_of, Ensembles.In.
+  split.
+  - intros l Hl; exists e; split; [exact Hcode | exact Hl].
+  - intros l Hl [e' [Hcode' Hl']].
+    rewrite <- (coloring_unique_code Hcol c e' e Hcode' Hcode) in Hl.
+    exact (unique_label_separated e' (Huniq c e' Hcode') l Hl' Hl).
+Qed.
+
+(* `intro_labeled` of a returned value, as for `unique_context`. *)
+Lemma cbstep_intro_res_aux Λ :
+  forall U c ρ e i r I,
+    cbstep U c ρ e i r I ->
+    intro_cenv Λ ρ ->
+    labels_separated Λ c e ->
+    forall v, r = CRes v -> intro_labeled Λ v.
+Proof.
+  intros U c ρ e i r I Hstep.
+  induction Hstep as
+    [ U c ρ x v Hget
+    | U c ρ I f l xs e k i r Hfuel IHfuel
+    | U c ρ I' U' f f' c' l l' xs ρ' xs' e vs ρ'' i r
+        Hget Hgetl Hsetl Hfuel IHfuel Hsnd
+    | U c ρ e
+    | U c ρ I e i r Hsub IHstep ]
+    using cbstep_ind'
+    with (P := fun U c ρ e i r I =>
+                 intro_cenv Λ ρ -> labels_separated Λ c e ->
+                 forall v, r = CRes v -> intro_labeled Λ v)
+         (P0 := fun U c ρ e i r I =>
+                  intro_cenv Λ ρ -> labels_separated Λ c e ->
+                  forall v, r = CRes v -> intro_labeled Λ v).
+
+  - (* Cbstep_ret *)
+    intros Hρ Hsep v0 Heqr.
+    inv Heqr.
+    eapply intro_cenv_get; eauto.
+
+  - (* Cbstep_fun *)
+    intros Hρ Hsep v0 Heqr.
+    apply (IHfuel (intro_cenv_set f (CTag U c l (CVfun f ρ xs e)) Hρ
+                     (IL_TAG Λ U c l (CVfun f ρ xs e)
+                        (labels_separated_fun_label Hsep)
+                        (IL_CVfun Λ c f ρ xs e Hρ
+                           (labels_separated_fun_body Hsep))))
+                  (labels_separated_fun_cont Hsep) v0 Heqr).
+
+  - (* Cbstep_app *)
+    intros Hρ Hsep v0 Heqr.
+    pose proof (intro_cenv_get Hρ f _ Hget) as Hclo.
+    destruct (intro_labeled_CTag_inv Hclo) as [Hl' Hfun].
+    destruct (intro_labeled_CVfun_inv Hfun) as [Hρ' Hsep'].
+    pose proof (intro_cenv_get_list Hρ xs vs Hgetl) as Hvs.
+    pose proof (intro_cenv_set f' (CTag U' c' l' (CVfun f' ρ' xs' e)) Hρ' Hclo)
+      as Hρ'f.
+    pose proof (intro_cenv_set_lists _ Hρ'f vs xs' ρ'' Hvs Hsetl) as Hρ''.
+    exact (IHfuel Hρ'' Hsep' v0 Heqr).
+
+  - (* CbstepF_OOT *)
+    intros Hρ Hsep v0 Heqr; discriminate Heqr.
+
+  - (* CbstepF_Step *)
+    intros Hρ Hsep v0 Heqr.
+    exact (IHstep Hρ Hsep v0 Heqr).
+Qed.
+
+Lemma cbstep_intro_res Λ U c ρ e i v I :
+  intro_cenv Λ ρ ->
+  labels_separated Λ c e ->
+  cbstep U c ρ e i (CRes v) I ->
+  intro_labeled Λ v.
+Proof.
+  intros Hρ Hsep Hstep.
+  exact (cbstep_intro_res_aux Λ U c ρ e i (CRes v) I Hstep Hρ Hsep v eq_refl).
+Qed.
+
+Lemma cbstep_fuel_intro_res Λ U c ρ e i v I :
+  intro_cenv Λ ρ ->
+  labels_separated Λ c e ->
+  cbstep_fuel U c ρ e i (CRes v) I ->
+  intro_labeled Λ v.
+Proof.
+  intros Hρ Hsep Hstep.
+  inv Hstep.
+  match goal with
+  | [Hs : cbstep _ _ _ _ _ (CRes v) _ |- _] =>
+      exact (cbstep_intro_res Λ U c ρ e _ v _ Hρ Hsep Hs)
+  end.
+Qed.
+
+Lemma interactions_bipartite_union I1 I2 :
+  interactions_bipartite I1 ->
+  interactions_bipartite I2 ->
+  interactions_bipartite (I1 :|: I2).
+Proof.
+  unfold interactions_bipartite.
+  intros H1 H2 cl1 cl2 Hin.
+  inv Hin.
+  - match goal with [HI : _ \in I1 |- _] => exact (H1 cl1 cl2 HI) end.
+  - match goal with [HI : _ \in I2 |- _] => exact (H2 cl1 cl2 HI) end.
+Qed.
+
+(* Top-level `intro_labeled` of a returned value. *)
+Lemma cbstep_top_intro_res_aux Λ :
+  forall ρ cce i r I,
+    cbstep_top ρ cce i r I ->
+    labels_context_of Λ cce ->
+    intro_cenv Λ ρ ->
+    forall v, r = CRes v -> intro_labeled Λ v.
+Proof.
+  intros ρ cce i r I Hstep.
+  induction Hstep as
+    [ ρ x cce1 cce2 i1 i2 U c l v r I1 I2 Hfuel1 IH1 Hforeign Hfuel2 IH2
+    | ρ x cce1 cce2 i I1 Hfuel1 IH1
+    | ρ U c e i r I Hfuel
+    | ρ x cce1 cce2
+    | ρ x cce1 cce2 i r I Htop IHtop ]
+    using cbstep_top_ind'
+    with (P := fun ρ cce i r I =>
+                 labels_context_of Λ cce -> intro_cenv Λ ρ ->
+                 forall v, r = CRes v -> intro_labeled Λ v)
+         (P0 := fun ρ cce i r I =>
+                  labels_context_of Λ cce -> intro_cenv Λ ρ ->
+                  forall v, r = CRes v -> intro_labeled Λ v).
+
+  - (* CbstepT_link_Res *)
+    intros HΛ Hρ v0 Heqr.
+    pose proof (IH1 (labels_context_of_link1 HΛ) Hρ (CTag U c l v) eq_refl) as Hclo.
+    pose proof (intro_cenv_set x (CTag U c l v) Hρ Hclo) as Hρx.
+    exact (IH2 (labels_context_of_link2 HΛ) Hρx v0 Heqr).
+
+  - (* CbstepT_link_OOT *)
+    intros HΛ Hρ v0 Heqr; discriminate Heqr.
+
+  - (* CbstepTF_unit *)
+    intros HΛ Hρ v0 Heqr; subst r.
+    exact (cbstep_fuel_intro_res Λ U c ρ e i v0 I Hρ
+             (labels_context_of_unit HΛ) Hfuel).
+
+  - (* CbstepTF_link_OOT *)
+    intros HΛ Hρ v0 Heqr; discriminate Heqr.
+
+  - (* CbstepTF_link_Step *)
+    intros HΛ Hρ v0 Heqr.
+    exact (IHtop HΛ Hρ v0 Heqr).
+Qed.
+
+Lemma cbstep_top_intro_res Λ ρ cce i v I :
+  labels_context_of Λ cce ->
+  intro_cenv Λ ρ ->
+  cbstep_top ρ cce i (CRes v) I ->
+  intro_labeled Λ v.
+Proof.
+  intros HΛ Hρ Hstep.
+  exact (cbstep_top_intro_res_aux Λ ρ cce i (CRes v) I Hstep HΛ Hρ v eq_refl).
+Qed.
+
+Lemma cbstep_top_fuel_intro_res Λ ρ cce i v I :
+  labels_context_of Λ cce ->
+  intro_cenv Λ ρ ->
+  cbstep_top_fuel ρ cce i (CRes v) I ->
+  intro_labeled Λ v.
+Proof.
+  intros HΛ Hρ Hstep.
+  inv Hstep.
+  - match goal with
+    | [Hs : cbstep_fuel _ _ _ _ _ (CRes v) _ |- _] =>
+        exact (cbstep_fuel_intro_res Λ _ _ _ _ _ v _ Hρ
+                 (labels_context_of_unit HΛ) Hs)
+    end.
+  - match goal with
+    | [Hs : cbstep_top _ _ _ (CRes v) _ |- _] =>
+        exact (cbstep_top_intro_res Λ _ _ _ v _ HΛ Hρ Hs)
+    end.
+Qed.
+
+(* The interactions of a whole linked program are bipartite. *)
+Lemma cbstep_top_bipartite Λ :
+  forall ρ cce i r I,
+    cbstep_top ρ cce i r I ->
+    labels_context_of Λ cce ->
+    intro_cenv Λ ρ ->
+    interactions_bipartite I.
+Proof.
+  intros ρ cce i r I Hstep.
+  induction Hstep as
+    [ ρ x cce1 cce2 i1 i2 U c l v r I1 I2 Hfuel1 IH1 Hforeign Hfuel2 IH2
+    | ρ x cce1 cce2 i I1 Hfuel1 IH1
+    | ρ U c e i r I Hfuel
+    | ρ x cce1 cce2
+    | ρ x cce1 cce2 i r I Htop IHtop ]
+    using cbstep_top_ind'
+    with (P := fun ρ cce i r I =>
+                 labels_context_of Λ cce -> intro_cenv Λ ρ ->
+                 interactions_bipartite I)
+         (P0 := fun ρ cce i r I =>
+                  labels_context_of Λ cce -> intro_cenv Λ ρ ->
+                  interactions_bipartite I).
+
+  - (* CbstepT_link_Res *)
+    intros HΛ Hρ.
+    pose proof (labels_context_of_link1 HΛ) as HΛ1.
+    pose proof (labels_context_of_link2 HΛ) as HΛ2.
+    pose proof (cbstep_top_fuel_intro_res Λ ρ cce1 i1 (CTag U c l v) I1
+                  HΛ1 Hρ Hfuel1) as Hclo.
+    pose proof (intro_cenv_set x (CTag U c l v) Hρ Hclo) as Hρx.
+    exact (interactions_bipartite_union I1 I2 (IH1 HΛ1 Hρ) (IH2 HΛ2 Hρx)).
+
+  - (* CbstepT_link_OOT *)
+    intros HΛ Hρ.
+    exact (IH1 (labels_context_of_link1 HΛ) Hρ).
+
+  - (* CbstepTF_unit *)
+    intros HΛ Hρ.
+    exact (cbstep_fuel_bipartite Λ U c ρ e i r I Hfuel Hρ
+             (labels_context_of_unit HΛ)).
+
+  - (* CbstepTF_link_OOT *)
+    intros HΛ Hρ.
+    apply interactions_bipartite_empty.
+
+  - (* CbstepTF_link_Step *)
+    intros HΛ Hρ.
+    exact (IHtop HΛ Hρ).
+Qed.
+
+Lemma cbstep_top_fuel_bipartite Λ ρ cce i r I :
+  cbstep_top_fuel ρ cce i r I ->
+  labels_context_of Λ cce ->
+  intro_cenv Λ ρ ->
+  interactions_bipartite I.
+Proof.
+  intros Hstep HΛ Hρ.
+  inv Hstep.
+  - match goal with
+    | [Hs : cbstep_fuel _ _ _ _ _ _ _ |- _] =>
+        exact (cbstep_fuel_bipartite Λ _ _ _ _ _ _ _ Hs Hρ
+                 (labels_context_of_unit HΛ))
+    end.
+  - apply interactions_bipartite_empty.
+  - match goal with
+    | [Hs : cbstep_top _ _ _ _ _ |- _] =>
+        exact (cbstep_top_bipartite Λ _ _ _ _ _ Hs HΛ Hρ)
+    end.
+Qed.
+
+(* If every compilation unit is uniquely labeled, the interactions the linked
+   program records form a bipartite graph. *)
+Theorem cbstep_top_bipartite_unique_label c1 ce c2 cce ρ i r I :
+  coloring c1 ce c2 cce ->
+  (forall c e, has_code cce c e -> unique_label e) ->
+  intro_cenv (lctx_of cce) ρ ->
+  cbstep_top ρ cce i r I ->
+  interactions_bipartite I.
+Proof.
+  intros Hcol Huniq Hρ Hstep.
+  exact (cbstep_top_bipartite (lctx_of cce) ρ cce i r I Hstep
+           (lctx_of_correct Hcol Huniq) Hρ).
+Qed.
