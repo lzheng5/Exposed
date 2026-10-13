@@ -499,79 +499,96 @@ Proof. srun eauto using cbstep_fuel_deterministic_aux. Qed.
    actually interact.  `internals_context` forces every occurrence of a color to agree. *)
 Definition internals_context := color -> internals.
 
-(* Unique Color Context / Well-formedness *)
+(* Well-formed Value and Environment w.r.t. an Internals Context *)
 (* Every tag occurring in a value, or in an environment, assigns to its color
    the internal set that `Θ` prescribes for it. *)
-Inductive unique_context (Θ : internals_context) : clval -> Prop :=
-| UC_TAG :
+Inductive wf_cval (Θ : internals_context) : clval -> Prop :=
+| WF_TAG :
   forall U c l v,
     U <--> Θ c ->
-    unique_context' Θ v ->
-    unique_context Θ (CTag U c l v)
+    wf_cval' Θ v ->
+    wf_cval Θ (CTag U c l v)
 
-with unique_context' (Θ : internals_context) : cval -> Prop :=
-| UC_CVfun :
+with wf_cval' (Θ : internals_context) : cval -> Prop :=
+| WF_CVfun :
   forall f ρ xs e,
-    unique_cenv Θ ρ ->
-    unique_context' Θ (CVfun f ρ xs e)
+    wf_cenv Θ ρ ->
+    wf_cval' Θ (CVfun f ρ xs e)
 
-| UC_CVconstr_nil :
+| WF_CVconstr_nil :
   forall t,
-    unique_context' Θ (CVconstr t [])
+    wf_cval' Θ (CVconstr t [])
 
-| UC_CVconstr :
+| WF_CVconstr :
   forall t v vs,
-    unique_context Θ v ->
-    unique_context' Θ (CVconstr t vs) ->
-    unique_context' Θ (CVconstr t (v :: vs))
+    wf_cval Θ v ->
+    wf_cval' Θ (CVconstr t vs) ->
+    wf_cval' Θ (CVconstr t (v :: vs))
 
-with unique_cenv (Θ : internals_context) : cenv -> Prop :=
-| UC_cenv :
+with wf_cenv (Θ : internals_context) : cenv -> Prop :=
+| WF_cenv :
   forall ρ,
-    (forall x v, ρ ! x = Some v -> unique_context Θ v) ->
-    unique_cenv Θ ρ.
+    (forall x v, ρ ! x = Some v -> wf_cval Θ v) ->
+    wf_cenv Θ ρ.
 
-Hint Constructors unique_context : core.
-Hint Constructors unique_context' : core.
-Hint Constructors unique_cenv : core.
+Hint Constructors wf_cval : core.
+Hint Constructors wf_cval' : core.
+Hint Constructors wf_cenv : core.
 
-Scheme unique_context_mut := Induction for unique_context Sort Prop
-with unique_context'_mut := Induction for unique_context' Sort Prop
-with unique_cenv_mut := Induction for unique_cenv Sort Prop.
+Scheme wf_cval_mut := Induction for wf_cval Sort Prop
+with wf_cval'_mut := Induction for wf_cval' Sort Prop
+with wf_cenv_mut := Induction for wf_cenv Sort Prop.
+
+(* A result is well-formed if it is out of time, or returns a well-formed value. *)
+Inductive wf_cres (Θ : internals_context) : cres -> Prop :=
+| WF_COOT :
+  wf_cres Θ COOT
+
+| WF_CRes :
+  forall v,
+    wf_cval Θ v ->
+    wf_cres Θ (CRes v).
+
+Hint Constructors wf_cres : core.
 
 (* Inversion *)
-Lemma unique_context_CTag_inv {Θ U c l v} :
-  unique_context Θ (CTag U c l v) ->
-  (U <--> Θ c) /\ unique_context' Θ v.
-Proof. intros Huc; inv Huc; split; assumption. Qed.
+Lemma wf_cval_CTag_inv {Θ U c l v} :
+  wf_cval Θ (CTag U c l v) ->
+  (U <--> Θ c) /\ wf_cval' Θ v.
+Proof. intros Hwf; inv Hwf; split; assumption. Qed.
 
-Lemma unique_context_CVfun_inv {Θ f ρ xs e} :
-  unique_context' Θ (CVfun f ρ xs e) ->
-  unique_cenv Θ ρ.
-Proof. intros Huc; inv Huc; assumption. Qed.
+Lemma wf_cval_CVfun_inv {Θ f ρ xs e} :
+  wf_cval' Θ (CVfun f ρ xs e) ->
+  wf_cenv Θ ρ.
+Proof. intros Hwf; inv Hwf; assumption. Qed.
 
-(* `unique_cenv` is preserved by the environment operations of the semantics *)
-Lemma unique_cenv_get {Θ ρ} :
-  unique_cenv Θ ρ ->
+Lemma wf_cres_CRes_inv {Θ v} :
+  wf_cres Θ (CRes v) ->
+  wf_cval Θ v.
+Proof. intros Hwf; inv Hwf; assumption. Qed.
+
+(* `wf_cenv` is preserved by the environment operations of the semantics *)
+Lemma wf_cenv_get {Θ ρ} :
+  wf_cenv Θ ρ ->
   forall x v,
     ρ ! x = Some v ->
-    unique_context Θ v.
+    wf_cval Θ v.
 Proof. fcrush. Qed.
 
-Lemma unique_cenv_get_list {Θ ρ} :
-  unique_cenv Θ ρ ->
+Lemma wf_cenv_get_list {Θ ρ} :
+  wf_cenv Θ ρ ->
   forall xs vs,
     get_list xs ρ = Some vs ->
-    Forall (unique_context Θ) vs.
+    Forall (wf_cval Θ) vs.
 Proof.
   intros Henv xs.
   induction xs as [| x xs IHxs]; simpl; intros vs Hget; fcrush.
 Qed.
 
-Lemma unique_cenv_set {Θ ρ} x v :
-  unique_cenv Θ ρ ->
-  unique_context Θ v ->
-  unique_cenv Θ (M.set x v ρ).
+Lemma wf_cenv_set {Θ ρ} x v :
+  wf_cenv Θ ρ ->
+  wf_cval Θ v ->
+  wf_cenv Θ (M.set x v ρ).
 Proof.
   intros Henv Hv.
   inv Henv.
@@ -581,13 +598,13 @@ Proof.
   - rewrite M.gso in *; fcrush.
 Qed.
 
-Lemma unique_cenv_set_lists {Θ} :
+Lemma wf_cenv_set_lists {Θ} :
   forall ρ,
-    unique_cenv Θ ρ ->
+    wf_cenv Θ ρ ->
     forall vs xs ρ',
-      Forall (unique_context Θ) vs ->
+      Forall (wf_cval Θ) vs ->
       set_lists xs vs ρ = Some ρ' ->
-      unique_cenv Θ ρ'.
+      wf_cenv Θ ρ'.
 Proof.
   intros ρ Henv vs.
   induction vs as [| v vs IHvs]; intros xs ρ' Hvs Hset.
@@ -598,8 +615,8 @@ Proof.
     inv Hset.
     inv Hvs.
     match goal with
-    | [Hv : unique_context Θ v, Hvs' : Forall (unique_context Θ) vs |- _] =>
-        exact (unique_cenv_set x v (IHvs xs ρ'' Hvs' Heqρ'') Hv)
+    | [Hv : wf_cval Θ v, Hvs' : Forall (wf_cval Θ) vs |- _] =>
+        exact (wf_cenv_set x v (IHvs xs ρ'' Hvs' Heqρ'') Hv)
     end.
 Qed.
 
@@ -611,7 +628,7 @@ Lemma cbstep_respect Θ :
   forall U c ρ e i r I,
     cbstep U c ρ e i r I ->
     U <--> Θ c ->
-    unique_cenv Θ ρ ->
+    wf_cenv Θ ρ ->
     forall c0, interactions_respect (Θ c0) c0 I.
 Proof.
   intros U c ρ e i r I Hstep.
@@ -625,11 +642,11 @@ Proof.
     using cbstep_ind'
     with (P := fun U c ρ e i r I =>
                  U <--> Θ c ->
-                 unique_cenv Θ ρ ->
+                 wf_cenv Θ ρ ->
                  forall c0, interactions_respect (Θ c0) c0 I)
          (P0 := fun U c ρ e i r I =>
                   U <--> Θ c ->
-                  unique_cenv Θ ρ ->
+                  wf_cenv Θ ρ ->
                   forall c0, interactions_respect (Θ c0) c0 I).
 
   - (* Cbstep_ret: nothing is recorded *)
@@ -638,21 +655,21 @@ Proof.
 
   - (* Cbstep_fun: the new binding agrees with Θ, so the IH applies *)
     intros HU Hρ c0.
-    pose proof (unique_cenv_set f (CTag U c l (CVfun f ρ xs e)) Hρ
-                  (UC_TAG Θ U c l (CVfun f ρ xs e) HU
-                     (UC_CVfun Θ f ρ xs e Hρ))) as Hρf.
+    pose proof (wf_cenv_set f (CTag U c l (CVfun f ρ xs e)) Hρ
+                  (WF_TAG Θ U c l (CVfun f ρ xs e) HU
+                     (WF_CVfun Θ f ρ xs e Hρ))) as Hρf.
     eauto.
 
   - (* Cbstep_app *)
     intros HU Hρ c0.
     (* the callee's tag agrees with Θ, and so does its environment *)
-    pose proof (unique_cenv_get Hρ f _ Hget) as Hclo.
-    destruct (unique_context_CTag_inv Hclo) as [HU' Hfun].
-    pose proof (unique_context_CVfun_inv Hfun) as Hρ'.
-    pose proof (unique_cenv_get_list Hρ xs vs Hgetl) as Hvs.
-    pose proof (unique_cenv_set f' (CTag U' c' l' (CVfun f' ρ' xs' e)) Hρ' Hclo)
+    pose proof (wf_cenv_get Hρ f _ Hget) as Hclo.
+    destruct (wf_cval_CTag_inv Hclo) as [HU' Hfun].
+    pose proof (wf_cval_CVfun_inv Hfun) as Hρ'.
+    pose proof (wf_cenv_get_list Hρ xs vs Hgetl) as Hvs.
+    pose proof (wf_cenv_set f' (CTag U' c' l' (CVfun f' ρ' xs' e)) Hρ' Hclo)
       as Hρ'f.
-    pose proof (unique_cenv_set_lists _ Hρ'f vs xs' ρ'' Hvs Hsetl) as Hρ''.
+    pose proof (wf_cenv_set_lists _ Hρ'f vs xs' ρ'' Hvs Hsetl) as Hρ''.
     pose proof (IHfuel HU' Hρ'') as HI'.
     apply interactions_respect_add; [| exact (HI' c0)].
     destruct (interaction_sound_inv _ _ _ _ _ _ Hsnd)
@@ -684,7 +701,7 @@ Lemma cbstep_fuel_respect Θ :
   forall U c ρ e i r I,
     cbstep_fuel U c ρ e i r I ->
     U <--> Θ c ->
-    unique_cenv Θ ρ ->
+    wf_cenv Θ ρ ->
     forall c0, interactions_respect (Θ c0) c0 I.
 Proof.
   intros U c ρ e i r I Hstep HU Hρ c0.
@@ -698,7 +715,7 @@ Qed.
 
 Lemma cbstep_closed Θ U c ρ e i r I :
   U <--> Θ c ->
-  unique_cenv Θ ρ ->
+  wf_cenv Θ ρ ->
   cbstep U c ρ e i r I ->
   internals_closed U c I.
 Proof.
@@ -710,7 +727,7 @@ Qed.
 
 Lemma cbstep_fuel_closed Θ U c ρ e i r I :
   U <--> Θ c ->
-  unique_cenv Θ ρ ->
+  wf_cenv Θ ρ ->
   cbstep_fuel U c ρ e i r I ->
   internals_closed U c I.
 Proof.
@@ -720,17 +737,13 @@ Proof.
   exact (cbstep_fuel_respect Θ U c ρ e i r I Hstep HU Hρ c).
 Qed.
 
-(* A returned value agrees with Θ as well.  The result is not fixed to `CRes v`
-   by any constructor, so the induction carries it as an equation, as in
-   `cbstep_deterministic_aux`. *)
-Lemma cbstep_unique_res_aux Θ :
+(* A returned value agrees with Θ as well. *)
+Lemma cbstep_wf_cres Θ :
   forall U c ρ e i r I,
     cbstep U c ρ e i r I ->
-    forall v,
-      r = CRes v ->
-      U <--> Θ c ->
-      unique_cenv Θ ρ ->
-      unique_context Θ v.
+    U <--> Θ c ->
+    wf_cenv Θ ρ ->
+    wf_cres Θ r.
 Proof.
   intros U c ρ e i r I Hstep.
   induction Hstep as
@@ -742,67 +755,204 @@ Proof.
     | U c ρ I e i r Hsub IHstep ]
     using cbstep_ind'
     with (P := fun U c ρ e i r I =>
-                 forall v, r = CRes v ->
-                 U <--> Θ c -> unique_cenv Θ ρ -> unique_context Θ v)
+                 U <--> Θ c -> wf_cenv Θ ρ -> wf_cres Θ r)
          (P0 := fun U c ρ e i r I =>
-                  forall v, r = CRes v ->
-                  U <--> Θ c -> unique_cenv Θ ρ -> unique_context Θ v).
+                  U <--> Θ c -> wf_cenv Θ ρ -> wf_cres Θ r).
 
   - (* Cbstep_ret: the value comes straight out of the environment *)
-    intros v0 Heqr HU Hρ.
-    inv Heqr.
-    eapply unique_cenv_get; eauto.
+    intros HU Hρ.
+    apply WF_CRes.
+    eapply wf_cenv_get; eauto.
 
   - (* Cbstep_fun: the new binding agrees with Θ, so the IH applies *)
-    intros v0 Heqr HU Hρ.
-    pose proof (unique_cenv_set f (CTag U c l (CVfun f ρ xs e)) Hρ
-                  (UC_TAG Θ U c l (CVfun f ρ xs e) HU
-                     (UC_CVfun Θ f ρ xs e Hρ))) as Hρf.
+    intros HU Hρ.
+    pose proof (wf_cenv_set f (CTag U c l (CVfun f ρ xs e)) Hρ
+                  (WF_TAG Θ U c l (CVfun f ρ xs e) HU
+                     (WF_CVfun Θ f ρ xs e Hρ))) as Hρf.
     eauto.
 
   - (* Cbstep_app: the callee runs at its own color, with its own internals *)
-    intros v0 Heqr HU Hρ.
-    pose proof (unique_cenv_get Hρ f _ Hget) as Hclo.
-    destruct (unique_context_CTag_inv Hclo) as [HU' Hfun].
-    pose proof (unique_context_CVfun_inv Hfun) as Hρ'.
-    pose proof (unique_cenv_get_list Hρ xs vs Hgetl) as Hvs.
-    pose proof (unique_cenv_set f' (CTag U' c' l' (CVfun f' ρ' xs' e)) Hρ' Hclo)
+    intros HU Hρ.
+    pose proof (wf_cenv_get Hρ f _ Hget) as Hclo.
+    destruct (wf_cval_CTag_inv Hclo) as [HU' Hfun].
+    pose proof (wf_cval_CVfun_inv Hfun) as Hρ'.
+    pose proof (wf_cenv_get_list Hρ xs vs Hgetl) as Hvs.
+    pose proof (wf_cenv_set f' (CTag U' c' l' (CVfun f' ρ' xs' e)) Hρ' Hclo)
       as Hρ'f.
-    pose proof (unique_cenv_set_lists _ Hρ'f vs xs' ρ'' Hvs Hsetl) as Hρ''.
+    pose proof (wf_cenv_set_lists _ Hρ'f vs xs' ρ'' Hvs Hsetl) as Hρ''.
     eauto.
 
   - (* CbstepF_OOT: no value is returned *)
-    intros v0 Heqr HU Hρ.
-    discriminate Heqr.
+    intros HU Hρ.
+    apply WF_COOT.
 
   - (* CbstepF_Step *)
-    intros v0 Heqr HU Hρ.
+    intros HU Hρ.
     eauto.
 Qed.
 
-Lemma cbstep_unique_res Θ U c ρ e i v I :
+Lemma cbstep_fuel_wf_cres Θ U c ρ e i r I :
   U <--> Θ c ->
-  unique_cenv Θ ρ ->
-  cbstep U c ρ e i (CRes v) I ->
-  unique_context Θ v.
-Proof.
-  intros HU Hρ Hstep.
-  exact (cbstep_unique_res_aux Θ U c ρ e i (CRes v) I Hstep v eq_refl HU Hρ).
-Qed.
-
-Lemma cbstep_fuel_unique_res Θ U c ρ e i v I :
-  U <--> Θ c ->
-  unique_cenv Θ ρ ->
-  cbstep_fuel U c ρ e i (CRes v) I ->
-  unique_context Θ v.
+  wf_cenv Θ ρ ->
+  cbstep_fuel U c ρ e i r I ->
+  wf_cres Θ r.
 Proof.
   intros HU Hρ Hstep.
   inv Hstep.
-  match goal with
-  | [Hs : cbstep _ _ _ _ _ (CRes v) _ |- _] =>
-      exact (cbstep_unique_res Θ U c ρ e _ v _ HU Hρ Hs)
-  end.
+  - apply WF_COOT.
+  - match goal with
+    | [Hs : cbstep _ _ _ _ _ _ _ |- _] =>
+        exact (cbstep_wf_cres Θ U c ρ e _ _ _ Hs HU Hρ)
+    end.
 Qed.
+
+(* Cross-semantics Logical Relations *)
+Section LR.
+
+  Variable θ : internals_context.
+
+  Definition R' (P : nat -> wval -> clval -> Prop) (i : nat) (r1 : res) (r2 : cres) :=
+    match r1, r2 with
+    | OOT, COOT => True
+    | Res v1, CRes v2 => P i v1 v2
+    | _, _ => False
+    end.
+
+  Definition E' (P : nat -> wval -> clval -> Prop) (U : internals) (c : color) (i : nat) (ρ1 : env) (ρ2 : cenv) (e : exp) : Prop :=
+    forall j1 r1,
+      j1 <= i ->
+      bstep_fuel ρ1 e j1 r1 ->
+      exists j2 r2 I2,
+        cbstep_fuel U c ρ2 e j2 r2 I2 /\
+          R' P (i - j1) r1 r2.
+
+
+  Fixpoint V (i : nat) (wv : wval) (cv : clval) {struct i} : Prop :=
+    wf_val wv /\
+      wf_cval θ cv /\
+      match wv, cv with
+      | TAG _ l1 v1, CTAG _ U2 (c2, l2) v2 =>
+          l1 = l2 /\
+            match v1, v2 with
+            | Vconstr c1 vs1, CVconstr c2 vs2 =>
+                c1 = c2 /\
+                  length vs1 = length vs2 /\
+                  match i with
+                  | 0 => True
+                  | S i0 => Forall2 (V i0) vs1 vs2
+                  end
+
+            | Vfun f1 ρ1 xs1 e1, CVfun f2 ρ2 xs2 e2 =>
+                f1 = f2 /\
+                  xs1 = xs2 /\
+                  e1 = e2 /\
+                  match i with
+                  | 0 => True
+                  | S i0 =>
+                      forall j U c l vs1 vs2 ρ3 ρ4,
+                        j <= i0 ->
+                        Forall2 (V (i0 - (i0 - j))) vs1 vs2 ->
+                        set_lists xs1 vs1 (M.set f1 (Tag l1 (Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
+                        set_lists xs2 vs2 (M.set f2 (CTag U2 c2 l2 (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
+                        interaction_sound U2 (c2, l2) U (c, l) ->
+                        E' V U2 c2 (i0 - (i0 - j)) ρ3 ρ4 e1
+                  end
+
+            | _, _ => False
+            end
+      end.
+
+  Definition R := (R' V).
+
+  Definition E := (E' V).
+
+  (* Lemmas about [wf_cval], [wf_cres], and [wf_cenv] *)
+  Lemma V_wf_val_l {i v1 v2}:
+    V i v1 v2 ->
+    wf_val v1.
+  Proof. intros; destruct i; simpl in *; fcrush. Qed.
+
+  Lemma V_wf_val_Forall_l {i vs1 vs2} :
+    Forall2 (V i) vs1 vs2 ->
+    Forall wf_val vs1.
+  Proof. intros H. induction H; eauto using V_wf_val_l. Qed.
+
+  Lemma V_wf_res_l {i v1 v2}:
+    V i v1 v2 ->
+    wf_res (Res v1).
+  Proof. intros; eauto using V_wf_val_l; eauto. Qed.
+
+  Lemma R_wf_res_l {i r1 r2} :
+    R i r1 r2 ->
+    wf_res r1.
+  Proof.
+    unfold R.
+    intros.
+    destruct r1; destruct r2; try contradiction;
+      eauto using V_wf_val_l.
+  Qed.
+
+  (* Lemma V_wf_cval_r {θ i v1 v2}: *)
+  (*   V i v1 v2 -> *)
+  (*   wf_cval θ v2. *)
+  (* Proof. intros; destruct i; simpl in *; fcrush. Qed. *)
+
+  (* Lemma V_wf_cval_Forall_r {i vs1 vs2} : *)
+  (*   Forall2 (V i) vs1 vs2 -> *)
+  (*   Forall wf_cval vs2. *)
+  (* Proof. intros H. induction H; eauto using V_wf_cval_r. Qed. *)
+
+  (* Lemma V_wf_cres_r {i v1 v2}: *)
+  (*   V i v1 v2 -> *)
+  (*   wf_cres (CRes v2). *)
+  (* Proof. intros; eauto using V_wf_cval_r; eauto. Qed. *)
+
+  (* Lemma R_wf_cres_r {i r1 r2} : *)
+  (*   R i r1 r2 -> *)
+  (*   wf_cres r2. *)
+  (* Proof. *)
+  (*   unfold R. *)
+  (*   intros. *)
+  (*   destruct r1; destruct r2; try contradiction; *)
+  (*     eauto using V_wf_cval_r. *)
+  (* Qed. *)
+
+  (* Lemma V_refine_val {i v1 v2} : *)
+  (*   V i v1 v2 -> *)
+  (*   refine_val v1 v2. *)
+  (* Proof. intros; destruct i; simpl in *; fcrush. Qed. *)
+
+  (* Lemma V_refine_val_Forall {i vs1 vs2} : *)
+  (*   Forall2 (V i) vs1 vs2 -> *)
+  (*   Forall2 refine_val vs1 vs2. *)
+  (* Proof. *)
+  (*   eapply Forall2_impl; eauto. *)
+  (*   eauto using V_refine_val. *)
+  (* Qed. *)
+
+  (* Lemma R_refine_res {i r1 r2} : *)
+  (*   R i r1 r2 -> *)
+  (*   refine_res r1 r2. *)
+  (* Proof. *)
+  (*   unfold R, R'. *)
+  (*   intros. *)
+  (*   destruct r1; destruct r2; try contradiction; eauto. *)
+  (*   eauto using V_refine_val. *)
+  (* Qed. *)
+
+  (* (* Inversion Lemmas *) *)
+  (* Lemma R_res_inv_l i v1 r2 : *)
+  (*   R i (Res v1) r2 -> *)
+  (*   exists v2, r2 = CRes v2 /\ V i v1 v2. *)
+  (* Proof. intros. fcrush. Qed. *)
+
+  (* Lemma R_res_inv_l_V v1 r2 : *)
+  (*   (forall k, R k (Res v1) r2) -> *)
+  (*   exists v2, r2 = CRes v2 /\ (forall k, V k v1 v2). *)
+  (* Proof. intros. hauto. Qed. *)
+
+
+End LR.
 
 (* Top Level *)
 (* The top-level consists of two phases: coloring and running. *)
@@ -1043,15 +1193,13 @@ Proof.
   exact (HΘ c U (Has_unit_link2 x cce1 cce2 c U Hunit)).
 Qed.
 
-(* A value returned by a linked program agrees with Θ.  As in
-   `cbstep_unique_res_aux`, no constructor fixes the result to `CRes v`, so the
-   induction carries it as an equation. *)
-Lemma cbstep_top_unique_res_aux Θ :
+(* A value returned by a linked program agrees with Θ. *)
+Lemma cbstep_top_wf_cres Θ :
   forall ρ cce i r I,
     cbstep_top ρ cce i r I ->
     internals_context_of Θ cce ->
-    unique_cenv Θ ρ ->
-    forall v, r = CRes v -> unique_context Θ v.
+    wf_cenv Θ ρ ->
+    wf_cres Θ r.
 Proof.
   intros ρ cce i r I Hstep.
   induction Hstep as
@@ -1063,76 +1211,68 @@ Proof.
     using cbstep_top_ind'
     with (P := fun ρ cce i r I =>
                  internals_context_of Θ cce ->
-                 unique_cenv Θ ρ ->
-                 forall v, r = CRes v -> unique_context Θ v)
+                 wf_cenv Θ ρ ->
+                 wf_cres Θ r)
          (P0 := fun ρ cce i r I =>
                   internals_context_of Θ cce ->
-                  unique_cenv Θ ρ ->
-                  forall v, r = CRes v -> unique_context Θ v).
+                  wf_cenv Θ ρ ->
+                  wf_cres Θ r).
 
   - (* CbstepT_link_Res: the linked value agrees with Θ, so the second unit
        still runs in a Θ-consistent environment *)
-    intros HΘ Hρ v0 Heqr.
-    pose proof (IH1 (internals_context_of_link1 HΘ) Hρ (CTag U c l v) eq_refl)
+    intros HΘ Hρ.
+    pose proof (wf_cres_CRes_inv (IH1 (internals_context_of_link1 HΘ) Hρ))
       as Hclo.
-    pose proof (unique_cenv_set x (CTag U c l v) Hρ Hclo) as Hρx.
-    exact (IH2 (internals_context_of_link2 HΘ) Hρx v0 Heqr).
+    pose proof (wf_cenv_set x (CTag U c l v) Hρ Hclo) as Hρx.
+    exact (IH2 (internals_context_of_link2 HΘ) Hρx).
 
   - (* CbstepT_link_OOT: no value is returned *)
-    intros HΘ Hρ v0 Heqr; discriminate Heqr.
+    intros HΘ Hρ.
+    apply WF_COOT.
 
   - (* CbstepTF_unit *)
-    intros HΘ Hρ v0 Heqr; subst r.
-    exact (cbstep_fuel_unique_res Θ U c ρ e i v0 I
+    intros HΘ Hρ.
+    exact (cbstep_fuel_wf_cres Θ U c ρ e i r I
              (internals_context_of_unit HΘ) Hρ Hfuel).
 
   - (* CbstepTF_link_OOT: no value is returned *)
-    intros HΘ Hρ v0 Heqr; discriminate Heqr.
+    intros HΘ Hρ.
+    apply WF_COOT.
 
   - (* CbstepTF_link_Step *)
-    intros HΘ Hρ v0 Heqr.
-    exact (IHtop HΘ Hρ v0 Heqr).
+    intros HΘ Hρ.
+    exact (IHtop HΘ Hρ).
 Qed.
 
-Lemma cbstep_top_unique_res Θ ρ cce i v I :
+Lemma cbstep_top_fuel_wf_cres Θ ρ cce i r I :
   internals_context_of Θ cce ->
-  unique_cenv Θ ρ ->
-  cbstep_top ρ cce i (CRes v) I ->
-  unique_context Θ v.
-Proof.
-  intros HΘ Hρ Hstep.
-  exact (cbstep_top_unique_res_aux Θ ρ cce i (CRes v) I Hstep HΘ Hρ v eq_refl).
-Qed.
-
-Lemma cbstep_top_fuel_unique_res Θ ρ cce i v I :
-  internals_context_of Θ cce ->
-  unique_cenv Θ ρ ->
-  cbstep_top_fuel ρ cce i (CRes v) I ->
-  unique_context Θ v.
+  wf_cenv Θ ρ ->
+  cbstep_top_fuel ρ cce i r I ->
+  wf_cres Θ r.
 Proof.
   intros HΘ Hρ Hstep.
   inv Hstep.
   - match goal with
-    | [Hs : cbstep_fuel _ _ _ _ _ (CRes v) _ |- _] =>
-        exact (cbstep_fuel_unique_res Θ _ _ _ _ _ v _
+    | [Hs : cbstep_fuel _ _ _ _ _ _ _ |- _] =>
+        exact (cbstep_fuel_wf_cres Θ _ _ _ _ _ _ _
                  (internals_context_of_unit HΘ) Hρ Hs)
     end.
+  - apply WF_COOT.
   - match goal with
-    | [Hs : cbstep_top _ _ _ (CRes v) _ |- _] =>
-        exact (cbstep_top_unique_res Θ _ _ _ v _ HΘ Hρ Hs)
+    | [Hs : cbstep_top _ _ _ _ _ |- _] =>
+        exact (cbstep_top_wf_cres Θ _ _ _ _ _ Hs HΘ Hρ)
     end.
 Qed.
 
 (* Top-level Closure Property *)
 (* Each unit of the linked program respects *every* unit's internal set: the
    per-unit theorem applies at each `CCunit`, and linking only unions what the
-   two sides recorded.  Carrying `unique_cenv` across a link is exactly what
-   `cbstep_top_fuel_unique_res` provides. *)
+   two sides recorded.  *)
 Lemma cbstep_top_respect Θ :
   forall ρ cce i r I,
     cbstep_top ρ cce i r I ->
     internals_context_of Θ cce ->
-    unique_cenv Θ ρ ->
+    wf_cenv Θ ρ ->
     forall c0, interactions_respect (Θ c0) c0 I.
 Proof.
   intros ρ cce i r I Hstep.
@@ -1145,20 +1285,21 @@ Proof.
     using cbstep_top_ind'
     with (P := fun ρ cce i r I =>
                  internals_context_of Θ cce ->
-                 unique_cenv Θ ρ ->
+                 wf_cenv Θ ρ ->
                  forall c0, interactions_respect (Θ c0) c0 I)
          (P0 := fun ρ cce i r I =>
                   internals_context_of Θ cce ->
-                  unique_cenv Θ ρ ->
+                  wf_cenv Θ ρ ->
                   forall c0, interactions_respect (Θ c0) c0 I).
 
   - (* CbstepT_link_Res *)
     intros HΘ Hρ c0.
     pose proof (internals_context_of_link1 HΘ) as HΘ1.
     pose proof (internals_context_of_link2 HΘ) as HΘ2.
-    pose proof (cbstep_top_fuel_unique_res Θ ρ cce1 i1 (CTag U c l v) I1
-                  HΘ1 Hρ Hfuel1) as Hclo.
-    pose proof (unique_cenv_set x (CTag U c l v) Hρ Hclo) as Hρx.
+    pose proof (wf_cres_CRes_inv
+                  (cbstep_top_fuel_wf_cres Θ ρ cce1 i1 _ I1 HΘ1 Hρ Hfuel1))
+      as Hclo.
+    pose proof (wf_cenv_set x (CTag U c l v) Hρ Hclo) as Hρx.
     exact (interactions_respect_union (Θ c0) c0 I1 I2
              (IH1 HΘ1 Hρ c0) (IH2 HΘ2 Hρx c0)).
 
@@ -1183,7 +1324,7 @@ Qed.
 Lemma cbstep_top_fuel_respect Θ ρ cce i r I :
   cbstep_top_fuel ρ cce i r I ->
   internals_context_of Θ cce ->
-  unique_cenv Θ ρ ->
+  wf_cenv Θ ρ ->
   forall c0, interactions_respect (Θ c0) c0 I.
 Proof.
   intros Hstep HΘ Hρ c0.
@@ -1204,7 +1345,7 @@ Qed.
    program records --- not just under its own. *)
 Lemma cbstep_top_closed Θ ρ cce i r I :
   internals_context_of Θ cce ->
-  unique_cenv Θ ρ ->
+  wf_cenv Θ ρ ->
   cbstep_top ρ cce i r I ->
   forall c U, has_unit cce c U -> internals_closed U c I.
 Proof.
@@ -1216,7 +1357,7 @@ Qed.
 
 Lemma cbstep_top_fuel_closed Θ ρ cce i r I :
   internals_context_of Θ cce ->
-  unique_cenv Θ ρ ->
+  wf_cenv Θ ρ ->
   cbstep_top_fuel ρ cce i r I ->
   forall c U, has_unit cce c U -> internals_closed U c I.
 Proof.
@@ -1815,7 +1956,7 @@ Proof.
     exact (unique_label_separated e' (Huniq c e' Hcode') l Hl' Hl).
 Qed.
 
-(* `intro_labeled` of a returned value, as for `unique_context`. *)
+(* `intro_labeled` of a returned value, as for `wf_cres`. *)
 Lemma cbstep_intro_res_aux Λ :
   forall U c ρ e i r I,
     cbstep U c ρ e i r I ->
