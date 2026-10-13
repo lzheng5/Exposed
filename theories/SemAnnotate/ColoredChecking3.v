@@ -892,65 +892,544 @@ Section LR.
       eauto using V_wf_val_l.
   Qed.
 
-  (* Lemma V_wf_cval_r {θ i v1 v2}: *)
-  (*   V i v1 v2 -> *)
-  (*   wf_cval θ v2. *)
-  (* Proof. intros; destruct i; simpl in *; fcrush. Qed. *)
+  Lemma V_wf_cval_r {i v1 v2}:
+    V i v1 v2 ->
+    wf_cval θ v2.
+  Proof. intros; destruct i; simpl in *; fcrush. Qed.
 
-  (* Lemma V_wf_cval_Forall_r {i vs1 vs2} : *)
-  (*   Forall2 (V i) vs1 vs2 -> *)
-  (*   Forall wf_cval vs2. *)
-  (* Proof. intros H. induction H; eauto using V_wf_cval_r. Qed. *)
+  Lemma V_wf_cval_Forall_r {i vs1 vs2} :
+    Forall2 (V i) vs1 vs2 ->
+    Forall (wf_cval θ) vs2.
+  Proof. intros H. induction H; eauto using V_wf_cval_r. Qed.
 
-  (* Lemma V_wf_cres_r {i v1 v2}: *)
-  (*   V i v1 v2 -> *)
-  (*   wf_cres (CRes v2). *)
-  (* Proof. intros; eauto using V_wf_cval_r; eauto. Qed. *)
+  Lemma V_wf_cres_r {i v1 v2}:
+    V i v1 v2 ->
+    wf_cres θ (CRes v2).
+  Proof. intros; eauto using V_wf_cval_r; eauto. Qed.
 
-  (* Lemma R_wf_cres_r {i r1 r2} : *)
-  (*   R i r1 r2 -> *)
-  (*   wf_cres r2. *)
-  (* Proof. *)
-  (*   unfold R. *)
-  (*   intros. *)
-  (*   destruct r1; destruct r2; try contradiction; *)
-  (*     eauto using V_wf_cval_r. *)
-  (* Qed. *)
+  Lemma R_wf_cres_r {i r1 r2} :
+    R i r1 r2 ->
+    wf_cres θ r2.
+  Proof.
+    unfold R.
+    intros.
+    destruct r1; destruct r2; try contradiction;
+      eauto using V_wf_cval_r.
+  Qed.
 
-  (* Lemma V_refine_val {i v1 v2} : *)
-  (*   V i v1 v2 -> *)
-  (*   refine_val v1 v2. *)
-  (* Proof. intros; destruct i; simpl in *; fcrush. Qed. *)
+  (* Inversion Lemmas *)
+  Lemma R_res_inv_l i v1 r2 :
+    R i (Res v1) r2 ->
+    exists v2, r2 = CRes v2 /\ V i v1 v2.
+  Proof. intros. fcrush. Qed.
 
-  (* Lemma V_refine_val_Forall {i vs1 vs2} : *)
-  (*   Forall2 (V i) vs1 vs2 -> *)
-  (*   Forall2 refine_val vs1 vs2. *)
-  (* Proof. *)
-  (*   eapply Forall2_impl; eauto. *)
-  (*   eauto using V_refine_val. *)
-  (* Qed. *)
+  Lemma R_res_inv_l_V v1 r2 :
+    (forall k, R k (Res v1) r2) ->
+    exists v2, r2 = CRes v2 /\ (forall k, V k v1 v2).
+  Proof. intros. hauto. Qed.
 
-  (* Lemma R_refine_res {i r1 r2} : *)
-  (*   R i r1 r2 -> *)
-  (*   refine_res r1 r2. *)
-  (* Proof. *)
-  (*   unfold R, R'. *)
-  (*   intros. *)
-  (*   destruct r1; destruct r2; try contradiction; eauto. *)
-  (*   eauto using V_refine_val. *)
-  (* Qed. *)
+  (* Environment Relation *)
+  Definition G i Γ1 ρ1 ρ2 :=
+    wf_env Γ1 ρ1 /\
+      wf_cenv θ ρ2 /\
+      forall x,
+        (x \in Γ1) ->
+        exists v1 v2,
+          M.get x ρ1 = Some v1 /\
+            M.get x ρ2 = Some v2 /\
+            V i v1 v2.
 
-  (* (* Inversion Lemmas *) *)
-  (* Lemma R_res_inv_l i v1 r2 : *)
-  (*   R i (Res v1) r2 -> *)
-  (*   exists v2, r2 = CRes v2 /\ V i v1 v2. *)
-  (* Proof. intros. fcrush. Qed. *)
+  (* Environment Lemmas *)
+  Lemma G_subset Γ1 Γ2 {i ρ1 ρ2}:
+    G i Γ1 ρ1 ρ2 ->
+    Γ2 \subset Γ1 ->
+    G i Γ2 ρ1 ρ2.
+  Proof. unfold G. fcrush. Qed.
 
-  (* Lemma R_res_inv_l_V v1 r2 : *)
-  (*   (forall k, R k (Res v1) r2) -> *)
-  (*   exists v2, r2 = CRes v2 /\ (forall k, V k v1 v2). *)
-  (* Proof. intros. hauto. Qed. *)
+  Lemma G_wf_env_l {i Γ1 ρ1 ρ2}:
+    G i Γ1 ρ1 ρ2 ->
+    wf_env Γ1 ρ1.
+  Proof. unfold G. fcrush. Qed.
 
+  Lemma G_wf_cenv_r {i Γ1 ρ1 ρ2}:
+    G i Γ1 ρ1 ρ2 ->
+    wf_cenv θ ρ2.
+  Proof. unfold G. fcrush. Qed.
+
+  Lemma G_get {Γ1 i ρ1 ρ2}:
+    G i Γ1 ρ1 ρ2 ->
+    forall x v1,
+      (x \in Γ1) ->
+      M.get x ρ1 = Some v1 ->
+      exists v2,
+        M.get x ρ2 = Some v2 /\
+          V i v1 v2.
+  Proof.
+    unfold G.
+    intros.
+    destruct H as [Hwf [Href HG]].
+    edestruct HG as [v1' [v2 [Heqv1 [Heqv2 HV]]]]; eauto; invc.
+    fcrush.
+  Qed.
+
+  Lemma G_get_list {i Γ1 ρ1 ρ2} :
+    G i Γ1 ρ1 ρ2 ->
+    forall xs vs1,
+      (FromList xs) \subset Γ1 ->
+      get_list xs ρ1 = Some vs1 ->
+      exists vs2,
+        get_list xs ρ2 = Some vs2 /\
+          Forall2 (V i) vs1 vs2.
+  Proof.
+    intros HG xs.
+    induction xs; simpl; intros.
+    - fcrush.
+    - destruct (ρ1 ! a) eqn:Heq1; try discriminate.
+      destruct (get_list xs ρ1) eqn:Heq3; try discriminate.
+      inv H0.
+      unfold Ensembles.Included, Ensembles.In in *.
+      edestruct (G_get HG) as [v2 [Heqv2 HV]]; eauto.
+      eapply (H a); fcrush.
+      edestruct IHxs as [vs2 [Heqvs2 Vvs]]; eauto; fcrush.
+  Qed.
+
+  Lemma G_set {i Γ1 ρ1 ρ2}:
+    G i Γ1 ρ1 ρ2 ->
+    forall {x v1 v2},
+      V i v1 v2 ->
+      G i (x |: Γ1) (M.set x v1 ρ1) (M.set x v2 ρ2).
+  Proof.
+    unfold G.
+    intro HG.
+    pose proof HG as HG'.
+    intros.
+
+    destruct HG as [Hwf [Href HG]].
+    split.
+    eapply wf_env_set; eauto.
+    eapply V_wf_val_l; eauto.
+
+    split.
+    eapply wf_cenv_set; eauto.
+    eapply V_wf_cval_r; eauto.
+
+    intros.
+    destruct (M.elt_eq x0 x); subst.
+    - repeat rewrite M.gss in *.
+      fcrush.
+    - repeat (rewrite M.gso in *; auto).
+      fcrush.
+  Qed.
+
+  (* Binding a variable that is not in [Γ1] on the source side only
+   preserves the environment relation. *)
+  Lemma G_set_unused {i Γ1 ρ1 ρ2} y v :
+    G i Γ1 ρ1 ρ2 ->
+    ~ (y \in Γ1) ->
+    wf_val v ->
+    G i Γ1 (M.set y v ρ1) ρ2.
+  Proof.
+    unfold G.
+    intros HG Hy Hv.
+    destruct HG as [Hwf1 [Hwf2 HGv]].
+    split; [| split ].
+    - eapply wf_env_subset.
+      + eapply wf_env_set; eassumption.
+      + unfold Ensembles.Included, Ensembles.In.
+        intros z Hz. right. assumption.
+    - exact Hwf2.
+    - intros z Hz.
+      destruct (HGv z Hz) as [v1 [v2 [Hg1 [Hg2 HV]]]].
+      exists v1, v2.
+      rewrite M.gso by (intros Heq; subst; contradiction).
+      split; [ exact Hg1 | split; [ exact Hg2 | exact HV ] ].
+  Qed.
+
+  Lemma G_set_lists {i Γ1 ρ1 ρ2}:
+    G i Γ1 ρ1 ρ2 ->
+    forall {xs vs1 vs2 ρ3 ρ4},
+      Forall2 (V i) vs1 vs2 ->
+      set_lists xs vs1 ρ1 = Some ρ3 ->
+      set_lists xs vs2 ρ2 = Some ρ4 ->
+      G i (FromList xs :|: Γ1) ρ3 ρ4.
+  Proof.
+    intros HG xs.
+    induction xs; simpl; intros.
+    - destruct vs1; try discriminate.
+      destruct vs2; try discriminate.
+      inv H0; inv H1.
+      eapply G_subset; eauto; normalize_sets;
+        rewrite Union_Empty_set_neut_l; eauto;
+        apply Included_refl.
+    - destruct vs1; try discriminate.
+      destruct vs2; try discriminate.
+      destruct (set_lists xs vs1 ρ1) eqn:Heq1; try discriminate.
+      destruct (set_lists xs vs2 ρ2) eqn:Heq2; try discriminate.
+      inv H; inv H0; inv H1.
+      eapply G_subset with (Γ1 := (a |: (FromList xs :|: Γ1))); eauto;
+        try (normalize_sets;
+             rewrite Union_assoc;
+             apply Included_refl).
+      eapply G_set; eauto.
+  Qed.
+
+  (* Monotonicity Lemmas *)
+  Lemma V_mono_Forall_aux :
+    forall i j (V : nat -> wval -> clval -> Prop) vs1 vs2,
+      (forall k : nat,
+          k < S i ->
+          forall (j : nat) v1 v2, V k v1 v2 -> j <= k -> V j v1 v2) ->
+      Forall2 (V i) vs1 vs2 ->
+      j <= i ->
+      Forall2 (V j) vs1 vs2.
+  Proof.
+    intros.
+    revert vs2 H0.
+    induction vs1; intros; inv H0; auto.
+    rename l' into vs2.
+    constructor; auto.
+    eapply H; eauto; lia.
+  Qed.
+
+  Lemma V_mono i :
+    forall {j v1 v2},
+      V i v1 v2 ->
+      j <= i ->
+      V j v1 v2.
+  Proof.
+    induction i using lt_wf_rec; intros.
+    destruct v1; destruct v2.
+    destruct i; simpl in H0;
+      destruct j; simpl; intros;
+      destruct H0 as [Hwf1 [Hwf2 HV]];
+      destruct c; destruct HV as [Heql HV]; subst.
+    - destruct v; destruct c; fcrush.
+    - fcrush.
+    - repeat (split; auto).
+      destruct v; destruct c0; try contradiction.
+      + fcrush.
+      + fcrush.
+    - repeat (split; auto).
+      destruct v; destruct c0; try contradiction.
+      + destruct HV as [Heqv [Heql [Heqe HV]]]; subst.
+        repeat (split; eauto); intros.
+        rename i0 into U0.
+        specialize (HV j0 U c0 l vs1 vs2 ρ3 ρ4).
+        rewrite normalize_step in *; try lia.
+        eapply HV; eauto; try lia.
+      + destruct HV as [Heqc [Hlen HV]]; subst.
+        eexists; repeat (split; eauto).
+        eapply V_mono_Forall_aux; eauto; lia.
+  Qed.
+
+  Lemma V_mono_Forall {vs1 vs2} i j :
+    Forall2 (V i) vs1 vs2 ->
+    j <= i ->
+    Forall2 (V j) vs1 vs2.
+  Proof.
+    intros H.
+    revert j.
+    induction H; simpl; intros; auto.
+    constructor; eauto.
+    eapply V_mono; eauto.
+  Qed.
+
+  Lemma R_mono {r1 r2} i j :
+    R i r1 r2 ->
+    j <= i ->
+    R j r1 r2.
+  Proof.
+    unfold R.
+    intros.
+    destruct r1; auto.
+    destruct r2; auto.
+    eapply V_mono; eauto.
+  Qed.
+
+  Lemma E_mono {U c ρ1 ρ2 e} i j:
+    E U c i ρ1 ρ2 e ->
+    j <= i ->
+    E U c j ρ1 ρ2 e.
+  Proof.
+    unfold E, R, E', R'.
+    intros.
+    destruct (H j1 r1) as [j2 [r2 [I2 [Hr2 HR]]]]; auto; try lia.
+    exists j2, r2, I2; split; eauto.
+    apply R_mono with (i - j1); try lia; auto.
+  Qed.
+
+  Lemma G_mono {Γ1 ρ1 ρ2} i j:
+    G i Γ1 ρ1 ρ2 ->
+    j <= i ->
+    G j Γ1 ρ1 ρ2.
+  Proof.
+    unfold G.
+    intros.
+    destruct H as [Hwf1 [Hwf2 HG]].
+    repeat (split; auto); intros.
+    edestruct HG as [v1 [v2 [Heqv1 [Heqv2 HV]]]]; eauto; invc.
+    eexists; repeat (split; eauto).
+    eauto using V_mono.
+  Qed.
+
+  (* Compatibility Lemmas *)
+  (* Well Scoped *)
+  (* This essentially says `occurs_free e` ⊆ Γ *)
+  Inductive well_scoped (Γ : vars) : exp -> Prop :=
+  | Well_Scoped_ret :
+    forall x,
+      (x \in Γ) ->
+      well_scoped Γ (Eret x)
+
+  | Well_Scoped_fun :
+    forall {f l xs e k},
+      well_scoped (FromList xs :|: (f |: Γ)) e ->
+      well_scoped (f |: Γ) k ->
+      well_scoped Γ (Efun f l xs e k)
+
+  | Well_Scoped_app :
+    forall {f l xs},
+      (f \in Γ) ->
+      (FromList xs \subset Γ) ->
+      well_scoped Γ (Eapp f l xs)
+
+  | Well_Scoped_letapp :
+    forall {x f l xs k},
+      (f \in Γ) ->
+      (FromList xs \subset Γ) ->
+      well_scoped (x |: Γ) k ->
+      well_scoped Γ (Eletapp x f l xs k)
+
+  | Well_Scoped_constr :
+    forall {x l t xs k},
+      (FromList xs \subset Γ) ->
+      well_scoped (x |: Γ) k ->
+      well_scoped Γ (Econstr x l t xs k)
+
+  | Well_Scoped_proj :
+    forall {l x y k n},
+      (y \in Γ) ->
+      well_scoped (x |: Γ) k ->
+      well_scoped Γ (Eproj x l n y k)
+
+  | Well_Scoped_case_nil :
+    forall {l x},
+      (x \in Γ) ->
+      well_scoped Γ (Ecase x l [])
+
+  | Well_Scoped_case_cons :
+    forall {x l e t cl},
+      (x \in Γ) ->
+      well_scoped Γ e ->
+      well_scoped Γ (Ecase x l cl) ->
+      well_scoped Γ (Ecase x l ((t, e) :: cl)).
+
+  Hint Constructors well_scoped : core.
+
+  Lemma well_scoped_inv e Γ :
+    well_scoped Γ e ->
+    occurs_free e \subset Γ.
+  Proof.
+    intros.
+    induction H; unfold Ensembles.Included, Ensembles.In in *; intros; fcrush.
+  Qed.
+
+  Lemma well_scoped_intro e Γ :
+    occurs_free e \subset Γ ->
+    well_scoped Γ e.
+  Proof.
+    revert Γ.
+    induction e
+      as [ x
+         | x w xs
+         | f w xs e k IHe IHk
+         | x f w xs e IHe
+         | x w c xs e IHe
+         | x w
+         | x w cl c e IHe IHcl
+         | x w n v0 e IHe ]
+           using exp_ind';
+      intros Γ Hfree; unfold Ensembles.Included, Ensembles.In in *.
+    - constructor.
+      apply Hfree; constructor.
+    - constructor.
+      + apply Hfree; constructor.
+      + eapply free_app_xs_inv; eauto.
+    - constructor.
+      + apply IHe; eapply free_fun_e_inv; eauto.
+      + apply IHk; eapply free_fun_k_inv; eauto.
+    - constructor.
+      + apply Hfree; eapply Free_letapp2.
+      + eapply free_letapp_xs_inv; eauto.
+      + apply IHe; eapply free_letapp_k_inv; eauto.
+    - constructor.
+      + eapply free_constr_xs_inv; eauto.
+      + apply IHe; eapply free_constr_k_inv; eauto.
+    - constructor.
+      apply Hfree; constructor.
+    - constructor.
+      + apply Hfree; constructor.
+      + apply IHe; eapply free_case_hd_inv; eauto.
+      + apply IHcl; eapply free_case_tl_inv; eauto.
+    - constructor.
+      + apply Hfree; constructor.
+      + apply IHe; eapply free_proj_k_inv; eauto.
+  Qed.
+
+  Definition well_annotated U c Γ e :=
+    U <--> θ c /\
+    forall i ρ1 ρ2,
+      G i Γ ρ1 ρ2 ->
+      E U c i ρ1 ρ2 e.
+
+  Lemma ret_compat U c Γ x :
+    U <--> θ c ->
+    (x \in Γ) ->
+    well_annotated U c Γ (Eret x).
+  Proof.
+    unfold well_annotated, E, E', R, R', Ensembles.Included, Ensembles.In.
+    intros; simpl.
+    split; auto; intros.
+
+    inv H3.
+    - fcrush.
+    - destruct r1.
+      fcrush.
+      inv H4.
+      edestruct (G_get H1) as [v2 [Heqv2 HV]]; eauto.
+      exists 1, (CRes v2), (Empty_set _); split; eauto; simpl.
+      eapply V_mono; eauto; lia.
+  Qed.
+
+  Lemma Vfun_V Γ f l U c xs e  :
+    occurs_free e \subset FromList xs :|: (f |: Γ) ->
+    well_annotated U c (FromList xs :|: (f |: Γ)) e ->
+    forall {i ρ1 ρ2},
+      wf_val (Tag l (Vfun f ρ1 xs e)) ->
+      wf_cval θ (CTag U c l (CVfun f ρ2 xs e)) ->
+      G i Γ ρ1 ρ2 ->
+      V i (Tag l (Vfun f ρ1 xs e)) (CTag U c l (CVfun f ρ2 xs e)).
+  Proof.
+    unfold well_annotated.
+    intros HS [HU He] i.
+    induction i; simpl; intros; auto;
+      repeat (split; auto);
+      intros; (repeat split; auto).
+    eapply (He (i - (i - j)) ρ3 ρ4); eauto.
+
+    eapply G_subset; eauto.
+    eapply G_set_lists; eauto.
+    eapply G_set; eauto.
+    + apply G_mono with (S i); eauto; lia.
+    + apply V_mono with i; try lia.
+      eapply IHi; eauto.
+      apply G_mono with (S i); eauto; lia.
+    + eapply Included_refl; eauto.
+  Qed.
+
+  Lemma fun_compat U c Γ e k f l xs :
+    occurs_free e \subset FromList xs :|: (f |: Γ) ->
+    well_annotated U c (FromList xs :|: (f |: Γ)) e ->
+    well_annotated U c (f |: Γ) k ->
+    well_annotated U c Γ (Efun f l xs e k).
+  Proof.
+    unfold well_annotated, E, E'.
+    intros HS He [HU Hk].
+    split; auto; intros.
+
+    inv H1.
+    - fcrush.
+    - destruct r1.
+      fcrush.
+      assert (Hwfρ1 : wf_env Γ ρ1) by eauto using G_wf_env_l.
+      assert (Hwfρ2 : wf_cenv θ ρ2) by eauto using G_wf_cenv_r.
+      inv H2.
+      edestruct (Hk (i - 1) (M.set f (Tag l (Vfun f ρ1 xs e)) ρ1) (M.set f (CTag U c l (CVfun f ρ2 xs e)) ρ2)) with (j1 := c0) (r1 := (Res w)) as [j2 [r2 [I2 [Hk2 Rr]]]]; eauto; try lia.
+      + eapply G_subset.
+        eapply G_set; eauto.
+        eapply G_mono with i; eauto; lia.
+        * eapply Vfun_V; eauto.
+          apply G_mono with i; eauto; lia.
+        * apply Included_refl.
+      + edestruct R_res_inv_l as [w2 [Heqw2 HV]]; eauto; subst.
+        exists (S j2), (CRes w2), I2; split; eauto.
+        eapply R_mono; eauto; lia.
+  Qed.
+
+  Lemma app_compat U Γ xs f l c :
+    U <--> θ c ->
+    (f \in Γ) ->
+    (FromList xs \subset Γ) ->
+    well_annotated U c Γ (Eapp f l xs).
+  Proof.
+    unfold well_annotated, E, E'.
+    intross HU Hf Hxs; simpl.
+    split; auto; intros.
+
+    inv H1.
+    - fcrush.
+    - destruct r1.
+      fcrush.
+      inv H2.
+      edestruct (G_get H f) as [fv2 [Heqfv2 HV]]; eauto.
+      destruct i.
+      inv H0.
+      rename w into v.
+      destruct fv2; destruct c1; destruct c2; simpl in HV; invc;
+        rename i0 into U0.
+      2 : { fcrush. }
+      destruct HV as [Hwf1 [Hwf2 [Heql [Heqf [Heqxs [Heqe HV]]]]]]; subst; invc.
+
+      edestruct (G_get_list H xs vs) as [vs2 [Heqvs2 Vvs]]; eauto; invc.
+
+      destruct (set_lists_length3 (M.set v0 (CTag U0 c1 l0 (CVfun v0 t l1 e0)) t) l1 vs2) as [ρ4 Heqρ4].
+      unfold clval in *.
+      rewrite (set_lists_length_eq _ _ _ _ H9); auto.
+      eapply Forall2_length; eauto.
+
+      assert (HI : interaction_sound U0 (c1, l0) U (c, l)).
+      {
+        unfold interaction_sound.
+        split; intros; subst.
+        - admit. (* easy to prove *)
+        - (* foreign context *)
+          (* stuck here *)
+          admit.
+      }
+
+      assert (HE : E U0 c1 (i - (i - i)) ρ'' ρ4 e0).
+      {
+        eapply (HV i U c l vs vs2); eauto.
+        apply V_mono_Forall with (S i); auto; lia.
+      }
+
+      apply (E_mono _ i) in HE; try lia.
+      unfold E, E' in HE.
+      destruct (HE c0 (Res v)) as [j2 [r2 [I2 [He0 Rr]]]]; try lia; auto.
+      exists (S j2), r2, (((c1, l0), (c, l)) |: I2); split; eauto.
+  Abort.
+
+
+  Lemma fundamental_property {U c Γ e}:
+    U <--> θ c ->
+    well_scoped Γ e ->
+    well_annotated U c Γ e.
+  Proof.
+    intros HU H.
+    induction H; intros.
+    - eapply ret_compat; eauto.
+    - (* eapply fun_compat; eauto.
+      eapply well_scoped_inv; eauto. *)
+      admit.
+    - (* eapply app_compat; eauto. *)
+      admit.
+    - admit.
+    - admit.
+    - admit.
+    - (* eapply case_nil_compat; eauto. *)
+      admit.
+    - admit.
+  Admitted.
 
 End LR.
 
