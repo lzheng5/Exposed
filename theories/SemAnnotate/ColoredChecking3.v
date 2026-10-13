@@ -1391,7 +1391,11 @@ Section LR.
       {
         unfold interaction_sound.
         split; intros; subst.
-        - admit. (* easy to prove *)
+        - (* internal context *)
+          inv Hwf2.
+          assert (U0 <--> U) by sfirstorder.
+          split; auto.
+          admit. (* stuck *)
         - (* foreign context *)
           (* stuck here *)
           admit.
