@@ -125,6 +125,7 @@ Record analysis_info : Type :=
   mk_analysis_info {
       ai_env : aenv;           (* value sets                                 *)
       ai_ret : aret;           (* return sets                                *)
+      ai_res : avals;          (* return set of the analysed unit            *)
       ai_esc : avals;          (* values that may escape to the context      *)
       ai_int : ainteractions   (* statically predicted interactions          *)
     }.
@@ -133,14 +134,14 @@ Record analysis_info : Type :=
      under this: the context can eliminate an escaped value, call an escaped
      closure with arbitrary (hence unknown) arguments and keep whatever it
      returns, and project out of an escaped constructor. *)
-Definition escapes_ok (ai : analysis_info) : Prop :=
+Definition escapes_ok (A : analysis_info) : Prop :=
   (forall av,
-      (av \in ai_esc ai) ->
-      ((label_of av, l_top_elim) \in ai_int ai)) /\
+      (av \in ai_esc A) ->
+      ((label_of av, l_top_elim) \in ai_int A)) /\
     (forall l f xs e,
-        (AVfun l f xs e \in ai_esc ai) ->
-        (forall x, List.In x xs -> (AVtop \in ai_env ai x)) /\
-          (ai_ret ai l \subset ai_esc ai)).
+        (AVfun l f xs e \in ai_esc A) ->
+        (forall x, List.In x xs -> (AVtop \in ai_env A x)) /\
+          (ai_ret A l \subset ai_esc A)).
 (* /\
     (forall l t ys,
         (AVconstr l t ys \in Esc) ->
@@ -150,44 +151,49 @@ Definition escapes_ok (ai : analysis_info) : Prop :=
 (* The abstract semantics                                            *)
 (* --------------------------------------------------------------- *)
 
-(* [acheck ai e R] reads: the analysis result [ai] is acceptable
+(* [acheck A e R] reads: the analysis result [A] is acceptable
      for [e] and [R] over-approximates the values [e] may return.
      This is the "abstract semantics": a declarative
      constraint system rather than a fixpoint computation, so any solver that
      produces an [analysis_info] may be plugged in and checked against it. *)
-Inductive acheck (ai : analysis_info) : exp -> avals -> Prop :=
+Inductive acheck (A : analysis_info) : exp -> avals -> Prop :=
 | Acheck_ret :
   forall {x R},
-    (ai_env ai x \subset R) ->
-    acheck ai (Eret x) R
+    (ai_env A x \subset R) ->
+    acheck A (Eret x) R
 
 | Acheck_fun :
   forall {f l xs e k R},
     (* the closure introduced here flows into [f] *)
-    (AVfun l f xs e \in ai_env ai f) ->
-    (* its body is analysed once, here, and returns into [ai_ret ai l] *)
-    acheck ai e (ai_ret ai l) ->
-    acheck ai k R ->
-    acheck ai (Efun f l xs e k) R
+    (AVfun l f xs e \in ai_env A f) ->
+    (* its body is analysed once, here, and returns into [ai_ret A l] *)
+    acheck A e (ai_ret A l) ->
+    acheck A k R ->
+    acheck A (Efun f l xs e k) R
 
 | Acheck_app :
   forall {f l xs R},
     (* the call site (c, l) eliminates everything that reaches [f] *)
-    (forall av, (av \in ai_env ai f) -> ((label_of av, l) \in ai_int ai)) ->
+    (forall av, (av \in ai_env A f) -> ((label_of av, l) \in ai_int A)) ->
     (* known callee: arguments flow to parameters, results flow out *)
     (forall l' f' xs' e',
-        (AVfun l' f' xs' e' \in ai_env ai f) ->
+        (AVfun l' f' xs' e' \in ai_env A f) ->
         length xs = length xs' /\
-          (AVfun l' f' xs' e' \in ai_env ai f') /\
-          Forall2 (fun x x' => ai_env ai x \subset ai_env ai x') xs xs' /\
-          (ai_ret ai l' \subset R)) ->
+          (AVfun l' f' xs' e' \in ai_env A f') /\
+          Forall2 (fun x x' => ai_env A x \subset ai_env A x') xs xs' /\
+          (ai_ret A l' \subset R)) ->
     (* unknown callee: the arguments escape and the result is unknown *)
-    ((AVtop \in ai_env ai f) ->
-     Forall (fun x => ai_env ai x \subset ai_esc ai) xs /\
+    ((AVtop \in ai_env A f) ->
+     Forall (fun x => ai_env A x \subset ai_esc A) xs /\
        (AVtop \in R)) ->
-    acheck ai (Eapp f l xs) R.
+    acheck A (Eapp f l xs) R.
 
 Hint Constructors acheck : core.
+
+(* The analysis result [A] is acceptable for the whole unit [e]: the values
+   [e] may return are over-approximated by [ai_res A]. *)
+Definition acheck_top (A : analysis_info) (e : exp) : Prop :=
+  acheck A e (ai_res A).
 
 (* Checking Semantics With Respect to Colored Label Pair Set *)
 
