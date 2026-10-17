@@ -71,6 +71,10 @@ theories/SemAnnotate/CompAttempt.v
 -Q theories/CFAAnnotate CFAAnnotate
 theories/CFAAnnotate/LabeledANF.v
 theories/CFAAnnotate/Label.v
+theories/CFAAnnotate/Base.v
+theories/CFAAnnotate/Annotate.v
+theories/CFAAnnotate/CFA.v
+theories/CFAAnnotate/Comp.v
 
 -Q theories/Comp Comp
 theories/Comp/TrivialComp.v
