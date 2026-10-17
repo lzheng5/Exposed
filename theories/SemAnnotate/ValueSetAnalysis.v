@@ -26,6 +26,66 @@ Parameter l_top_intro l_top_elim : label.
 Definition ainteraction : Type := (label * label).
 Definition ainteractions := Ensemble ainteraction.
 
+(* Internal Label Set *)
+Definition internals : Type := labels.
+
+(* Reachable labels for the (uncolored) statically predicted interactions *)
+(* `areachable I l` is the set of labels connected to `l` by a chain of
+   interactions in I, in either direction. *)
+Inductive areachable (I : ainteractions) (l : label) : labels :=
+| AReachable_refl :
+  areachable I l l
+
+| AReachable_interact_l :
+  forall l',
+    (l, l') \in I ->
+    areachable I l l'
+
+| AReachable_interact_r :
+  forall l',
+    (l', l) \in I ->
+    areachable I l l'
+
+| AReachable_step :
+  forall l' l'',
+    areachable I l l' ->
+    areachable I l' l'' ->
+    areachable I l l''.
+
+Hint Constructors areachable : core.
+
+(* `l` is internal if it never interacts with the unknown side, i.e. neither
+   `l_top_intro` nor `l_top_elim` is reachable from it. *)
+Definition ainternal (I : ainteractions) (l : label) : Prop :=
+  ~ (l_top_intro \in areachable I l) /\ ~ (l_top_elim \in areachable I l).
+
+(* All the internal labels in `I` *)
+Definition ainternals_of (I : ainteractions) : internals :=
+  fun l => ainternal I l.
+
+(* Closure Property *)
+(* `U` is closed under reachable interactions `I` *)
+Definition ainternals_closed (U : internals) (I : ainteractions) : Prop :=
+  forall l l',
+    (l \in U) ->
+    (l' \in (areachable I l)) ->
+    (l' \in U).
+
+Lemma ainternals_of_closed I :
+  ainternals_closed (ainternals_of I) I.
+Proof.
+  unfold ainternals_closed, ainternals_of, ainternal, Ensembles.In.
+  intros l l' [Hintro Helim] Hreach.
+  (* anything reachable from `l'` is also reachable from `l` *)
+  split.
+  - intros Hintro'.
+    apply Hintro.
+    eapply AReachable_step; [exact Hreach | exact Hintro'].
+  - intros Helim'.
+    apply Helim.
+    eapply AReachable_step; [exact Hreach | exact Helim'].
+Qed.
+
 (* --------------------------------------------------------------- *)
 (* Abstract values                                                   *)
 (* --------------------------------------------------------------- *)
@@ -181,9 +241,6 @@ Definition internal (I : interactions) (cl : clabel) : Prop :=
 (* `cl` has external interaction if it is not internal or it interacts with some other color. *)
 Definition external (I : interactions) (cl : clabel) : Prop :=
   ~ internal I cl.
-
-(* Internal Label Set *)
-Definition internals : Type := labels.
 
 (* All the internal labels in `I` with respect color `c` *)
 Definition internals_of (c : color) (I : interactions) : internals :=
@@ -382,7 +439,7 @@ Hint Constructors cval : core.
 
 Definition clval := ctag cval.
 
-Definition CTag ai c l cv := CTAG cval ai (c, l) cv.
+Definition CTag A c l cv := CTAG cval A (c, l) cv.
 
 (* Environment *)
 Definition cenv := M.t clval.
@@ -393,3 +450,110 @@ Inductive cres : Type :=
 | CRes : clval -> cres.
 
 Hint Constructors cres : core.
+
+(* Approximation *)
+(* `approx_val av v`: the abstract value `av` over-approximates the concrete
+   value `v`, with respect to the analysis result carried by the tag of `v`.
+   - [AVtop] stands for everything unknown, so it approximates any value;
+   - otherwise `av` must share the introduction label of `v` and approximate
+     the untagged value under the tag's analysis result. *)
+Inductive approx_val : aval -> clval -> Prop :=
+| Approx_top :
+  forall v,
+    approx_val AVtop v
+
+| Approx_TAG :
+  forall A c l av v,
+    label_of av = l ->
+    approx_val' A av v ->
+    approx_val av (CTag A c l v)
+
+(* A closure is approximated by its own allocation site, provided that its
+   captured environment is approximated by the abstract environment of `A`. *)
+with approx_val' : analysis_info -> aval -> cval -> Prop :=
+| Approx_CVfun :
+  forall A l f ρ xs e,
+    approx_env (ai_env A) ρ ->
+    approx_val' A (AVfun l f xs e) (CVfun f ρ xs e)
+
+(* Every value bound in `ρ` is approximated by some abstract value in the value
+   set of its variable. *)
+with approx_env : aenv -> cenv -> Prop :=
+| Approx_env :
+  forall aenv ρ,
+    (forall x v,
+        ρ ! x = Some v ->
+        exists av, (av \in aenv x) /\ approx_val av v) ->
+    approx_env aenv ρ.
+
+Hint Constructors approx_val : core.
+Hint Constructors approx_val' : core.
+Hint Constructors approx_env : core.
+
+Scheme approx_val_mut := Induction for approx_val Sort Prop
+with approx_val'_mut := Induction for approx_val' Sort Prop
+with approx_env_mut := Induction for approx_env Sort Prop.
+
+Definition approx_vals (avs : avals) (v : clval) : Prop :=
+  forall av, av \in avs -> approx_val av v.
+
+(* A result is approximated by `R` if it is out of time, or returns a value
+   approximated by some abstract value in `R`. *)
+Inductive approx_res : avals -> cres -> Prop :=
+| Approx_OOT :
+  forall R,
+    approx_res R COOT
+
+| Approx_res :
+  forall R av v,
+    (av \in R) ->
+    approx_val av v ->
+    approx_res R (CRes v).
+
+Hint Constructors approx_res : core.
+
+(* Checking Semantics based on the Collecting Semantics *)
+(* This semantics specifies the validity of the analysis result, `A`. *)
+Inductive cbstep (A : analysis_info) (c : color) (ρ : cenv) : exp -> fuel -> avals -> cres -> Prop :=
+| Cbstep_ret :
+  forall {x v Rs},
+    M.get x ρ = Some v ->
+    (forall av, av \in Rs -> approx_val av v) ->
+    cbstep A c ρ (Eret x) 0 Rs (CRes v)
+
+| Cbstep_fun :
+  forall {f l xs e k i Rs r},
+    cbstep_fuel A c (M.set f (CTag A c l (CVfun f ρ xs e)) ρ) k i Rs r ->
+    approx_vals (ai_env A f) (CTag A c l (CVfun f ρ xs e)) ->
+    cbstep A c ρ (Efun f l xs e k) i Rs r
+
+| Cbstep_app_External :
+  forall {A' f f' c' l l' xs ρ' xs' e vs ρ'' i Rs r},
+    M.get f ρ = Some (CTag A' c' l' (CVfun f' ρ' xs' e)) ->
+    c <> c' -> (* foreign call *)
+    get_list xs ρ = Some vs ->
+    set_lists xs' vs (M.set f' (CTag A' c' l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
+    cbstep_fuel A' c' ρ'' e i Rs r ->
+    cbstep A c ρ (Eapp f l xs) i Rs r
+
+| Cbstep_app_Internal :
+  forall {A' f f' l l' xs ρ' xs' e vs ρ'' i Rs r},
+    M.get f ρ = Some (CTag A' c l' (CVfun f' ρ' xs' e)) ->
+    get_list xs ρ = Some vs ->
+    set_lists xs' vs (M.set f' (CTag A' c l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
+    cbstep_fuel A' c ρ'' e i Rs r ->
+    cbstep A c ρ (Eapp f l xs) i Rs r
+
+with cbstep_fuel (A : analysis_info) (c : color) (ρ : cenv) : exp -> fuel -> avals -> cres -> Prop :=
+| CbstepF_OOT :
+  forall {e Rs},
+    cbstep_fuel A c ρ e 0 Rs COOT
+
+| CbstepF_Step :
+  forall {e i Rs r},
+    cbstep A c ρ e i Rs r ->
+    approx_res Rs r ->
+    cbstep_fuel A c ρ e (S i) Rs r.
+
+Hint Constructors cbstep : core.
+Hint Constructors cbstep_fuel : core.
