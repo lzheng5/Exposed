@@ -65,7 +65,12 @@ theories/SemAnnotate/Checking.v
 theories/SemAnnotate/Reify.v
 theories/SemAnnotate/Comp.v
 theories/SemAnnotate/CompAttempt.v
-theories/SemAnnotate/ColoredChecking.v
+#theories/SemAnnotate/ColoredChecking.v
+
+# 0CFA
+-Q theories/CFAAnnotate CFAAnnotate
+theories/CFAAnnotate/LabeledANF.v
+theories/CFAAnnotate/Label.v
 
 -Q theories/Comp Comp
 theories/Comp/TrivialComp.v
