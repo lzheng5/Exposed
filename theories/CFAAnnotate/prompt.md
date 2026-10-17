@@ -6,9 +6,11 @@ arity-based analysis or known-function analysis (See ArityAnnotate and
 Comp).
 
 This CFAAnnotate component should first perform unique labeling (see
-CFAAnnotate/ANF.v and CFAAnnotate/Label.v), producing a labeled ANF
+CFAAnnotate/LabeledANF.v and CFAAnnotate/Label.v), producing a labeled ANF
 term, then assign proper web ids based on a simple value set (0CFA)
-analysis result. To simplify the setting, we assume there are only two
+analysis result.
+
+To simplify the problem, we assume there are only two
 web ids, `w_int`, and `w_ext`, where `w_ext` is exposed (See
 LambdaWeb/Exposed.v). All imported or exported values should be assigned
 `w_ext`. All internal program components, such as a locally defined
