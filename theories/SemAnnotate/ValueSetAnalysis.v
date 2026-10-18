@@ -121,8 +121,8 @@ Definition aret := label -> avals.
 (* --------------------------------------------------------------- *)
 (* The analysis result                                             *)
 (* --------------------------------------------------------------- *)
-Record analysis_info : Type :=
-  mk_analysis_info {
+Record analysis_result : Type :=
+  mk_analysis_result {
       ai_env : aenv;           (* value sets                                 *)
       ai_ret : aret;           (* return sets                                *)
       ai_esc : avals;          (* values that may escape to the context      *)
@@ -133,7 +133,7 @@ Record analysis_info : Type :=
      under this: the context can eliminate an escaped value, call an escaped
      closure with arbitrary (hence unknown) arguments and keep whatever it
      returns, and project out of an escaped constructor. *)
-Definition escapes_ok (A : analysis_info) : Prop :=
+Definition escapes_ok (A : analysis_result) : Prop :=
   (forall av,
       (av \in ai_esc A) ->
       ((label_of av, l_top_elim) \in ai_int A)) /\
@@ -154,8 +154,8 @@ Definition escapes_ok (A : analysis_info) : Prop :=
      for [e] and [R] over-approximates the values [e] may return.
      This is the "abstract semantics": a declarative
      constraint system rather than a fixpoint computation, so any solver that
-     produces an [analysis_info] may be plugged in and checked against it. *)
-Inductive acheck (A : analysis_info) : exp -> avals -> Prop :=
+     produces an [analysis_result] may be plugged in and checked against it. *)
+Inductive acheck (A : analysis_result) : exp -> avals -> Prop :=
 | Acheck_ret :
   forall {x R},
     (ai_env A x \subset R) ->
@@ -426,7 +426,7 @@ Qed.
 
 (* Tagged Value *)
 Inductive ctag A : Type :=
-| CTAG : analysis_info -> clabel -> A -> ctag A.
+| CTAG : analysis_result -> clabel -> A -> ctag A.
 
 Hint Constructors ctag : core.
 
@@ -470,7 +470,7 @@ Inductive approx_val : aval -> clval -> Prop :=
 
 (* A closure is approximated by its own allocation site, provided that its
    captured environment is approximated by the abstract environment of `A`. *)
-with approx_val' : analysis_info -> aval -> cval -> Prop :=
+with approx_val' : analysis_result -> aval -> cval -> Prop :=
 | Approx_CVfun :
   forall A l f ρ xs e,
     approx_env (ai_env A) ρ ->
@@ -534,7 +534,7 @@ Definition approx_int (c : color) (AI : ainteractions) (I : interactions) : Prop
    The collected interactions are validated against `ai_int A` once, in
    `CbstepF_Step`, which covers every interaction produced underneath it,
    including the call edge added by `Cbstep_app_*`. *)
-Inductive cbstep (A : analysis_info) (c : color) (ρ : cenv) : exp -> fuel -> avals -> cres -> interactions -> Prop :=
+Inductive cbstep (A : analysis_result) (c : color) (ρ : cenv) : exp -> fuel -> avals -> cres -> interactions -> Prop :=
 | Cbstep_ret :
   forall {x v Rs},
     M.get x ρ = Some v ->
@@ -591,7 +591,7 @@ Inductive cbstep (A : analysis_info) (c : color) (ρ : cenv) : exp -> fuel -> av
 
     cbstep A c ρ (Eapp f l xs) i Rs r (((c, l'), (c, l)) |: I)
 
-with cbstep_fuel (A : analysis_info) (c : color) (ρ : cenv) : exp -> fuel -> avals -> cres -> interactions -> Prop :=
+with cbstep_fuel (A : analysis_result) (c : color) (ρ : cenv) : exp -> fuel -> avals -> cres -> interactions -> Prop :=
 | CbstepF_OOT :
   forall {e Rs},
     cbstep_fuel A c ρ e 0 Rs COOT (Empty_set _)
@@ -675,7 +675,7 @@ Theorem cbstep_fuel_deterministic v v' {A I I' c ρ e Rs i i'}:
 Proof. srun eauto using cbstep_fuel_deterministic_aux. Qed.
 
 (* Analysis Context *)
-Definition analysis_context := color -> analysis_info.
+Definition analysis_context := color -> analysis_result.
 
 (* Well-formed Value and Environment w.r.t. an Analysis Context *)
 (* Every tag occurring in a value, or in an environment, assigns to its color
