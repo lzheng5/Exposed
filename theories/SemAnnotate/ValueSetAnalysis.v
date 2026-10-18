@@ -605,3 +605,195 @@ with cbstep_fuel (A : analysis_info) (c : color) (ρ : cenv) : exp -> fuel -> av
 
 Hint Constructors cbstep : core.
 Hint Constructors cbstep_fuel : core.
+
+Scheme cbstep_ind' := Minimality for cbstep Sort Prop
+with cbstep_fuel_ind' := Minimality for cbstep_fuel Sort Prop.
+
+Lemma cbstep_deterministic_aux v v' {A I I' c ρ e i i' Rs r r'}:
+  cbstep A c ρ e i Rs r I ->
+  cbstep A c ρ e i' Rs r' I' ->
+  r = CRes v ->
+  r' = CRes v' ->
+  (v = v' /\ i = i' /\ I <--> I').
+Proof.
+  intros H.
+  generalize dependent v'.
+  generalize dependent r'.
+  generalize dependent i'.
+  generalize dependent v.
+  generalize dependent I'.
+  induction H using cbstep_ind' with (P := fun A c ρ e i Rs r I =>
+                                             forall I' v i' r' v',
+                                               cbstep A c ρ e i' Rs r' I' ->
+                                               r = CRes v -> r' = CRes v' ->
+                                               v = v' /\ i = i' /\ I <--> I')
+                                     (P0 := fun A c ρ e i Rs r I =>
+                                              forall I' v i' r' v',
+                                                cbstep_fuel A c ρ e i' Rs r' I' ->
+                                                r = CRes v -> r' = CRes v' ->
+                                                v = v' /\ i = i' /\ I <--> I');
+    intros; subst.
+  - inv H0; inv H1; invc; fcrush.
+  - inv H1.
+    edestruct IHcbstep; eauto; subst.
+  - inv H8; invc.
+    edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto; subst;
+      hauto lq: on use: Extensionality_Ensembles unfold: Same_set, Included, interactions.
+    fcrush.
+  - inv H4; invc.
+    fcrush.
+    edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto; subst;
+      hauto lq: on use: Extensionality_Ensembles unfold: Same_set, Included, interactions.
+  - fcrush.
+  - inv H2;
+      edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto.
+Qed.
+
+Lemma cbstep_fuel_deterministic_aux v v' {A I I' c ρ e i i' Rs r r'}:
+  cbstep_fuel A c ρ e i Rs r I ->
+  cbstep_fuel A c ρ e i' Rs r' I' ->
+  r = CRes v ->
+  r' = CRes v' ->
+  (v = v' /\ i = i' /\ I <--> I').
+Proof.
+  intros Hstep Hstep' Heqr Heqr'; subst.
+  inv Hstep; inv Hstep'.
+  edestruct (cbstep_deterministic_aux v v' H H2) as [Heqv [Heqi HeqI]];
+    subst; eauto.
+Qed.
+
+Theorem cbstep_deterministic v v' {A I I' c ρ e Rs i i'}:
+  cbstep A c ρ e i Rs (CRes v) I ->
+  cbstep A c ρ e i' Rs (CRes v') I' ->
+  (v = v' /\ i = i' /\ I <--> I').
+Proof. srun eauto using cbstep_deterministic_aux. Qed.
+
+Theorem cbstep_fuel_deterministic v v' {A I I' c ρ e Rs i i'}:
+  cbstep_fuel A c ρ e i Rs (CRes v) I ->
+  cbstep_fuel A c ρ e i' Rs (CRes v') I' ->
+  (v = v' /\ i = i' /\ I <--> I').
+Proof. srun eauto using cbstep_fuel_deterministic_aux. Qed.
+
+(* Analysis Context *)
+Definition analysis_context := color -> analysis_info.
+
+(* Well-formed Value and Environment w.r.t. an Analysis Context *)
+(* Every tag occurring in a value, or in an environment, assigns to its color
+   the analysis result that `Θ` prescribes for it. *)
+Inductive wf_cval (Θ : analysis_context) : clval -> Prop :=
+| WF_TAG :
+  forall A c l v,
+    Θ c = A ->
+    wf_cval' Θ v ->
+    wf_cval Θ (CTag A c l v)
+
+with wf_cval' (Θ : analysis_context) : cval -> Prop :=
+| WF_CVfun :
+  forall f ρ xs e,
+    wf_cenv Θ ρ ->
+    wf_cval' Θ (CVfun f ρ xs e)
+
+| WF_CVconstr_nil :
+  forall t,
+    wf_cval' Θ (CVconstr t [])
+
+| WF_CVconstr :
+  forall t v vs,
+    wf_cval Θ v ->
+    wf_cval' Θ (CVconstr t vs) ->
+    wf_cval' Θ (CVconstr t (v :: vs))
+
+with wf_cenv (Θ : analysis_context) : cenv -> Prop :=
+| WF_cenv :
+  forall ρ,
+    (forall x v, ρ ! x = Some v -> wf_cval Θ v) ->
+    wf_cenv Θ ρ.
+
+Hint Constructors wf_cval : core.
+Hint Constructors wf_cval' : core.
+Hint Constructors wf_cenv : core.
+
+Scheme wf_cval_mut := Induction for wf_cval Sort Prop
+with wf_cval'_mut := Induction for wf_cval' Sort Prop
+with wf_cenv_mut := Induction for wf_cenv Sort Prop.
+
+(* A result is well-formed if it is out of time, or returns a well-formed value. *)
+Inductive wf_cres (Θ : analysis_context) : cres -> Prop :=
+| WF_COOT :
+  wf_cres Θ COOT
+
+| WF_CRes :
+  forall v,
+    wf_cval Θ v ->
+    wf_cres Θ (CRes v).
+
+Hint Constructors wf_cres : core.
+
+(* Inversion *)
+Lemma wf_cval_CTag_inv {Θ A c l v} :
+  wf_cval Θ (CTag A c l v) ->
+  (Θ c = A) /\ wf_cval' Θ v.
+Proof. intros Hwf; inv Hwf; split; eauto. Qed.
+
+Lemma wf_cval_CVfun_inv {Θ f ρ xs e} :
+  wf_cval' Θ (CVfun f ρ xs e) ->
+  wf_cenv Θ ρ.
+Proof. intros Hwf; inv Hwf; assumption. Qed.
+
+Lemma wf_cres_CRes_inv {Θ v} :
+  wf_cres Θ (CRes v) ->
+  wf_cval Θ v.
+Proof. intros Hwf; inv Hwf; assumption. Qed.
+
+(* `wf_cenv` is preserved by the environment operations of the semantics *)
+Lemma wf_cenv_get {Θ ρ} :
+  wf_cenv Θ ρ ->
+  forall x v,
+    ρ ! x = Some v ->
+    wf_cval Θ v.
+Proof. fcrush. Qed.
+
+Lemma wf_cenv_get_list {Θ ρ} :
+  wf_cenv Θ ρ ->
+  forall xs vs,
+    get_list xs ρ = Some vs ->
+    Forall (wf_cval Θ) vs.
+Proof.
+  intros Henv xs.
+  induction xs as [| x xs IHxs]; simpl; intros vs Hget; fcrush.
+Qed.
+
+Lemma wf_cenv_set {Θ ρ} x v :
+  wf_cenv Θ ρ ->
+  wf_cval Θ v ->
+  wf_cenv Θ (M.set x v ρ).
+Proof.
+  intros Henv Hv.
+  inv Henv.
+  constructor; intros y w Hget.
+  destruct (M.elt_eq x y); subst.
+  - rewrite M.gss in *; fcrush.
+  - rewrite M.gso in *; fcrush.
+Qed.
+
+Lemma wf_cenv_set_lists {Θ} :
+  forall ρ,
+    wf_cenv Θ ρ ->
+    forall vs xs ρ',
+      Forall (wf_cval Θ) vs ->
+      set_lists xs vs ρ = Some ρ' ->
+      wf_cenv Θ ρ'.
+Proof.
+  intros ρ Henv vs.
+  induction vs as [| v vs IHvs]; intros xs ρ' Hvs Hset.
+  - destruct xs as [| x xs]; simpl in Hset; [| discriminate Hset].
+    inv Hset; assumption.
+  - destruct xs as [| x xs]; simpl in Hset; [discriminate Hset |].
+    destruct (set_lists xs vs ρ) as [ρ'' |] eqn:Heqρ''; [| discriminate Hset].
+    inv Hset.
+    inv Hvs.
+    match goal with
+    | [Hv : wf_cval Θ v, Hvs' : Forall (wf_cval Θ) vs |- _] =>
+        exact (wf_cenv_set x v (IHvs xs ρ'' Hvs' Heqρ'') Hv)
+    end.
+Qed.
