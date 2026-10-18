@@ -535,6 +535,25 @@ with approx_env_mut := Induction for approx_env Sort Prop.
 Definition approx_vals (avs : avals) (v : clval) : Prop :=
   exists av, (av \in avs) /\ approx_val av v.
 
+Lemma approx_env_get {AE ρ x v} :
+  approx_env AE ρ ->
+  ρ ! x = Some v ->
+  approx_vals (AE x) v.
+Proof. intros Henv Hget; inv Henv; unfold approx_vals; eauto. Qed.
+
+Lemma approx_env_set {AE ρ} x v :
+  approx_env AE ρ ->
+  approx_vals (AE x) v ->
+  approx_env AE (M.set x v ρ).
+Proof.
+  intros Henv Hv.
+  inv Henv.
+  constructor; intros y w Hget.
+  destruct (M.elt_eq x y); subst.
+  - rewrite M.gss in Hget; inv Hget; exact Hv.
+  - rewrite M.gso in Hget by auto; eauto.
+Qed.
+
 (* A result is approximated by `R` if it is out of time, or returns a value
    approximated by some abstract value in `R`. *)
 Inductive approx_res : avals -> cres -> Prop :=
@@ -565,6 +584,10 @@ Definition approx_int (c : color) (AI : ainteractions) (I : interactions) : Prop
     (c1 = c -> c2 = c -> (l1, l2) \in AI) /\
     (c1 = c -> c2 <> c -> (l1, l_top_elim) \in AI) /\
     (c1 <> c -> c2 = c -> (l_top_intro, l2) \in AI).
+
+Lemma approx_int_empty c AI :
+  approx_int c AI (Empty_set _).
+Proof. unfold approx_int, Ensembles.In. fcrush. Qed.
 
 Lemma approx_int_respect c AI I :
   approx_int c AI I ->
@@ -1105,10 +1128,38 @@ Section LR.
     exists v2, r2 = CRes v2 /\ (forall k, V k v1 v2).
   Proof. intros. hauto. Qed.
 
+  (* Escaped Values *)
+  (* A value held by the unit wearing `c` that belongs to another unit must
+     have escaped from that unit. *)
+  Definition cescaped (c : color) (v : clval) : Prop :=
+    match v with
+    | CTAG _ A' (c', _) _ => c' <> c -> approx_vals (ai_esc A') v
+    end.
+
+  Definition cescaped_env (c : color) (ρ : cenv) : Prop :=
+    forall x v, ρ ! x = Some v -> cescaped c v.
+
+  Lemma cescaped_env_set {c ρ} x v :
+    cescaped_env c ρ ->
+    cescaped c v ->
+    cescaped_env c (M.set x v ρ).
+  Proof.
+    unfold cescaped_env.
+    intros Hesc Hv y w Hget.
+    destruct (M.elt_eq x y); subst.
+    - rewrite M.gss in Hget; inv Hget; exact Hv.
+    - rewrite M.gso in Hget by auto; eauto.
+  Qed.
+
   (* Environment Relation *)
-  Definition G i Γ1 ρ1 ρ2 :=
+  (* Relates the environments of the unit wearing `c`: besides the pointwise
+     value relation, the target environment is approximated by the abstract
+     environment of `θ c`, and every foreign value in it has escaped. *)
+  Definition G c i Γ1 ρ1 ρ2 :=
     wf_env Γ1 ρ1 /\
       wf_cenv θ ρ2 /\
+      approx_env (ai_env (θ c)) ρ2 /\
+      cescaped_env c ρ2 /\
       forall x,
         (x \in Γ1) ->
         exists v1 v2,
@@ -1117,25 +1168,34 @@ Section LR.
             V i v1 v2.
 
   (* Environment Lemmas *)
-  Lemma G_subset Γ1 Γ2 {i ρ1 ρ2}:
-    G i Γ1 ρ1 ρ2 ->
+  Lemma G_subset Γ1 Γ2 {c i ρ1 ρ2}:
+    G c i Γ1 ρ1 ρ2 ->
     Γ2 \subset Γ1 ->
-    G i Γ2 ρ1 ρ2.
+    G c i Γ2 ρ1 ρ2.
   Proof. unfold G. fcrush. Qed.
 
-
-  Lemma G_wf_env_l {i Γ1 ρ1 ρ2}:
-    G i Γ1 ρ1 ρ2 ->
+  Lemma G_wf_env_l {c i Γ1 ρ1 ρ2}:
+    G c i Γ1 ρ1 ρ2 ->
     wf_env Γ1 ρ1.
   Proof. unfold G. fcrush. Qed.
 
-  Lemma G_wf_cenv_r {i Γ1 ρ1 ρ2}:
-    G i Γ1 ρ1 ρ2 ->
+  Lemma G_wf_cenv_r {c i Γ1 ρ1 ρ2}:
+    G c i Γ1 ρ1 ρ2 ->
     wf_cenv θ ρ2.
   Proof. unfold G. fcrush. Qed.
 
-  Lemma G_get {Γ1 i ρ1 ρ2}:
-    G i Γ1 ρ1 ρ2 ->
+  Lemma G_approx_env {c i Γ1 ρ1 ρ2}:
+    G c i Γ1 ρ1 ρ2 ->
+    approx_env (ai_env (θ c)) ρ2.
+  Proof. unfold G. intros [_ [_ [Haenv _]]]. exact Haenv. Qed.
+
+  Lemma G_cescaped_env {c i Γ1 ρ1 ρ2}:
+    G c i Γ1 ρ1 ρ2 ->
+    cescaped_env c ρ2.
+  Proof. unfold G. intros [_ [_ [_ [Hesc _]]]]. exact Hesc. Qed.
+
+  Lemma G_get {c Γ1 i ρ1 ρ2}:
+    G c i Γ1 ρ1 ρ2 ->
     forall x v1,
       (x \in Γ1) ->
       M.get x ρ1 = Some v1 ->
@@ -1145,13 +1205,13 @@ Section LR.
   Proof.
     unfold G.
     intros.
-    destruct H as [Hwf [Href HG]].
+    destruct H as [Hwf [Href [Haenv [Hesc HG]]]].
     edestruct HG as [v1' [v2 [Heqv1 [Heqv2 HV]]]]; eauto; invc.
     fcrush.
   Qed.
 
-  Lemma G_get_list {i Γ1 ρ1 ρ2} :
-    G i Γ1 ρ1 ρ2 ->
+  Lemma G_get_list {c i Γ1 ρ1 ρ2} :
+    G c i Γ1 ρ1 ρ2 ->
     forall xs vs1,
       (FromList xs) \subset Γ1 ->
       get_list xs ρ1 = Some vs1 ->
@@ -1171,18 +1231,20 @@ Section LR.
       edestruct IHxs as [vs2 [Heqvs2 Vvs]]; eauto; fcrush.
   Qed.
 
-  Lemma G_set {i Γ1 ρ1 ρ2}:
-    G i Γ1 ρ1 ρ2 ->
+  Lemma G_set {c i Γ1 ρ1 ρ2}:
+    G c i Γ1 ρ1 ρ2 ->
     forall {x v1 v2},
       V i v1 v2 ->
-      G i (x |: Γ1) (M.set x v1 ρ1) (M.set x v2 ρ2).
+      approx_vals (ai_env (θ c) x) v2 ->
+      cescaped c v2 ->
+      G c i (x |: Γ1) (M.set x v1 ρ1) (M.set x v2 ρ2).
   Proof.
     unfold G.
     intro HG.
     pose proof HG as HG'.
     intros.
 
-    destruct HG as [Hwf [Href HG]].
+    destruct HG as [Hwf [Href [Haenv [Hesc HG]]]].
     split.
     eapply wf_env_set; eauto.
     eapply V_wf_val_l; eauto.
@@ -1190,6 +1252,12 @@ Section LR.
     split.
     eapply wf_cenv_set; eauto.
     eapply V_wf_cval_r; eauto.
+
+    split.
+    eapply approx_env_set; eauto.
+
+    split.
+    eapply cescaped_env_set; eauto.
 
     intros.
     destruct (M.elt_eq x0 x); subst.
@@ -1201,21 +1269,23 @@ Section LR.
 
   (* Binding a variable that is not in [Γ1] on the source side only
    preserves the environment relation. *)
-  Lemma G_set_unused {i Γ1 ρ1 ρ2} y v :
-    G i Γ1 ρ1 ρ2 ->
+  Lemma G_set_unused {c i Γ1 ρ1 ρ2} y v :
+    G c i Γ1 ρ1 ρ2 ->
     ~ (y \in Γ1) ->
     wf_val v ->
-    G i Γ1 (M.set y v ρ1) ρ2.
+    G c i Γ1 (M.set y v ρ1) ρ2.
   Proof.
     unfold G.
     intros HG Hy Hv.
-    destruct HG as [Hwf1 [Hwf2 HGv]].
-    split; [| split ].
+    destruct HG as [Hwf1 [Hwf2 [Haenv [Hesc HGv]]]].
+    split; [| split; [| split; [| split ]]].
     - eapply wf_env_subset.
       + eapply wf_env_set; eassumption.
       + unfold Ensembles.Included, Ensembles.In.
         intros z Hz. right. assumption.
     - exact Hwf2.
+    - exact Haenv.
+    - exact Hesc.
     - intros z Hz.
       destruct (HGv z Hz) as [v1 [v2 [Hg1 [Hg2 HV]]]].
       exists v1, v2.
@@ -1223,19 +1293,21 @@ Section LR.
       split; [ exact Hg1 | split; [ exact Hg2 | exact HV ] ].
   Qed.
 
-  Lemma G_set_lists {i Γ1 ρ1 ρ2}:
-    G i Γ1 ρ1 ρ2 ->
+  Lemma G_set_lists {c i Γ1 ρ1 ρ2}:
+    G c i Γ1 ρ1 ρ2 ->
     forall {xs vs1 vs2 ρ3 ρ4},
       Forall2 (V i) vs1 vs2 ->
+      Forall2 (fun x v => approx_vals (ai_env (θ c) x) v) xs vs2 ->
+      Forall (cescaped c) vs2 ->
       set_lists xs vs1 ρ1 = Some ρ3 ->
       set_lists xs vs2 ρ2 = Some ρ4 ->
-      G i (FromList xs :|: Γ1) ρ3 ρ4.
+      G c i (FromList xs :|: Γ1) ρ3 ρ4.
   Proof.
     intros HG xs.
     induction xs; simpl; intros.
     - destruct vs1; try discriminate.
       destruct vs2; try discriminate.
-      inv H0; inv H1.
+      inv H2; inv H3.
       eapply G_subset; eauto; normalize_sets;
         rewrite Union_Empty_set_neut_l; eauto;
         apply Included_refl.
@@ -1243,14 +1315,13 @@ Section LR.
       destruct vs2; try discriminate.
       destruct (set_lists xs vs1 ρ1) eqn:Heq1; try discriminate.
       destruct (set_lists xs vs2 ρ2) eqn:Heq2; try discriminate.
-      inv H; inv H0; inv H1.
+      inv H; inv H0; inv H1; inv H2; inv H3.
       eapply G_subset with (Γ1 := (a |: (FromList xs :|: Γ1))); eauto;
         try (normalize_sets;
              rewrite Union_assoc;
              apply Included_refl).
       eapply G_set; eauto.
   Qed.
-
 
   (* Monotonicity Lemmas *)
   Lemma V_mono_Forall_aux :
@@ -1341,20 +1412,19 @@ Section LR.
     apply R_mono with (i - j1); try lia; auto.
   Qed.
 
-  Lemma G_mono {Γ1 ρ1 ρ2} i j:
-    G i Γ1 ρ1 ρ2 ->
+  Lemma G_mono {c Γ1 ρ1 ρ2} i j:
+    G c i Γ1 ρ1 ρ2 ->
     j <= i ->
-    G j Γ1 ρ1 ρ2.
+    G c j Γ1 ρ1 ρ2.
   Proof.
     unfold G.
     intros.
-    destruct H as [Hwf1 [Hwf2 HG]].
+    destruct H as [Hwf1 [Hwf2 [Haenv [Hesc HG]]]].
     repeat (split; auto); intros.
     edestruct HG as [v1 [v2 [Heqv1 [Heqv2 HV]]]]; eauto; invc.
     eexists; repeat (split; eauto).
     eauto using V_mono.
   Qed.
-
 
   (* Compatibility Lemmas *)
   (* Well Scoped *)
@@ -1460,17 +1530,19 @@ Section LR.
       + apply IHe; eapply free_proj_k_inv; eauto.
   Qed.
 
-  Definition well_annotated A c Γ e Rs :=
+  (* `Rs` is quantified inside as function bodies are checked against other return sets. *)
+  Definition well_annotated A c Γ e :=
     θ c = A /\
-    forall i ρ1 ρ2,
+    forall Rs,
       acheck A e Rs ->
-      G i Γ ρ1 ρ2 ->
-      E A c i ρ1 ρ2 e Rs.
+      forall i ρ1 ρ2,
+        G c i Γ ρ1 ρ2 ->
+        E A c i ρ1 ρ2 e Rs.
 
-  Lemma ret_compat A c Γ x Rs :
+  Lemma ret_compat A c Γ x :
     θ c = A ->
     (x \in Γ) ->
-    well_annotated A c Γ (Eret x) Rs.
+    well_annotated A c Γ (Eret x).
   Proof.
     unfold well_annotated, E, E', R, R', Ensembles.Included, Ensembles.In.
     intros; simpl.
@@ -1484,17 +1556,18 @@ Section LR.
       edestruct (G_get H2) as [v2 [Heqv2 HV]]; eauto.
       exists 1, (CRes v2), (Empty_set _); split; eauto; simpl.
       econstructor; eauto.
-      admit.
-      (* no interaction is collected *)
-      unfold approx_int, Ensembles.In.
-      intros c1 l1 c2 l2 Hin; destruct Hin.
-      eapply V_mono; eauto; lia.
-  Admitted.
 
-  Lemma fundamental_property {A c Γ e Rs}:
+      (* `v2` is approximated by `ai_env (θ c) x`, which flows into `Rs` *)
+      destruct (approx_env_get (G_approx_env H2) Heqv2) as [av [Hav Happrox]]; eauto.
+      eapply approx_int_empty; eauto.
+
+      eapply V_mono; eauto; lia.
+  Qed.
+
+  Lemma fundamental_property {A c Γ e}:
     θ c = A ->
     well_scoped Γ e ->
-    well_annotated A c Γ e Rs.
+    well_annotated A c Γ e.
   Proof.
     intros HU H.
     induction H; intros.
