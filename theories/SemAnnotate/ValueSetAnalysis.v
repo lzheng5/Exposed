@@ -277,6 +277,44 @@ Proof.
   eapply Reachable_step; [exact Hreach | exact Hreach'].
 Qed.
 
+Lemma empty_internals_closed c I :
+  internals_closed (Empty_set _) c I.
+Proof. unfold internals_closed. sfirstorder. Qed.
+
+Lemma internals_closed_empty U c :
+  internals_closed U c (Empty_set interaction).
+Proof.
+  unfold internals_closed, cinternal, Ensembles.In.
+  intros l cl' HclU Hreach.
+  assert (Heq : cl' = (c, l)).
+  { clear HclU.
+    induction Hreach as [| ? Hin | ? Hin | ? ? ? IH1 ? IH2]; sfirstorder. }
+  fcrush.
+Qed.
+
+
+Lemma internals_closed_equivalent U c I I' :
+  I <--> I' ->
+  (internals_closed U c I <-> internals_closed U c I').
+Proof.
+  intros [Hsub Hsub'].
+  assert (Hreach : forall (J J' : interactions),
+             (forall p, p \in J -> p \in J') ->
+             forall cl cl', cl' \in reachable J cl -> cl' \in reachable J' cl).
+  { intros J J' HJ cl cl' Hr.
+    induction Hr as [x | x y Hin | x y Hin | x y z H1 IH1 H2 IH2];
+      [ apply Reachable_refl
+      | apply Reachable_interact_l; apply HJ; exact Hin
+      | apply Reachable_interact_r; apply HJ; exact Hin
+      | eapply Reachable_step; eauto ]. }
+  unfold internals_closed, cinternal.
+  split; intros Hclosed l cl' HlU Hr.
+  - eapply Hclosed; [exact HlU |].
+    eapply (Hreach I' I); eauto.
+  - eapply Hclosed; [exact HlU |].
+    eapply (Hreach I I'); eauto.
+Qed.
+
 (* Edge-wise characterization of Closure *)
 (* `U` respects `I` when every *single* interaction of `I` joins two colored
    labels that are either both internal to the unit wearing `c` or both not:
@@ -528,6 +566,53 @@ Definition approx_int (c : color) (AI : ainteractions) (I : interactions) : Prop
     (c1 = c -> c2 = c -> (l1, l2) \in AI) /\
     (c1 = c -> c2 <> c -> (l1, l_top_elim) \in AI) /\
     (c1 <> c -> c2 = c -> (l_top_intro, l2) \in AI).
+
+Lemma approx_int_respect c AI I :
+  approx_int c AI I ->
+  interactions_respect (ainternals_of AI) c I.
+Proof.
+  unfold approx_int, interactions_respect, cinternal.
+  intros Happrox [c1 l1] [c2 l2] Hin.
+  pose proof (Happrox c1 l1 c2 l2 Hin) as [Hcc [Hce Hec]].
+  pose proof (ainternals_of_closed AI) as Hclosed.
+  unfold ainternals_closed in Hclosed.
+  split; intros [Hc HU].
+  - (* the introduction site is internal *)
+    destruct (Nat.eq_dec c2 c) as [Hc2 | Hc2].
+    + (* internal interaction: `l2` is reachable from `l1` *)
+      split; [exact Hc2 |].
+      eapply Hclosed; [exact HU |].
+      unfold Ensembles.In.
+      apply AReachable_interact_l.
+      exact (Hcc Hc Hc2).
+    + (* eliminated by the context: `l1` would reach `l_top_elim` *)
+      exfalso.
+      unfold ainternals_of, ainternal, Ensembles.In in HU.
+      destruct HU as [_ Helim].
+      apply Helim.
+      apply AReachable_interact_l.
+      exact (Hce Hc Hc2).
+  - (* the elimination site is internal *)
+    destruct (Nat.eq_dec c1 c) as [Hc1 | Hc1].
+    + (* internal interaction: `l1` is reachable from `l2` *)
+      split; [exact Hc1 |].
+      eapply Hclosed; [exact HU |].
+      unfold Ensembles.In.
+      apply AReachable_interact_r.
+      exact (Hcc Hc1 Hc).
+    + (* foreign value eliminated by us: `l2` would reach `l_top_intro` *)
+      exfalso.
+      unfold ainternals_of, ainternal, Ensembles.In in HU.
+      destruct HU as [Hintro _].
+      apply Hintro.
+      apply AReachable_interact_r.
+      exact (Hec Hc1 Hc).
+Qed.
+
+Corollary approx_int_closed c AI I :
+  approx_int c AI I ->
+  internals_closed (ainternals_of AI) c I.
+Proof. eauto using approx_int_respect, interactions_respect_closed. Qed.
 
 (* Checking Semantics based on the Collecting Semantics *)
 (* This semantics dynamically validates the analysis result, `A`.
@@ -796,4 +881,95 @@ Proof.
     | [Hv : wf_cval Θ v, Hvs' : Forall (wf_cval Θ) vs |- _] =>
         exact (wf_cenv_set x v (IHvs xs ρ'' Hvs' Heqρ'') Hv)
     end.
+Qed.
+
+Lemma cbstep_fuel_closed A c ρ e i Rs r I :
+  cbstep_fuel A c ρ e i Rs r I ->
+  internals_closed (ainternals_of (ai_int A)) c I.
+Proof.
+  intros.
+  inv H.
+  - eapply internals_closed_empty; eauto.
+  - eapply approx_int_closed; eauto.
+Qed.
+
+(* Well-formedness does not depend on `acheck`: a foreign callee runs under its
+   own analysis result, for which no `acheck` is available, so the induction
+   is carried out without it. *)
+Lemma cbstep_wf_cres_aux Θ :
+  forall A c ρ e i Rs r I,
+    cbstep A c ρ e i Rs r I ->
+    Θ c = A ->
+    wf_cenv Θ ρ ->
+    wf_cres Θ r.
+Proof.
+  intros A c ρ e i Rs r I Hstep.
+  induction Hstep using cbstep_ind' with
+    (P := fun A c ρ e i Rs r I => Θ c = A -> wf_cenv Θ ρ -> wf_cres Θ r)
+    (P0 := fun A c ρ e i Rs r I => Θ c = A -> wf_cenv Θ ρ -> wf_cres Θ r);
+    intros HΘ Henv.
+  - (* Cbstep_ret *)
+    constructor.
+    eapply wf_cenv_get; eauto.
+  - (* Cbstep_fun: the new closure is tagged with `A = Θ c` *)
+    apply IHHstep; [exact HΘ |].
+    apply wf_cenv_set; [exact Henv |].
+    constructor; [exact HΘ |].
+    constructor; exact Henv.
+  - (* Cbstep_app_External: the callee runs under its own tag `A' = Θ c'` *)
+    match goal with
+    | [Hget : M.get ?f ρ = Some ?vf |- _] =>
+        pose proof (wf_cenv_get Henv f vf Hget) as Hvf
+    end.
+    destruct (wf_cval_CTag_inv Hvf) as [HΘ' Hvf'].
+    pose proof (wf_cval_CVfun_inv Hvf') as Henv'.
+    apply IHHstep; [exact HΘ' |].
+    match goal with
+    | [Hgetl : get_list _ ρ = Some _, Hset : set_lists _ _ _ = Some _ |- _] =>
+        refine (wf_cenv_set_lists _ _ _ _ _ _ Hset);
+        [ apply wf_cenv_set; [exact Henv' | exact Hvf]
+        | exact (wf_cenv_get_list Henv _ _ Hgetl) ]
+    end.
+  - (* Cbstep_app_Internal: the callee runs under `A = Θ c` *)
+    match goal with
+    | [Hget : M.get ?f ρ = Some ?vf |- _] =>
+        pose proof (wf_cenv_get Henv f vf Hget) as Hvf
+    end.
+    destruct (wf_cval_CTag_inv Hvf) as [HΘ' Hvf'].
+    pose proof (wf_cval_CVfun_inv Hvf') as Henv'.
+    apply IHHstep; [exact HΘ' |].
+    match goal with
+    | [Hgetl : get_list _ ρ = Some _, Hset : set_lists _ _ _ = Some _ |- _] =>
+        refine (wf_cenv_set_lists _ _ _ _ _ _ Hset);
+        [ apply wf_cenv_set; [exact Henv' | exact Hvf]
+        | exact (wf_cenv_get_list Henv _ _ Hgetl) ]
+    end.
+  - (* CbstepF_OOT *)
+    constructor.
+  - (* CbstepF_Step *)
+    apply IHHstep; [exact HΘ | exact Henv].
+Qed.
+
+(* A returned value agrees with Θ as well. *)
+Lemma cbstep_wf_cres Θ :
+  forall A c ρ e i Rs r I,
+    cbstep A c ρ e i Rs r I ->
+    Θ c = A ->
+    wf_cenv Θ ρ ->
+    wf_cres Θ r.
+Proof.
+  intros A c ρ e i Rs r I Hstep.
+  exact (cbstep_wf_cres_aux Θ A c ρ e i Rs r I Hstep).
+Qed.
+
+Lemma cbstep_fuel_wf_cres Θ A c ρ e i Rs r I :
+  Θ c = A ->
+  wf_cenv Θ ρ ->
+  cbstep_fuel A c ρ e i Rs r I ->
+  wf_cres Θ r.
+Proof.
+  intros HΘ Henv Hstep.
+  inv Hstep.
+  - constructor.
+  - eapply cbstep_wf_cres_aux; eauto.
 Qed.
