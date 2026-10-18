@@ -10,7 +10,7 @@ From Common Require Import Util.
 From SemAnnotate Require Import LabeledANF.
 
 (* A Simple Value Set Analysis *)
-(* Please note that everything is *static*. *)
+(* Please note that everything related to the analysis is *static*. *)
 
 (* --------------------------------------------------------------- *)
 (* The unknown/foreign side                                          *)
@@ -125,7 +125,6 @@ Record analysis_info : Type :=
   mk_analysis_info {
       ai_env : aenv;           (* value sets                                 *)
       ai_ret : aret;           (* return sets                                *)
-      ai_res : avals;          (* return set of the analysed unit            *)
       ai_esc : avals;          (* values that may escape to the context      *)
       ai_int : ainteractions   (* statically predicted interactions          *)
     }.
@@ -148,7 +147,7 @@ Definition escapes_ok (A : analysis_info) : Prop :=
         forall y, List.In y ys -> (A y \subset Esc)).*)
 
 (* --------------------------------------------------------------- *)
-(* The abstract semantics                                            *)
+(* The Abstract Semantics                                            *)
 (* --------------------------------------------------------------- *)
 
 (* [acheck A e R] reads: the analysis result [A] is acceptable
@@ -175,25 +174,20 @@ Inductive acheck (A : analysis_info) : exp -> avals -> Prop :=
   forall {f l xs R},
     (* the call site (c, l) eliminates everything that reaches [f] *)
     (forall av, (av \in ai_env A f) -> ((label_of av, l) \in ai_int A)) ->
-    (* known callee: arguments flow to parameters, results flow out *)
+    (* internal call: arguments flow to parameters, results flow out *)
     (forall l' f' xs' e',
         (AVfun l' f' xs' e' \in ai_env A f) ->
         length xs = length xs' /\
           (AVfun l' f' xs' e' \in ai_env A f') /\
           Forall2 (fun x x' => ai_env A x \subset ai_env A x') xs xs' /\
           (ai_ret A l' \subset R)) ->
-    (* unknown callee: the arguments escape and the result is unknown *)
+    (* foreign call: the arguments escape and the result is unknown *)
     ((AVtop \in ai_env A f) ->
      Forall (fun x => ai_env A x \subset ai_esc A) xs /\
        (AVtop \in R)) ->
     acheck A (Eapp f l xs) R.
 
 Hint Constructors acheck : core.
-
-(* The analysis result [A] is acceptable for the whole unit [e]: the values
-   [e] may return are over-approximated by [ai_res A]. *)
-Definition acheck_top (A : analysis_info) (e : exp) : Prop :=
-  acheck A e (ai_res A).
 
 (* Checking Semantics With Respect to Colored Label Pair Set *)
 
@@ -500,8 +494,9 @@ Scheme approx_val_mut := Induction for approx_val Sort Prop
 with approx_val'_mut := Induction for approx_val' Sort Prop
 with approx_env_mut := Induction for approx_env Sort Prop.
 
+(* `v` is approximated by some abstract value in `avs`. *)
 Definition approx_vals (avs : avals) (v : clval) : Prop :=
-  forall av, av \in avs -> approx_val av v.
+  exists av, (av \in avs) /\ approx_val av v.
 
 (* A result is approximated by `R` if it is out of time, or returns a value
    approximated by some abstract value in `R`. *)
@@ -518,48 +513,95 @@ Inductive approx_res : avals -> cres -> Prop :=
 
 Hint Constructors approx_res : core.
 
+(* `approx_int c AI I`: the static interactions `AI` of the unit wearing color
+   `c` over-approximate the collected interactions `I`, as seen from that unit.
+   `l_top_intro` and `l_top_elim` approximate all foreign interactions:
+   - an internal interaction is predicted as it is;
+   - one of our values eliminated by the context is predicted as eliminated
+     at `l_top_elim`;
+   - a foreign value eliminated by us is predicted as introduced at
+     `l_top_intro`;
+   - interactions between other units are not constrained. *)
+Definition approx_int (c : color) (AI : ainteractions) (I : interactions) : Prop :=
+  forall c1 l1 c2 l2,
+    (((c1, l1), (c2, l2)) \in I) ->
+    (c1 = c -> c2 = c -> (l1, l2) \in AI) /\
+    (c1 = c -> c2 <> c -> (l1, l_top_elim) \in AI) /\
+    (c1 <> c -> c2 = c -> (l_top_intro, l2) \in AI).
+
 (* Checking Semantics based on the Collecting Semantics *)
-(* This semantics specifies the validity of the analysis result, `A`. *)
-Inductive cbstep (A : analysis_info) (c : color) (ρ : cenv) : exp -> fuel -> avals -> cres -> Prop :=
+(* This semantics dynamically validates the analysis result, `A`.
+   The collected interactions are validated against `ai_int A` once, in
+   `CbstepF_Step`, which covers every interaction produced underneath it,
+   including the call edge added by `Cbstep_app_*`. *)
+Inductive cbstep (A : analysis_info) (c : color) (ρ : cenv) : exp -> fuel -> avals -> cres -> interactions -> Prop :=
 | Cbstep_ret :
   forall {x v Rs},
     M.get x ρ = Some v ->
-    (forall av, av \in Rs -> approx_val av v) ->
-    cbstep A c ρ (Eret x) 0 Rs (CRes v)
+    cbstep A c ρ (Eret x) 0 Rs (CRes v) (Empty_set _)
 
 | Cbstep_fun :
-  forall {f l xs e k i Rs r},
-    cbstep_fuel A c (M.set f (CTag A c l (CVfun f ρ xs e)) ρ) k i Rs r ->
+  forall {f l xs e k i Rs r I},
+    cbstep_fuel A c (M.set f (CTag A c l (CVfun f ρ xs e)) ρ) k i Rs r I ->
     approx_vals (ai_env A f) (CTag A c l (CVfun f ρ xs e)) ->
-    cbstep A c ρ (Efun f l xs e k) i Rs r
+    cbstep A c ρ (Efun f l xs e k) i Rs r I
 
+(* Foreign call: dynamic counterpart of the unknown-callee branch of `Acheck_app`,
+   validated from both sides.  The caller (`A`) sees an unknown value being
+   eliminated and its arguments escaping; the callee (`A'`) sees one of its
+   escaped closures being eliminated by the context. *)
 | Cbstep_app_External :
-  forall {A' f f' c' l l' xs ρ' xs' e vs ρ'' i Rs r},
+  forall {A' f f' c' l l' xs ρ' xs' e vs ρ'' i Rs r I},
     M.get f ρ = Some (CTag A' c' l' (CVfun f' ρ' xs' e)) ->
-    c <> c' -> (* foreign call *)
+    c <> c' ->
+
+    (* callee side: the closure has escaped and is eliminated by the context
+       (the caller side, `(l_top_intro, l)`, is checked by `CbstepF_Step`) *)
+    approx_vals (ai_esc A') (CTag A' c' l' (CVfun f' ρ' xs' e)) ->
+    ((l', l_top_elim) \in ai_int A') ->
+
+    (* caller side: the arguments escape to the context *)
     get_list xs ρ = Some vs ->
+    Forall (approx_vals (ai_esc A)) vs ->
+
+    (* callee side: the (unknown) arguments flow to the parameters *)
     set_lists xs' vs (M.set f' (CTag A' c' l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
-    cbstep_fuel A' c' ρ'' e i Rs r ->
-    cbstep A c ρ (Eapp f l xs) i Rs r
+    approx_env (ai_env A') ρ'' ->
 
+    (* the body is validated against the callee's own analysis result and
+       returns into `ai_ret A' l'` *)
+    cbstep_fuel A' c' ρ'' e i (ai_ret A' l') r I ->
+
+    cbstep A c ρ (Eapp f l xs) i Rs r (((c', l'), (c, l)) |: I)
+
+(* Internal call: dynamic counterpart of the known-callee branch of
+   `Acheck_app`.  The callee wears the caller's color, so it belongs to the
+   same unit and is validated against the same analysis result `A`. *)
 | Cbstep_app_Internal :
-  forall {A' f f' l l' xs ρ' xs' e vs ρ'' i Rs r},
-    M.get f ρ = Some (CTag A' c l' (CVfun f' ρ' xs' e)) ->
-    get_list xs ρ = Some vs ->
-    set_lists xs' vs (M.set f' (CTag A' c l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
-    cbstep_fuel A' c ρ'' e i Rs r ->
-    cbstep A c ρ (Eapp f l xs) i Rs r
+  forall {f f' l l' xs ρ' xs' e vs ρ'' i Rs r I},
+    M.get f ρ = Some (CTag A c l' (CVfun f' ρ' xs' e)) ->
 
-with cbstep_fuel (A : analysis_info) (c : color) (ρ : cenv) : exp -> fuel -> avals -> cres -> Prop :=
+    (* the arguments flow to the parameters *)
+    get_list xs ρ = Some vs ->
+    set_lists xs' vs (M.set f' (CTag A c l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
+    approx_env (ai_env A) ρ'' ->
+
+    (* the body returns into `ai_ret A l'` *)
+    cbstep_fuel A c ρ'' e i (ai_ret A l') r I ->
+
+    cbstep A c ρ (Eapp f l xs) i Rs r (((c, l'), (c, l)) |: I)
+
+with cbstep_fuel (A : analysis_info) (c : color) (ρ : cenv) : exp -> fuel -> avals -> cres -> interactions -> Prop :=
 | CbstepF_OOT :
   forall {e Rs},
-    cbstep_fuel A c ρ e 0 Rs COOT
+    cbstep_fuel A c ρ e 0 Rs COOT (Empty_set _)
 
 | CbstepF_Step :
-  forall {e i Rs r},
-    cbstep A c ρ e i Rs r ->
+  forall {e i Rs r I},
+    cbstep A c ρ e i Rs r I ->
     approx_res Rs r ->
-    cbstep_fuel A c ρ e (S i) Rs r.
+    approx_int c (ai_int A) I ->
+    cbstep_fuel A c ρ e (S i) Rs r I.
 
 Hint Constructors cbstep : core.
 Hint Constructors cbstep_fuel : core.
