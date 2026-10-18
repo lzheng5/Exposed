@@ -680,28 +680,28 @@ Proof.
   - rewrite M.gso in Hget by auto; eauto.
 Qed.
 
-(* Exact Values *)
+(* Locally Introduced Values *)
 (* A closure held by the unit wearing `c` (with analysis result `A`) that
    belongs to that very unit is approximated at variable `x` by its own
-   allocation site, not merely by `AVtop` -- unless it has already escaped, in
+   allocation site, not merely by `AVtop` -- unless it has already *escaped*, in
    which case `AVtop` stands for it.  This is what lets its exact site reach
    `ai_esc A` when it escapes. *)
-Definition cexact (c : color) (A : analysis_result) (x : var) (v : clval) : Prop :=
+Definition clocal (c : color) (A : analysis_result) (x : var) (v : clval) : Prop :=
   match v with
   | CTAG _ _ (c', l) (CVfun f _ xs e) =>
       c' = c -> (AVfun l f xs e \in ai_env A x) \/ (AVfun l f xs e \in ai_esc A)
   | _ => True
   end.
 
-Definition cexact_env (c : color) (A : analysis_result) (ρ : cenv) : Prop :=
-  forall x v, ρ ! x = Some v -> cexact c A x v.
+Definition clocal_env (c : color) (A : analysis_result) (ρ : cenv) : Prop :=
+  forall x v, ρ ! x = Some v -> clocal c A x v.
 
-Lemma cexact_env_set {c A ρ} x v :
-  cexact_env c A ρ ->
-  cexact c A x v ->
-  cexact_env c A (M.set x v ρ).
+Lemma clocal_env_set {c A ρ} x v :
+  clocal_env c A ρ ->
+  clocal c A x v ->
+  clocal_env c A (M.set x v ρ).
 Proof.
-  unfold cexact_env.
+  unfold clocal_env.
   intros Hex Hv y w Hget.
   destruct (M.elt_eq x y); subst.
   - rewrite M.gss in Hget; inv Hget; exact Hv.
@@ -1136,6 +1136,12 @@ Section LR.
                         Forall2 (V (i0 - (i0 - j))) vs1 vs2 ->
                         set_lists xs1 vs1 (M.set f1 (Tag l1 (Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
                         set_lists xs2 vs2 (M.set f2 (CTag A2 c2 l2 (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
+
+                        (* invariants for escaped and locally introduced values *)
+                        Forall (cescaped c2) vs2 ->
+                        Forall2 (clocal c2 A2) xs2 vs2 ->
+
+                        (* invariants for the flow information *)
                         (* internal call: the arguments flow to the parameters *)
                         (c = c2 -> Forall2 (fun x v => approx_vals (ai_env A2 x) v) xs2 vs2) ->
                         (* foreign call: the closure's own allocation site must
@@ -1143,11 +1149,6 @@ Section LR.
                            would not constrain the parameters) *)
                         (c <> c2 -> AVfun l2 f2 xs2 e2 \in ai_esc A2) ->
 
-                        Forall (cescaped c2) vs2 ->
-                        (* the callee's own closures among the arguments are
-                           approximated exactly at the parameters (or have
-                           escaped) *)
-                        Forall2 (cexact c2 A2) xs2 vs2 ->
                         E' V A2 c2 (i0 - (i0 - j)) ρ3 ρ4 e1 (ai_ret A2 l2)
                   end
 
@@ -1231,7 +1232,7 @@ Section LR.
       wf_cenv θ ρ2 /\
       approx_env (ai_env (θ c)) ρ2 /\
       cescaped_env c ρ2 /\
-      cexact_env c (θ c) ρ2 /\
+      clocal_env c (θ c) ρ2 /\
       forall x,
         (x \in Γ1) ->
         exists v1 v2,
@@ -1266,9 +1267,9 @@ Section LR.
     cescaped_env c ρ2.
   Proof. unfold G. intros [_ [_ [_ [Hesc _]]]]. exact Hesc. Qed.
 
-  Lemma G_cexact_env {c i Γ1 ρ1 ρ2}:
+  Lemma G_clocal_env {c i Γ1 ρ1 ρ2}:
     G c i Γ1 ρ1 ρ2 ->
-    cexact_env c (θ c) ρ2.
+    clocal_env c (θ c) ρ2.
   Proof. unfold G. intros [_ [_ [_ [_ [Hex _]]]]]. exact Hex. Qed.
 
   Lemma G_get {c Γ1 i ρ1 ρ2}:
@@ -1314,7 +1315,7 @@ Section LR.
       V i v1 v2 ->
       approx_vals (ai_env (θ c) x) v2 ->
       cescaped c v2 ->
-      cexact c (θ c) x v2 ->
+      clocal c (θ c) x v2 ->
       G c i (x |: Γ1) (M.set x v1 ρ1) (M.set x v2 ρ2).
   Proof.
     unfold G.
@@ -1338,7 +1339,7 @@ Section LR.
     eapply cescaped_env_set; eauto.
 
     split.
-    eapply cexact_env_set; eauto.
+    eapply clocal_env_set; eauto.
 
     intros.
     destruct (M.elt_eq x0 x); subst.
@@ -1381,7 +1382,7 @@ Section LR.
       Forall2 (V i) vs1 vs2 ->
       Forall2 (fun x v => approx_vals (ai_env (θ c) x) v) xs vs2 ->
       Forall (cescaped c) vs2 ->
-      Forall2 (cexact c (θ c)) xs vs2 ->
+      Forall2 (clocal c (θ c)) xs vs2 ->
       set_lists xs vs1 ρ1 = Some ρ3 ->
       set_lists xs vs2 ρ2 = Some ρ4 ->
       G c i (FromList xs :|: Γ1) ρ3 ρ4.
@@ -1676,9 +1677,9 @@ Section LR.
       apply G_mono with (S i); eauto; lia.
     + unfold cescaped; simpl.
       fcrush.
-    + unfold cexact; simpl.
+    + unfold clocal; simpl.
       intros; fcrush.
-    + destruct (Nat.eq_dec c0 c); [now apply H8 |].
+    + destruct (Nat.eq_dec c0 c); [now apply H10 |].
       eapply set_lists_approx_top; eauto.
       edestruct θ_escape_ok as [_ Hesc_fun]; eauto.
       eapply Hesc_fun; eauto.
@@ -1715,7 +1716,7 @@ Section LR.
         * eapply Vfun_V; eauto.
           apply G_mono with i; eauto; lia.
         * unfold cescaped; fcrush.
-        * unfold cexact; fcrush.
+        * unfold clocal; fcrush.
         * apply Included_refl.
       + edestruct R_res_inv_l as [w2 [Heqw2 HV]]; eauto; subst.
         exists (S j2), (CRes w2), I2; split; eauto.
