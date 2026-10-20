@@ -139,7 +139,7 @@ Definition escapes_ok (A : analysis_result) : Prop :=
       ((label_of av, l_top_elim) \in ai_int A)) /\
     (forall l f xs e,
         (AVfun l f xs e \in ai_esc A) ->
-        (forall x, List.In x xs -> (AVtop \in ai_env A x)) /\
+          (forall x, List.In x xs -> (AVtop \in ai_env A x)) /\
           (ai_ret A l \subset ai_esc A)).
 (* /\
     (forall l t ys,
@@ -174,6 +174,7 @@ Inductive acheck (A : analysis_result) : exp -> avals -> Prop :=
   forall {f l xs R},
     (* the call site (c, l) eliminates everything that reaches [f] *)
     (forall av, (av \in ai_env A f) -> ((label_of av, l) \in ai_int A)) ->
+
     (* internal call: arguments flow to parameters, results flow out *)
     (forall l' f' xs' e',
         (AVfun l' f' xs' e' \in ai_env A f) ->
@@ -181,10 +182,21 @@ Inductive acheck (A : analysis_result) : exp -> avals -> Prop :=
           (AVfun l' f' xs' e' \in ai_env A f') /\
           Forall2 (fun x x' => ai_env A x \subset ai_env A x') xs xs' /\
           (ai_ret A l' \subset R)) ->
-    (* foreign call: the arguments escape and the result is unknown *)
+
+    (* unknown callee: the arguments escape and the result is unknown; since
+       `AVtop` also stands for our own escaped closures, the callee may be any
+       of them, which is then called as a known callee *)
     ((AVtop \in ai_env A f) ->
-     Forall (fun x => ai_env A x \subset ai_esc A) xs /\
-       (AVtop \in R)) ->
+       Forall (fun x => ai_env A x \subset ai_esc A) xs /\ (* each argument can escape *)
+       (AVtop \in R) /\ (* result is unknown *)
+       (forall l' f' xs' e',
+           (AVfun l' f' xs' e' \in ai_esc A) ->
+             ((l', l) \in ai_int A) /\ (* each escaping function can be called at this callsite *)
+             length xs = length xs' /\
+             (AVfun l' f' xs' e' \in ai_env A f') /\
+             Forall2 (fun x x' => ai_env A x \subset ai_env A x') xs xs' /\ (* call the escaping function with the current arguments *)
+             (ai_ret A l' \subset R))) -> (* what each escaping function may return can also be returned from this callsite *)
+
     acheck A (Eapp f l xs) R.
 
 Hint Constructors acheck : core.
@@ -573,6 +585,41 @@ Proof.
   - rewrite M.gso in Hget by auto; eauto.
 Qed.
 
+Lemma approx_env_get_list {AE ρ} :
+  approx_env AE ρ ->
+  forall xs vs,
+    get_list xs ρ = Some vs ->
+    Forall2 (fun x v => approx_vals (AE x) v) xs vs.
+Proof.
+  intros Henv xs.
+  induction xs as [| x xs IHxs]; simpl; intros vs Hget.
+  - inv Hget; constructor.
+  - destruct (M.get x ρ) as [v |] eqn:Hx; [| discriminate Hget].
+    destruct (get_list xs ρ) as [vs' |] eqn:Hxs; [| discriminate Hget].
+    inv Hget.
+    constructor.
+    + eapply approx_env_get; eauto.
+    + eapply IHxs; eauto.
+Qed.
+
+Lemma approx_env_set_lists {AE ρ} :
+  approx_env AE ρ ->
+  forall xs vs ρ',
+    Forall2 (fun x v => approx_vals (AE x) v) xs vs ->
+    set_lists xs vs ρ = Some ρ' ->
+    approx_env AE ρ'.
+Proof.
+  intros Henv xs.
+  induction xs as [| x xs IHxs]; intros vs ρ' Hall Hset; simpl in Hset.
+  - destruct vs as [| v vs]; [| discriminate Hset].
+    inv Hset; exact Henv.
+  - destruct vs as [| v vs]; [discriminate Hset |].
+    destruct (set_lists xs vs ρ) as [ρ'' |] eqn:Heq; [| discriminate Hset].
+    inv Hset.
+    inv Hall.
+    apply approx_env_set; [eapply IHxs; eauto | assumption].
+Qed.
+
 (* A result is approximated by `R` if it is out of time, or returns a value
    approximated by some abstract value in `R`. *)
 Inductive approx_res : avals -> cres -> Prop :=
@@ -655,7 +702,7 @@ Corollary approx_int_closed c AI I :
   internals_closed (ainternals_of AI) c I.
 Proof. eauto using approx_int_respect, interactions_respect_closed. Qed.
 
-(* Escaped Values *)
+(* Invariants for Escaped Values *)
 (* A value held by the unit wearing `c` that belongs to another unit must have
    escaped from that unit.  A closure must have escaped with its own allocation
    site: an `AVtop` in `ai_esc` would not constrain anything. *)
@@ -664,6 +711,10 @@ Definition cescaped (c : color) (v : clval) : Prop :=
   | CTAG _ A' (c', l) (CVfun f _ xs e) => c' <> c -> AVfun l f xs e \in ai_esc A'
   | CTAG _ A' (c', _) _ => c' <> c -> approx_vals (ai_esc A') v
   end.
+
+Lemma cescaped_defining A c l v :
+  cescaped c (CTag A c l v).
+Proof. unfold cescaped; fcrush. Qed.
 
 Definition cescaped_env (c : color) (ρ : cenv) : Prop :=
   forall x v, ρ ! x = Some v -> cescaped c v.
@@ -680,17 +731,64 @@ Proof.
   - rewrite M.gso in Hget by auto; eauto.
 Qed.
 
-(* Locally Introduced Values *)
-(* A closure held by the unit wearing `c` (with analysis result `A`) that
-   belongs to that very unit is approximated at variable `x` by its own
-   allocation site, not merely by `AVtop` -- unless it has already *escaped*, in
-   which case `AVtop` stands for it.  This is what lets its exact site reach
-   `ai_esc A` when it escapes. *)
+Lemma cescaped_env_get {c ρ} x v :
+  cescaped_env c ρ ->
+  ρ ! x = Some v ->
+  cescaped c v.
+Proof. unfold cescaped_env; eauto. Qed.
+
+Lemma cescaped_env_get_list {c ρ} :
+  cescaped_env c ρ ->
+  forall xs vs,
+    get_list xs ρ = Some vs ->
+    Forall (cescaped c) vs.
+Proof.
+  intros Hesc xs.
+  induction xs as [| x xs IHxs]; simpl; intros vs Hget.
+  - inv Hget; constructor.
+  - destruct (M.get x ρ) as [v |] eqn:Hx; [| discriminate Hget].
+    destruct (get_list xs ρ) as [vs' |] eqn:Hxs; [| discriminate Hget].
+    inv Hget.
+    constructor.
+    + eapply cescaped_env_get; eauto.
+    + eapply IHxs; eauto.
+Qed.
+
+Lemma cescaped_env_set_lists {c ρ} :
+  cescaped_env c ρ ->
+  forall xs vs ρ',
+    Forall (cescaped c) vs ->
+    set_lists xs vs ρ = Some ρ' ->
+    cescaped_env c ρ'.
+Proof.
+  intros Hesc xs.
+  induction xs as [| x xs IHxs]; intros vs ρ' Hall Hset; simpl in Hset.
+  - destruct vs as [| v vs]; [| discriminate Hset].
+    inv Hset; exact Hesc.
+  - destruct vs as [| v vs]; [discriminate Hset |].
+    destruct (set_lists xs vs ρ) as [ρ'' |] eqn:Heq; [| discriminate Hset].
+    inv Hset.
+    inv Hall.
+    apply cescaped_env_set; [eapply IHxs; eauto | assumption].
+Qed.
+
+(* Invariants for Locally Introduced Values *)
+(* How a value held by the unit wearing `c` (with analysis result `A`) is
+   approximated at variable `x`:
+   - a closure of the unit itself is approximated by its own allocation site,
+     not merely by `AVtop` -- unless it has already *escaped*, in which case
+     `AVtop` stands for it.  This is what lets its exact site reach `ai_esc A`
+     when it escapes, and what makes calling it a (statically) known call;
+   - a foreign value is approximated by `AVtop`, so that eliminating it is
+     treated as an unknown call. *)
 Definition clocal (c : color) (A : analysis_result) (x : var) (v : clval) : Prop :=
   match v with
   | CTAG _ _ (c', l) (CVfun f _ xs e) =>
-      c' = c -> (AVfun l f xs e \in ai_env A x) \/ (AVfun l f xs e \in ai_esc A)
-  | _ => True
+      (c' = c -> (* c is the defining unit *)
+       (AVfun l f xs e \in ai_env A x) \/ (* internal closure *)
+         ((AVfun l f xs e \in ai_esc A) /\ (AVtop \in ai_env A x))) /\ (* unknown closure *)
+        (c' <> c -> AVtop \in ai_env A x) (* c is not the defining unit *)
+  | CTAG _ _ (c', _) _ => c' <> c -> AVtop \in ai_env A x
   end.
 
 Definition clocal_env (c : color) (A : analysis_result) (ρ : cenv) : Prop :=
@@ -706,6 +804,47 @@ Proof.
   destruct (M.elt_eq x y); subst.
   - rewrite M.gss in Hget; inv Hget; exact Hv.
   - rewrite M.gso in Hget by auto; eauto.
+Qed.
+
+Lemma clocal_env_get {c A ρ} x v :
+  clocal_env c A ρ ->
+  ρ ! x = Some v ->
+  clocal c A x v.
+Proof. unfold clocal_env; eauto. Qed.
+
+Lemma clocal_env_get_list {c A ρ} :
+  clocal_env c A ρ ->
+  forall xs vs,
+    get_list xs ρ = Some vs ->
+    Forall2 (clocal c A) xs vs.
+Proof.
+  intros Hloc xs.
+  induction xs as [| x xs IHxs]; simpl; intros vs Hget.
+  - inv Hget; constructor.
+  - destruct (M.get x ρ) as [v |] eqn:Hx; [| discriminate Hget].
+    destruct (get_list xs ρ) as [vs' |] eqn:Hxs; [| discriminate Hget].
+    inv Hget.
+    constructor.
+    + eapply clocal_env_get; eauto.
+    + eapply IHxs; eauto.
+Qed.
+
+Lemma clocal_env_set_lists {c A ρ} :
+  clocal_env c A ρ ->
+  forall xs vs ρ',
+    Forall2 (clocal c A) xs vs ->
+    set_lists xs vs ρ = Some ρ' ->
+    clocal_env c A ρ'.
+Proof.
+  intros Hloc xs.
+  induction xs as [| x xs IHxs]; intros vs ρ' Hall Hset; simpl in Hset.
+  - destruct vs as [| v vs]; [| discriminate Hset].
+    inv Hset; exact Hloc.
+  - destruct vs as [| v vs]; [discriminate Hset |].
+    destruct (set_lists xs vs ρ) as [ρ'' |] eqn:Heq; [| discriminate Hset].
+    inv Hset.
+    inv Hall.
+    apply clocal_env_set; [eapply IHxs; eauto | assumption].
 Qed.
 
 (* Checking Semantics based on the Collecting Semantics *)
@@ -730,7 +869,7 @@ Inductive cbstep (A : analysis_result) (c : color) (ρ : cenv) : exp -> fuel -> 
    eliminated and its arguments escaping; the callee (`A'`) sees one of its
    escaped closures being eliminated by the context. *)
 | Cbstep_app_External :
-  forall {A' f f' c' l l' xs ρ' xs' e vs ρ'' i Rs r I},
+  forall Rs {A' f f' c' l l' xs ρ' xs' e vs ρ'' i r I},
     M.get f ρ = Some (CTag A' c' l' (CVfun f' ρ' xs' e)) ->
     c <> c' ->
 
@@ -757,7 +896,7 @@ Inductive cbstep (A : analysis_result) (c : color) (ρ : cenv) : exp -> fuel -> 
    `Acheck_app`.  The callee wears the caller's color, so it belongs to the
    same unit and is validated against the same analysis result `A`. *)
 | Cbstep_app_Internal :
-  forall {f f' l l' xs ρ' xs' e vs ρ'' i Rs r I},
+  forall Rs { f f' l l' xs ρ' xs' e vs ρ'' i r I },
     M.get f ρ = Some (CTag A c l' (CVfun f' ρ' xs' e)) ->
 
     (* the arguments flow to the parameters *)
@@ -1127,7 +1266,15 @@ Section LR.
             | Vfun f1 ρ1 xs1 e1, CVfun f2 ρ2 xs2 e2 =>
                 f1 = f2 /\ xs1 = xs2 /\ e1 = e2 /\
                   approx_vals (ai_env A2 f2) cv /\
+
+                  (* the closure is recorded at its defining unit *)
+                  (AVfun l2 f2 xs2 e2 \in ai_env A2 f2) /\
                   approx_env (ai_env A2) ρ2 /\
+
+                  (* the closure environment invariants *)
+                  cescaped_env c2 ρ2 /\
+                  clocal_env c2 A2 ρ2 /\
+
                   match i with
                   | 0 => True
                   | S i0 =>
@@ -1141,12 +1288,9 @@ Section LR.
                         Forall (cescaped c2) vs2 ->
                         Forall2 (clocal c2 A2) xs2 vs2 ->
 
-                        (* invariants for the flow information *)
-                        (* internal call: the arguments flow to the parameters *)
+                        (* internal call: the arguments flow to the parameters should be internal *)
                         (c = c2 -> Forall2 (fun x v => approx_vals (ai_env A2 x) v) xs2 vs2) ->
-                        (* foreign call: the closure's own allocation site must
-                           have escaped its unit (an `AVtop` in `ai_esc A2`
-                           would not constrain the parameters) *)
+                        (* foreign call: the closure has escaped its unit *)
                         (c <> c2 -> AVfun l2 f2 xs2 e2 \in ai_esc A2) ->
 
                         E' V A2 c2 (i0 - (i0 - j)) ρ3 ρ4 e1 (ai_ret A2 l2)
@@ -1445,11 +1589,11 @@ Section LR.
       + fcrush. *)
     - repeat (split; auto).
       destruct v; destruct c0; try contradiction.
-      + destruct HV as [Heqv [Heql [Heqe [Havs [Haenv HV]]]]]; subst.
+      + destruct HV as [Heqv [Heql [Heqe [Havs [Hsite [Haenv [Hesc [Hloc HV]]]]]]]]; subst.
         repeat (split; eauto); intros.
     - repeat (split; auto).
       destruct v; destruct c0; try contradiction.
-      destruct HV as [Heqv [Heql [Heqe [Havs [Haenv HV]]]]]; subst.
+      destruct HV as [Heqv [Heql [Heqe [Havs [Hsite [Haenv [Hesc [Hloc HV]]]]]]]]; subst.
       repeat (split; eauto); intros.
       specialize (HV j0 c0 vs1 vs2 ρ3 ρ4).
       rewrite normalize_step in *; try lia.
@@ -1654,7 +1798,7 @@ Section LR.
     forall {i ρ1 ρ2},
       wf_val (Tag l (Vfun f ρ1 xs e)) ->
       wf_cval θ (CTag A c l (CVfun f ρ2 xs e)) ->
-      (AVfun l f xs e) \in (ai_env (θ c) f) ->
+      (AVfun l f xs e) \in (ai_env A f) ->
       approx_vals (ai_env A f) (CTag A c l (CVfun f ρ2 xs e)) ->
       G c i Γ ρ1 ρ2 ->
       V i (Tag l (Vfun f ρ1 xs e)) (CTag A c l (CVfun f ρ2 xs e)).
@@ -1663,6 +1807,8 @@ Section LR.
     intros HS [HU He] Hack i.
     induction i; simpl; subst; intros; auto;
       assert (Haenv : approx_env (ai_env (θ c)) ρ2) by eauto using G_approx_env;
+      assert (Hesc_env : cescaped_env c ρ2) by eauto using G_cescaped_env;
+      assert (Hloc_env : clocal_env c (θ c) ρ2) by eauto using G_clocal_env;
       repeat (split; auto);
       intros; (repeat split; auto).
 
@@ -1675,11 +1821,10 @@ Section LR.
     + apply V_mono with i; try lia.
       eapply IHi; eauto.
       apply G_mono with (S i); eauto; lia.
-    + unfold cescaped; simpl.
-      fcrush.
+    + eauto using cescaped_defining.
     + unfold clocal; simpl.
-      intros; fcrush.
-    + destruct (Nat.eq_dec c0 c); [now apply H10 |].
+      split; intros; fcrush.
+    + destruct (Nat.eq_dec c0 c); try auto.
       eapply set_lists_approx_top; eauto.
       edestruct θ_escape_ok as [_ Hesc_fun]; eauto.
       eapply Hesc_fun; eauto.
@@ -1715,8 +1860,9 @@ Section LR.
         eapply G_mono with i; eauto; lia.
         * eapply Vfun_V; eauto.
           apply G_mono with i; eauto; lia.
-        * unfold cescaped; fcrush.
-        * unfold clocal; fcrush.
+        * eauto using cescaped_defining.
+        * unfold clocal; simpl.
+          split; intros; fcrush.
         * apply Included_refl.
       + edestruct R_res_inv_l as [w2 [Heqw2 HV]]; eauto; subst.
         exists (S j2), (CRes w2), I2; split; eauto.
@@ -1725,6 +1871,153 @@ Section LR.
         eapply cbstep_fuel_approx_int; eauto.
         eapply R_mono; eauto; lia.
   Qed.
+
+  (* A value that the unit `c` hands over to another unit `c1`, through a
+     variable whose value set escapes, has escaped from its own unit:
+     - if it belongs to `c1`, there is nothing to show;
+     - if it belongs to `c`, its exact site (or, for a constructor, some
+       approximating value) is in the value set of the variable, hence in
+       `ai_esc (θ c)`;
+     - if it belongs to a third unit, it had escaped already. *)
+  Lemma cescaped_handover {c x v} :
+    wf_cval θ v ->
+    cescaped c v ->
+    clocal c (θ c) x v ->
+    approx_vals (ai_env (θ c) x) v ->
+    ai_env (θ c) x \subset ai_esc (θ c) ->
+    forall c1, cescaped c1 v.
+  Proof.
+    intros Hwf Hesc Hloc Happrox Hsub c1.
+    destruct v as [A' [c' l'] w].
+    pose proof (wf_cval_CTag_inv Hwf) as [HA' _]; subst.
+    destruct (Nat.eq_dec c' c1) as [Heq1 | Hneq1].
+    - (* c1 is the defining unit *)
+      subst c'.
+      eauto using cescaped_defining.
+    - (* c1 is not the defining unit *)
+      destruct (Nat.eq_dec c' c) as [Heqc | Hneqc].
+      + (* c is the defining unit -> v has escaped but bound by x in unit c -> only the defining unit, c', matters *)
+        subst c'.
+        unfold cescaped.
+        destruct w as [f' ρ' xs' e' | t vs]; intros _.
+        * unfold clocal in Hloc.
+          destruct Hloc as [Hown _].
+          destruct (Hown eq_refl) as [Hin | [Hin _]].
+          -- eauto using Hsub.
+          -- auto.
+        * unfold approx_vals in *.
+          destruct Happrox as [av [Hav Hap]]; eauto.
+      + (* c is not the defining unit *)
+        (* the value belongs to a third unit: it had escaped already -> only the defining unit, c', matters *)
+        unfold cescaped in *.
+        destruct w; simpl in Hesc |- *; intros _.
+        * auto.
+        * apply Hesc; exact Hneqc.
+  Qed.
+
+  Lemma cescaped_handover_list {c c1 i Γ ρ1 ρ2 xs vs} :
+    G c i Γ ρ1 ρ2 ->
+    Forall (fun x => ai_env (θ c) x \subset ai_esc (θ c)) xs ->
+    get_list xs ρ2 = Some vs ->
+    Forall (cescaped c1) vs.
+  Proof.
+    intros HG Hsub.
+    revert vs.
+    induction Hsub as [| x xs Hxsub Hsub IH]; simpl; intros vs Hget.
+    - inv Hget; constructor.
+    - destruct (M.get x ρ2) as [v |] eqn:Hx; [| discriminate Hget].
+      destruct (get_list xs ρ2) as [vs' |] eqn:Hxs; [| discriminate Hget].
+      inv Hget.
+      constructor.
+      + apply (@cescaped_handover c c1 x v).
+        * eapply wf_cenv_get; [eapply G_wf_cenv_r; eauto | exact Hx].
+        * eapply cescaped_env_get; [eapply G_cescaped_env; eauto | exact Hx].
+        * eapply clocal_env_get; [eapply G_clocal_env; eauto | exact Hx].
+        * eapply approx_env_get; [eapply G_approx_env; eauto | exact Hx].
+        * exact Hxsub.
+      + eapply IH; eauto.
+  Qed.
+
+  Lemma app_compat A Γ xs f l c :
+    θ c = A->
+    (f \in Γ) ->
+    (FromList xs \subset Γ) ->
+    well_annotated A c Γ (Eapp f l xs).
+  Proof.
+    unfold well_annotated, E, E'.
+    intross HU Hf Hxs; simpl.
+    split; auto; intros.
+
+    inv H2.
+    - fcrush.
+    - destruct r1.
+      fcrush.
+      inv H; inv H3.
+      edestruct (G_get H0 f) as [fv2 [Heqfv2 HV]]; eauto.
+      destruct i.
+      inv H1.
+      rename w into v.
+      destruct fv2; destruct c1; destruct c2; simpl in HV; invc.
+      2 : { fcrush. }
+      destruct HV as [Hwf1 [Hwf2 [Heql [Heqf [Heqxs [Heqe [Havs [Hsite [Haenv [Hesc_t [Hloc_t HV]]]]]]]]]]]; subst; invc.
+      rename a into A0.
+      edestruct (G_get_list H0 xs vs) as [vs2 [Heqvs2 Vvs]]; eauto; invc.
+
+      destruct (set_lists_length3 (M.set v0 (CTag A0 c1 l0 (CVfun v0 t l1 e0)) t) l1 vs2) as [ρ4 Heqρ4].
+      unfold clval in *.
+      rewrite (set_lists_length_eq _ _ _ _ H12); auto.
+      eapply Forall2_length; eauto.
+
+      assert (HE : E A0 c1 (i - (i - i)) ρ'' ρ4 e0 (ai_ret A0 l0)).
+      {
+        eapply (HV i c vs vs2); eauto.
+        - apply V_mono_Forall with (S i); auto; lia.
+        - (* the arguments, now held by `c1`, have escaped from their units *)
+          destruct (Nat.eq_dec c1 c) as [Heqc | Hneqc].
+          + subst c1.
+            eapply cescaped_env_get_list; [eapply G_cescaped_env; eauto | exact Heqvs2].
+          + (* foreign call: the caller approximates the callee by `AVtop`, so
+               its arguments escape *)
+            assert (Htop : AVtop \in ai_env (θ c) f).
+            { pose proof (clocal_env_get f _ (G_clocal_env H0) Heqfv2) as Hloc_f.
+              unfold clocal in Hloc_f.
+              destruct Hloc_f as [_ Hforeign].
+              exact (Hforeign Hneqc). }
+            destruct (H9 Htop) as [Hargs _].
+            eapply cescaped_handover_list; eauto.
+        - admit.
+        - intros; subst.
+          inv Hwf2.
+
+          admit. (* follow from G *)
+        - sfirstorder.
+      }
+
+      apply (E_mono _ i) in HE; try lia.
+      unfold E, E' in HE.
+      destruct (HE c0 (Res v)) as [j2 [r2 [I2 [He0 Rr]]]]; try lia; auto.
+      edestruct R_res_inv_l as [v2 [Heqv2 HVv]]; eauto; subst.
+      inv Hwf2.
+      destruct (Nat.eq_dec c1 c); subst.
+      + exists (S j2), (CRes v2), (((c, l0), (c, l)) |: I2); split; eauto.
+        econstructor; eauto.
+        eapply Cbstep_app_Internal; eauto.
+        * admit.
+        * admit. (* subset *)
+        * admit.
+      + exists (S j2), (CRes v2), (((c1, l0), (c, l)) |: I2); split; eauto.
+        econstructor; eauto.
+        eapply Cbstep_app_External; eauto.
+        * sfirstorder.
+        * edestruct (θ_escape_ok c1); eauto.
+          specialize (H (AVfun l0 v0 l1 e0)); simpl in *.
+          eapply H; eauto.
+          admit.
+        * admit.
+        * admit.
+        * admit.
+        * admit.
+  Admitted.
 
   Lemma fundamental_property {A c Γ e}:
     θ c = A ->
@@ -1736,8 +2029,7 @@ Section LR.
     - eapply ret_compat; eauto.
     - eapply fun_compat; eauto.
       eapply well_scoped_inv; eauto.
-    - (* eapply app_compat; eauto. *)
-      admit.
+    - eapply app_compat; eauto.
     - admit.
     - admit.
     - admit.
