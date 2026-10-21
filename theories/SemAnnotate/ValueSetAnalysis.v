@@ -655,6 +655,12 @@ Inductive approx_res : avals -> cres -> Prop :=
 
 Hint Constructors approx_res : core.
 
+Lemma approx_res_subset Rs Rs' r :
+  approx_res Rs r ->
+  Rs \subset Rs' ->
+  approx_res Rs' r.
+Proof. intros. inv H; fcrush. Qed.
+
 (* `approx_int c AI I`: the static interactions `AI` of the unit wearing color
    `c` over-approximate the collected interactions `I`, as seen from that unit.
    `l_top_intro` and `l_top_elim` approximate all foreign interactions:
@@ -721,6 +727,23 @@ Corollary approx_int_closed c AI I :
   approx_int c AI I ->
   internals_closed (ainternals_of AI) c I.
 Proof. eauto using approx_int_respect, interactions_respect_closed. Qed.
+
+(* Adding an internal interaction of the unit `c` that its analysis predicts. *)
+Lemma approx_int_add_internal {c AI l1 l2 I} :
+  (l1, l2) \in AI ->
+  approx_int c AI I ->
+  approx_int c AI (((c, l1), (c, l2)) |: I).
+Proof.
+  unfold approx_int.
+  intros Hl HI c1 l1' c2 l2' Hin.
+  inv Hin.
+  - match goal with [Hs : _ \in [set _] |- _] => inv Hs end.
+    repeat split.
+    + intros _ _; exact Hl.
+    + intros _ Hneq; exfalso; apply Hneq; reflexivity.
+    + intros Hneq _; exfalso; apply Hneq; reflexivity.
+  - match goal with [HI' : _ \in I |- _] => exact (HI _ _ _ _ HI') end.
+Qed.
 
 (* Invariants for Escaped Values *)
 (* A value held by the unit wearing `c` that belongs to another unit must have
@@ -2082,6 +2105,7 @@ Section LR.
               exact (Hforeign Hneqc). }
             destruct (H9 Htop) as [Hargs _].
             eapply cescaped_handover_list; eauto.
+
         - destruct (Nat.eq_dec c1 c) as [Heqc | Hneqc]; subst.
           + inv Hwf2.
             assert (Hcbinding_xs : Forall2 (cbinding c (θ c)) xs vs2).
@@ -2099,6 +2123,7 @@ Section LR.
             * destruct (H9 Htop) as [_ [_ Hesc_fun]].
               destruct (Hesc_fun _ _ _ _ Hesc) as [_ [_ [_ [Hsub _]]]].
               eapply cbinding_subset_list; eauto.
+
           + assert (Htop : AVtop \in ai_env (θ c) f).
             { pose proof (cbinding_env_get f _ (G_cbinding_env H0) Heqfv2) as Hloc_f.
               unfold cbinding in Hloc_f.
@@ -2121,31 +2146,24 @@ Section LR.
               | eapply cescaped_env_get_list; [eapply G_cescaped_env; eauto | exact Heqvs2]
               | exact Hparams
               | exact Heqρ4 ].
+
         - intros; subst.
           inv Hwf2.
           pose proof (approx_env_get_list (G_approx_env H0) _ _ Heqvs2) as Happrox_xs.
-
-          pose proof (approx_env_get (G_approx_env H0) Heqfv2) as Happrox_f.
-          unfold approx_vals in Happrox_f.
-          destruct Happrox_f as [afv [Hinafv Happrox_f]].
-          inv Happrox_f.
-          + pose proof (cbinding_env_get f _ (G_cbinding_env H0) Heqfv2) as Hloc_f.
-            unfold cbinding in Hloc_f.
-            destruct Hloc_f as [Hint _].
-            specialize (Hint eq_refl).
-            inv Hint; eauto.
-            * (* internal *)
-              edestruct H8 as [_ [_ [Hsub _]]]; eauto.
-              eapply approx_vals_subset_list; eauto.
-            * (* foreign *)
-              inv H; eauto.
-              eapply set_lists_approx_top; eauto.
-              destruct (θ_escape_ok c) as [_ Hesc_ok].
-              eapply Hesc_ok; eauto.
-          + (* internal *)
-            inv H15.
+          pose proof (cbinding_env_get f _ (G_cbinding_env H0) Heqfv2) as Hloc_f.
+          unfold cbinding in Hloc_f.
+          destruct Hloc_f as [Hint _].
+          specialize (Hint eq_refl).
+          inv Hint.
+          * (* internal *)
             edestruct H8 as [_ [_ [Hsub _]]]; eauto.
             eapply approx_vals_subset_list; eauto.
+          * (* foreign *)
+            inv H; eauto.
+            eapply set_lists_approx_top; eauto.
+            destruct (θ_escape_ok c) as [_ Hesc_ok].
+            eapply Hesc_ok; eauto.
+
         - intros Hneq.
           pose proof (cescaped_env_get f _ (G_cescaped_env H0) Heqfv2) as Hf_esc.
           unfold cescaped in Hf_esc.
@@ -2161,20 +2179,73 @@ Section LR.
       + exists (S j2), (CRes v2), (((c, l0), (c, l)) |: I2); split; eauto.
         econstructor; eauto.
         eapply Cbstep_app_Internal; eauto.
-        * admit.
-        * admit. (* subset *)
-        * admit.
+        * assert (Happrox : approx_env (ai_env (θ c)) (M.set v0 (CTag (θ c) c l0 (CVfun v0 t l1 e0)) t)) by eauto using approx_env_set.
+          eapply (approx_env_set_lists Happrox l1 vs2); eauto.
+          pose proof (approx_env_get_list (G_approx_env H0) _ _ Heqvs2) as Happrox_xs.
+          pose proof (cbinding_env_get f _ (G_cbinding_env H0) Heqfv2) as Hloc_f.
+          unfold cbinding in Hloc_f.
+          destruct Hloc_f as [Hint _].
+          specialize (Hint eq_refl).
+          inv Hint.
+          -- (* internal *)
+            edestruct H8 as [_ [_ [Hsub _]]]; eauto.
+            eapply approx_vals_subset_list; eauto.
+          -- (* foreign *)
+            inv H; eauto.
+            eapply set_lists_approx_top; eauto.
+            destruct (θ_escape_ok c) as [_ Hesc_ok].
+            eapply Hesc_ok; eauto.
+
+        * assert (approx_res (ai_ret (θ c) l0) (CRes v2)) by eauto using cbstep_fuel_approx_res.
+          eapply approx_res_subset; eauto.
+
+          pose proof (cbinding_env_get f _ (G_cbinding_env H0) Heqfv2) as Hloc_f.
+          unfold cbinding in Hloc_f.
+          destruct Hloc_f as [Hint _].
+          destruct (Hint eq_refl).
+          -- eapply H8; eauto.
+          -- destruct H2 as [Hesc Htop].
+             eapply H9; eauto.
+
+        * assert (HI2 : approx_int c (ai_int (θ c)) I2) by eauto using cbstep_fuel_approx_int.
+          (* the call edge is predicted, whether the callee is reached as a
+             known closure (`H6`) or as an escaped one (`H9`) *)
+          apply approx_int_add_internal; [| exact HI2].
+          pose proof (cbinding_env_get f _ (G_cbinding_env H0) Heqfv2) as Hloc_f.
+          unfold cbinding in Hloc_f.
+          destruct Hloc_f as [Hint _].
+          destruct (Hint eq_refl) as [Hin | [Hesc Htop]].
+          -- exact (H6 _ Hin).
+          -- destruct (H9 Htop) as [_ [_ Hesc_fun]].
+             exact (proj1 (Hesc_fun _ _ _ _ Hesc)).
+
       + exists (S j2), (CRes v2), (((c1, l0), (c, l)) |: I2); split; eauto.
+        assert (Hafv : (AVfun l0 v0 l1 e0) \in (ai_esc (θ c1))).
+        {
+          pose proof (cescaped_env_get f _ (G_cescaped_env H0) Heqfv2) as Hf_esc.
+          unfold cescaped in Hf_esc; eauto.
+        }
+
         econstructor; eauto.
         eapply Cbstep_app_External; eauto.
         * sfirstorder.
-        * edestruct (θ_escape_ok c1); eauto.
-          specialize (H (AVfun l0 v0 l1 e0)); simpl in *.
-          eapply H; eauto.
-          admit.
+
         * admit.
-        * admit.
-        * admit.
+
+        * assert (Happrox : approx_env (ai_env (θ c1)) (M.set v0 (CTag (θ c1) c1 l0 (CVfun v0 t l1 e0)) t)) by eauto using approx_env_set.
+          eapply (approx_env_set_lists Happrox l1 vs2); eauto.
+          pose proof (approx_env_get_list (G_approx_env H0) _ _ Heqvs2) as Happrox_xs.
+
+          eapply set_lists_approx_top; eauto.
+          destruct (θ_escape_ok c1) as [_ Hesc_ok].
+          eapply Hesc_ok; eauto.
+
+        * (* the result of a foreign call is unknown to the caller: `AVtop ∈ Rs` *)
+          pose proof (cbinding_env_get f _ (G_cbinding_env H0) Heqfv2) as Hloc_f.
+          unfold cbinding in Hloc_f.
+          destruct Hloc_f as [_ Hext].
+          destruct (H9 (Hext n)) as [_ [HRs _]].
+          econstructor; [exact HRs | constructor].
         * admit.
   Admitted.
 
