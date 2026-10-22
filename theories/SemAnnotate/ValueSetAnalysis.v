@@ -2177,19 +2177,29 @@ Section LR.
       inv Hwf2.
       destruct (Nat.eq_dec c1 c); subst.
       + exists (S j2), (CRes v2), (((c, l0), (c, l)) |: I2); split; eauto.
-        econstructor; eauto.
-        eapply Cbstep_app_Internal; eauto.
-        * assert (Happrox : approx_env (ai_env (θ c)) (M.set v0 (CTag (θ c) c l0 (CVfun v0 t l1 e0)) t)) by eauto using approx_env_set.
-          eapply (approx_env_set_lists Happrox l1 vs2); eauto.
-          pose proof (approx_env_get_list (G_approx_env H0) _ _ Heqvs2) as Happrox_xs.
+
+        pose proof (approx_env_get_list (G_approx_env H0) _ _ Heqvs2) as Happrox_xs.
+
+        assert (Hint : Ensembles.In aval (ai_env (θ c) f) (AVfun l0 v0 l1 e0) \/
+                        (Ensembles.In aval (ai_esc (θ c)) (AVfun l0 v0 l1 e0) /\ Ensembles.In aval (ai_env (θ c) f) AVtop)).
+        {
           pose proof (cbinding_env_get f _ (G_cbinding_env H0) Heqfv2) as Hloc_f.
           unfold cbinding in Hloc_f.
           destruct Hloc_f as [Hint _].
-          specialize (Hint eq_refl).
+          apply (Hint eq_refl).
+        }
+
+        econstructor; eauto.
+        * eapply Cbstep_app_Internal; eauto.
+
+          assert (Happrox : approx_env (ai_env (θ c)) (M.set v0 (CTag (θ c) c l0 (CVfun v0 t l1 e0)) t)) by eauto using approx_env_set.
+          eapply (approx_env_set_lists Happrox l1 vs2); eauto.
+
           inv Hint.
           -- (* internal *)
             edestruct H8 as [_ [_ [Hsub _]]]; eauto.
             eapply approx_vals_subset_list; eauto.
+
           -- (* foreign *)
             inv H; eauto.
             eapply set_lists_approx_top; eauto.
@@ -2199,25 +2209,17 @@ Section LR.
         * assert (approx_res (ai_ret (θ c) l0) (CRes v2)) by eauto using cbstep_fuel_approx_res.
           eapply approx_res_subset; eauto.
 
-          pose proof (cbinding_env_get f _ (G_cbinding_env H0) Heqfv2) as Hloc_f.
-          unfold cbinding in Hloc_f.
-          destruct Hloc_f as [Hint _].
-          destruct (Hint eq_refl).
+          inv Hint.
           -- eapply H8; eauto.
           -- destruct H2 as [Hesc Htop].
              eapply H9; eauto.
 
         * assert (HI2 : approx_int c (ai_int (θ c)) I2) by eauto using cbstep_fuel_approx_int.
-          (* the call edge is predicted, whether the callee is reached as a
-             known closure (`H6`) or as an escaped one (`H9`) *)
           apply approx_int_add_internal; [| exact HI2].
-          pose proof (cbinding_env_get f _ (G_cbinding_env H0) Heqfv2) as Hloc_f.
-          unfold cbinding in Hloc_f.
-          destruct Hloc_f as [Hint _].
-          destruct (Hint eq_refl) as [Hin | [Hesc Htop]].
-          -- exact (H6 _ Hin).
+          destruct Hint as [Hin | [Hesc Htop]].
+          -- apply (H6 _ Hin).
           -- destruct (H9 Htop) as [_ [_ Hesc_fun]].
-             exact (proj1 (Hesc_fun _ _ _ _ Hesc)).
+             eapply (Hesc_fun _ _ _ _ Hesc); eauto.
 
       + exists (S j2), (CRes v2), (((c1, l0), (c, l)) |: I2); split; eauto.
         assert (Hafv : (AVfun l0 v0 l1 e0) \in (ai_esc (θ c1))).
@@ -2226,27 +2228,35 @@ Section LR.
           unfold cescaped in Hf_esc; eauto.
         }
 
+        assert (Htop : AVtop \in ai_env (θ c) f).
+        { pose proof (cbinding_env_get f _ (G_cbinding_env H0) Heqfv2) as Hloc_f.
+          unfold cbinding in Hloc_f.
+          destruct Hloc_f as [_ Hforeign].
+          exact (Hforeign n). }
+
         econstructor; eauto.
-        eapply Cbstep_app_External; eauto.
-        * sfirstorder.
+        * eapply Cbstep_app_External; eauto.
+          -- sfirstorder.
 
-        * admit.
+          -- destruct (H9 Htop) as [Hargs _].
+             eapply cescaped_handover_list; eauto.
 
-        * assert (Happrox : approx_env (ai_env (θ c1)) (M.set v0 (CTag (θ c1) c1 l0 (CVfun v0 t l1 e0)) t)) by eauto using approx_env_set.
-          eapply (approx_env_set_lists Happrox l1 vs2); eauto.
-          pose proof (approx_env_get_list (G_approx_env H0) _ _ Heqvs2) as Happrox_xs.
+          -- assert (Happrox : approx_env (ai_env (θ c1)) (M.set v0 (CTag (θ c1) c1 l0 (CVfun v0 t l1 e0)) t)) by eauto using approx_env_set.
+             eapply (approx_env_set_lists Happrox l1 vs2); eauto.
+             pose proof (approx_env_get_list (G_approx_env H0) _ _ Heqvs2) as Happrox_xs.
 
-          eapply set_lists_approx_top; eauto.
-          destruct (θ_escape_ok c1) as [_ Hesc_ok].
-          eapply Hesc_ok; eauto.
+             eapply set_lists_approx_top; eauto.
+             destruct (θ_escape_ok c1) as [_ Hesc_ok].
+             eapply Hesc_ok; eauto.
 
         * (* the result of a foreign call is unknown to the caller: `AVtop ∈ Rs` *)
-          pose proof (cbinding_env_get f _ (G_cbinding_env H0) Heqfv2) as Hloc_f.
-          unfold cbinding in Hloc_f.
-          destruct Hloc_f as [_ Hext].
-          destruct (H9 (Hext n)) as [_ [HRs _]].
+          destruct (H9 Htop) as [_ [HRs _]].
           econstructor; [exact HRs | constructor].
-        * admit.
+
+        * assert (Hltop : (l_top_intro, l) \in (ai_int (θ c))) by fcrush.
+          assert (HI2 : approx_int c1 (ai_int (θ c1)) I2) by eauto using cbstep_fuel_approx_int.
+          edestruct H9 as [_ [_ Hesc]]; eauto.
+          admit.
   Admitted.
 
   Lemma fundamental_property {A c Γ e}:
