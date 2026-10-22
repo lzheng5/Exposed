@@ -767,6 +767,16 @@ Proof.
   auto.
 Qed.
 
+Lemma approx_int_union {c AI I1 I2} :
+  approx_int c AI I1 ->
+  approx_int c AI I2 ->
+  approx_int c AI (I1 :|: I2).
+Proof.
+  unfold approx_int.
+  intros H1 H2 c1 l1 c2 l2 Hin.
+  inv Hin; eauto.
+Qed.
+
 (* Invariants for Escaped Values *)
 (* A value held by the unit wearing `c` that belongs to another unit must have
    escaped from that unit.  A closure must have escaped with its own allocation
@@ -2398,3 +2408,380 @@ Section LR.
       admit.
     - admit.
   Admitted.
+
+End LR.
+
+(* Top Level *)
+(* The top-level consists of two phases: coloring and running. *)
+
+(* Top-level Compilation Unit & Linking *)
+(* This is what an analysis should annotate the compilation unit with *)
+Inductive cexp : Type :=
+| CEunit : analysis_result -> avals -> exp -> cexp
+| CElink : var -> cexp -> cexp -> cexp.
+
+Hint Constructors cexp : core.
+
+(* Linking *)
+Definition clink x e1 e2 : cexp := CElink x e1 e2.
+
+Inductive occurs_free_top : cexp -> vars :=
+| Free_cexp :
+  forall e A Rs x,
+    occurs_free e x ->
+    occurs_free_top (CEunit A Rs e) x
+
+| Free_clink1 :
+  forall v x e1 e2,
+    occurs_free_top e1 x ->
+    occurs_free_top (CElink v e1 e2) x
+
+| Free_clink2 :
+  forall v x e1 e2,
+    v <> x ->
+    occurs_free_top e2 x ->
+    occurs_free_top (CElink v e1 e2) x.
+
+Hint Constructors occurs_free_top : core.
+
+Lemma occurs_free_top_cexp A Rs e :
+  (occurs_free_top (CEunit A Rs e)) <--> (occurs_free e).
+Proof. split; unfold Ensembles.Included, Ensembles.In; fcrush. Qed.
+
+(* Phase 1: Coloring *)
+(* Colored Linking Tree *)
+(* The result of the preprocessing step.  A `cexp` is colorless: a unit only
+   declares the internal labels it claims.  Colors are artificial names handed
+   out once, at link time, so that the *dynamic* semantics can tell two units
+   apart; nothing in a unit's own source mentions them. *)
+Inductive ccexp : Type :=
+| CCunit : color -> analysis_result -> avals -> exp -> ccexp
+| CClink : var -> ccexp -> ccexp -> ccexp.
+
+Hint Constructors ccexp : core.
+
+(* `coloring c1 ce c2 cce` hands the colors `c1, c1+1, ..., c2-1` to the units
+   of `ce`, left to right.  The counter is the whole point: it makes the
+   assignment *injective*, which is exactly what `interaction_sound` leans on
+   when it concludes, from two labels sharing a color, that they are governed
+   by one and the same internal set. *)
+Inductive coloring : color -> cexp -> color -> ccexp -> Prop :=
+| Coloring_unit :
+  forall c A Rs e,
+    coloring c (CEunit A Rs e) (S c) (CCunit c A Rs e)
+
+| Coloring_link :
+  forall c1 c2 c3 x e1 e2 cce1 cce2,
+    coloring c1 e1 c2 cce1 ->
+    coloring c2 e2 c3 cce2 ->
+    coloring c1 (CElink x e1 e2) c3 (CClink x cce1 cce2).
+
+Hint Constructors coloring : core.
+
+(* `(c, A)` is one of the units of `cce`. *)
+Inductive has_unit : ccexp -> color -> analysis_result -> Prop :=
+| Has_unit_unit :
+  forall A Rs c e,
+    has_unit (CCunit c A Rs e) c A
+
+| Has_unit_link1 :
+  forall x cce1 cce2 c A,
+    has_unit cce1 c A ->
+    has_unit (CClink x cce1 cce2) c A
+
+| Has_unit_link2 :
+  forall x cce1 cce2 c A,
+    has_unit cce2 c A ->
+    has_unit (CClink x cce1 cce2) c A.
+
+Hint Constructors has_unit : core.
+
+Lemma coloring_mono {c1 ce c2 cce} :
+  coloring c1 ce c2 cce ->
+  c1 <= c2.
+Proof. intros Hcol; induction Hcol; lia. Qed.
+
+Lemma coloring_range {c1 ce c2 cce} :
+  coloring c1 ce c2 cce ->
+  forall c A, has_unit cce c A -> c1 <= c < c2.
+Proof.
+  intros Hcol.
+  induction Hcol as [c A e | c1 c2 c3 x e1 e2 cce1 cce2 Hc1 IH1 Hc2 IH2];
+    intros c0 A0 Hunit.
+  - inv Hunit; lia.
+  - inv Hunit.
+    + match goal with
+      | [Hu : has_unit cce1 c0 A0 |- _] => destruct (IH1 c0 A0 Hu) as [Hlo Hhi]
+      end.
+      pose proof (coloring_mono Hc2) as Hm; lia.
+    + match goal with
+      | [Hu : has_unit cce2 c0 A0 |- _] => destruct (IH2 c0 A0 Hu) as [Hlo Hhi]
+      end.
+      pose proof (coloring_mono Hc1) as Hm; lia.
+Qed.
+
+(* Distinct units get distinct colors, so a color names at most one unit. *)
+Lemma coloring_unique {c1 ce c2 cce} :
+  coloring c1 ce c2 cce ->
+  forall c A A',
+    has_unit cce c A ->
+    has_unit cce c A' ->
+    A = A'.
+Proof.
+  intros Hcol.
+  induction Hcol as [c A e | c1 c2 c3 x e1 e2 cce1 cce2 Hc1 IH1 Hc2 IH2];
+    intros c0 A0 A0' Hu Hu'.
+  - inv Hu; inv Hu'; reflexivity.
+  - inv Hu; inv Hu'.
+    + match goal with
+      | [Ha : has_unit cce1 c0 A0, Hb : has_unit cce1 c0 A0' |- _] =>
+          exact (IH1 c0 A0 A0' Ha Hb)
+      end.
+    + exfalso.
+      match goal with
+      | [Ha : has_unit cce1 c0 A0, Hb : has_unit cce2 c0 A0' |- _] =>
+          destruct (coloring_range Hc1 c0 A0 Ha) as [Hlo Hhi];
+          destruct (coloring_range Hc2 c0 A0' Hb) as [Hlo' Hhi']
+      end; lia.
+    + exfalso.
+      match goal with
+      | [Ha : has_unit cce2 c0 A0, Hb : has_unit cce1 c0 A0' |- _] =>
+          destruct (coloring_range Hc2 c0 A0 Ha) as [Hlo Hhi];
+          destruct (coloring_range Hc1 c0 A0' Hb) as [Hlo' Hhi']
+      end; lia.
+    + match goal with
+      | [Ha : has_unit cce2 c0 A0, Hb : has_unit cce2 c0 A0' |- _] =>
+          exact (IH2 c0 A0 A0' Ha Hb)
+      end.
+Qed.
+
+(* `Θ` agrees with the coloring of `cce`. *)
+Definition analysis_context_of (Θ : analysis_context) (cce : ccexp) : Prop :=
+  forall c A, has_unit cce c A -> A = Θ c.
+
+(* Top-level Checking Semantics for the *Colored* Top-level Expression *)
+(* The colors are already in the tree, so the top-level semantics does not
+   mention `Θ` at all: it just runs each unit at the color preprocessing gave
+   it, and unions the interactions the units record.
+   `Θ` reappears only in the theorems, through `analysis_context_of`. *)
+Inductive cbstep_top (ρ : cenv) : ccexp -> fuel -> cres -> interactions -> Prop :=
+| CbstepT_link_Res :
+  forall {x cce1 cce2 i1 i2 A c l v r I1 I2},
+    cbstep_top_fuel ρ cce1 i1 (CRes (CTag A c l v)) I1 ->
+    cbstep_top_fuel (M.set x (CTag A c l v) ρ) cce2 i2 r I2 ->
+    cbstep_top ρ (CClink x cce1 cce2) (S (i1 + i2)) r (I1 :|: I2)
+
+| CbstepT_link_OOT :
+  forall {x cce1 cce2 i I1},
+    cbstep_top_fuel ρ cce1 i COOT I1 ->
+    cbstep_top ρ (CClink x cce1 cce2) (S i) COOT I1
+
+with cbstep_top_fuel (ρ : cenv) : ccexp -> fuel -> cres -> interactions -> Prop :=
+| CbstepTF_unit :
+  forall {A c e i Rs r I},
+    cbstep_fuel A c ρ e i Rs r I ->
+    cbstep_top_fuel ρ (CCunit c A Rs e) i r I
+
+| CbstepTF_link_OOT :
+  forall {x cce1 cce2},
+    cbstep_top_fuel ρ (CClink x cce1 cce2) 0 COOT (Empty_set _)
+
+| CbstepTF_link_Step :
+  forall {x cce1 cce2 i r I},
+    cbstep_top ρ (CClink x cce1 cce2) i r I ->
+    cbstep_top_fuel ρ (CClink x cce1 cce2) (S i) r I.
+
+Hint Constructors cbstep_top : core.
+Hint Constructors cbstep_top_fuel : core.
+
+Scheme cbstep_top_ind' := Minimality for cbstep_top Sort Prop
+with cbstep_top_fuel_ind' := Minimality for cbstep_top_fuel Sort Prop.
+
+(* The step-index is aligned between the two semantics. *)
+Lemma cbstep_fuel_cbstep_top_fuel A I c ρ e j Rs r:
+  cbstep_fuel A c ρ e j Rs r I ->
+  cbstep_top_fuel ρ (CCunit c A Rs e) j r I.
+Proof. intros H. eapply CbstepTF_unit; eauto. Qed.
+
+Lemma cbstep_top_fuel_cbstep_fuel A Rs c ρ e j r I:
+  cbstep_top_fuel ρ (CCunit c A Rs e) j r I ->
+  cbstep_fuel A c ρ e j Rs r I.
+Proof. intros H. fcrush. Qed.
+
+(* `analysis_context_of` reads off a single unit, and restricts to subtrees. *)
+Lemma analysis_context_of_unit {Θ Rs A c e} :
+  analysis_context_of Θ (CCunit c A Rs e) ->
+  A = Θ c.
+Proof. intros HΘ; exact (HΘ c A (Has_unit_unit A Rs c e)). Qed.
+
+Lemma analysis_context_of_link1 {Θ x cce1 cce2} :
+  analysis_context_of Θ (CClink x cce1 cce2) ->
+  analysis_context_of Θ cce1.
+Proof.
+  intros HΘ c A Hunit.
+  exact (HΘ c A (Has_unit_link1 x cce1 cce2 c A Hunit)).
+Qed.
+
+Lemma analysis_context_of_link2 {Θ x cce1 cce2} :
+  analysis_context_of Θ (CClink x cce1 cce2) ->
+  analysis_context_of Θ cce2.
+Proof.
+  intros HΘ c A Hunit.
+  exact (HΘ c A (Has_unit_link2 x cce1 cce2 c A Hunit)).
+Qed.
+
+(* A value returned by a linked program agrees with Θ. *)
+Lemma cbstep_top_wf_cres Θ :
+  forall ρ cce i r I,
+    cbstep_top ρ cce i r I ->
+    analysis_context_of Θ cce ->
+    wf_cenv Θ ρ ->
+    wf_cres Θ r.
+Proof.
+  intros ρ cce i r I Hstep.
+  induction Hstep as
+    [ ρ x cce1 cce2 i1 i2 A c l v r I1 I2 Hfuel1 IH1 Hforeign Hfuel2 IH2
+    | ρ x cce1 cce2 i I1 Hfuel1 IH1
+    | ρ A c e i Rs r I Hfuel
+    | ρ x cce1 cce2
+    | ρ x cce1 cce2 i r I Htop IHtop ]
+    using cbstep_top_ind'
+    with (P := fun ρ cce i r I =>
+                 analysis_context_of Θ cce ->
+                 wf_cenv Θ ρ ->
+                 wf_cres Θ r)
+         (P0 := fun ρ cce i r I =>
+                  analysis_context_of Θ cce ->
+                  wf_cenv Θ ρ ->
+                  wf_cres Θ r).
+
+  - (* CbstepT_link_Res: the linked value agrees with Θ, so the second unit
+       still runs in a Θ-consistent environment *)
+    intros HΘ Hρ.
+    pose proof (wf_cres_CRes_inv (IH1 (analysis_context_of_link1 HΘ) Hρ))
+      as Hclo.
+    pose proof (wf_cenv_set x (CTag A c l v) Hρ Hclo) as Hρx.
+    exact (Hfuel2 (analysis_context_of_link2 HΘ) Hρx).
+
+  - (* CbstepT_link_OOT: no value is returned *)
+    intros HΘ Hρ.
+    apply WF_COOT.
+
+  - (* CbstepTF_unit *)
+    intros HΘ Hρ.
+    pose proof (analysis_context_of_unit HΘ) as Han.
+    eapply (cbstep_fuel_wf_cres Θ A c ρ e i Rs r I); eauto.
+
+  - (* CbstepTF_link_OOT: no value is returned *)
+    intros HΘ Hρ.
+    apply WF_COOT.
+
+  - (* CbstepTF_link_Step *)
+    intros HΘ Hρ.
+    exact (IHtop HΘ Hρ).
+Qed.
+
+Lemma cbstep_top_fuel_wf_cres Θ ρ cce i r I :
+  analysis_context_of Θ cce ->
+  wf_cenv Θ ρ ->
+  cbstep_top_fuel ρ cce i r I ->
+  wf_cres Θ r.
+Proof.
+  intros HΘ Hρ Hstep.
+  inv Hstep.
+  - pose proof (analysis_context_of_unit HΘ) as Hana.
+    eapply (cbstep_fuel_wf_cres Θ A); eauto.
+  - apply WF_COOT.
+  - match goal with
+    | [Hs : cbstep_top _ _ _ _ _ |- _] =>
+        exact (cbstep_top_wf_cres Θ _ _ _ _ _ Hs HΘ Hρ)
+    end.
+Qed.
+
+(* Top-level Closure Property *)
+(* Each unit of the linked program respects *every* unit's internal set: the
+   per-unit theorem applies at each `CCunit`, and linking only unions what the
+   two sides recorded.  *)
+Lemma cbstep_top_approx_int Θ :
+  forall ρ cce i r I,
+    cbstep_top ρ cce i r I ->
+    analysis_context_of Θ cce ->
+    wf_cenv Θ ρ ->
+    forall c0, approx_int c0 (ai_int (Θ c0)) I.
+Proof.
+  intros ρ cce i r I Hstep.
+  induction Hstep as
+    [ ρ x cce1 cce2 i1 i2 A c l v r I1 I2 Hfuel1 IH1 Hforeign Hfuel2 IH2
+    | ρ x cce1 cce2 i I1 Hfuel1 IH1
+    | ρ A c e i Rs r I Hfuel
+    | ρ x cce1 cce2
+    | ρ x cce1 cce2 i r I Htop IHtop ]
+    using cbstep_top_ind'
+    with (P := fun ρ cce i r I =>
+                 analysis_context_of Θ cce ->
+                 wf_cenv Θ ρ ->
+                 forall c0, approx_int c0 (ai_int (Θ c0)) I)
+         (P0 := fun ρ cce i r I =>
+                  analysis_context_of Θ cce ->
+                  wf_cenv Θ ρ ->
+                  forall c0, approx_int c0 (ai_int (Θ c0)) I).
+
+  -
+    (* CbstepT_link_Res *)
+    intros HΘ Hρ c0.
+    pose proof (analysis_context_of_link1 HΘ) as HΘ1.
+    pose proof (analysis_context_of_link2 HΘ) as HΘ2.
+    pose proof (wf_cres_CRes_inv
+                  (cbstep_top_fuel_wf_cres Θ ρ cce1 i1 _ I1 HΘ1 Hρ Hfuel1))
+      as Hclo.
+    pose proof (wf_cenv_set x (CTag A c l v) Hρ Hclo) as Hρx.
+    eapply approx_int_union; eauto.
+
+  - (* CbstepT_link_OOT: only the first unit ran *)
+    intros HΘ Hρ c0.
+    exact (IH1 (analysis_context_of_link1 HΘ) Hρ c0).
+
+  - (* CbstepTF_unit: hand off to the per-unit theorem *)
+    intros HΘ Hρ c0.
+    pose proof (analysis_context_of_unit HΘ) as Han.
+    symmetry in Han.
+    eapply cbstep_fuel_approx_int_handover; eauto.
+
+  - (* CbstepTF_link_OOT: nothing is recorded *)
+    intros HΘ Hρ c0.
+    apply approx_int_empty.
+
+  - (* CbstepTF_link_Step *)
+    intros HΘ Hρ c0.
+    exact (IHtop HΘ Hρ c0).
+Qed.
+
+Lemma cbstep_top_fuel_approx_int Θ ρ cce i r I :
+  cbstep_top_fuel ρ cce i r I ->
+  analysis_context_of Θ cce ->
+  wf_cenv Θ ρ ->
+  forall c0, approx_int c0 (ai_int (Θ c0)) I.
+Proof.
+  intros Hstep HΘ Hρ c0.
+  inv Hstep.
+  - pose proof (analysis_context_of_unit HΘ) as Han.
+    symmetry in Han.
+    eapply cbstep_fuel_approx_int_handover; eauto.
+  - apply approx_int_empty.
+  - eapply cbstep_top_approx_int; eauto.
+Qed.
+
+Lemma cbstep_top_respect Θ :
+  forall ρ cce i r I,
+    cbstep_top ρ cce i r I ->
+    analysis_context_of Θ cce ->
+    wf_cenv Θ ρ ->
+    forall c0, interactions_respect (ainternals_of (ai_int (Θ c0))) c0 I.
+Proof. intros; eauto using approx_int_respect, cbstep_top_approx_int. Qed.
+
+Lemma cbstep_top_fuel_respect Θ ρ cce i r I :
+  cbstep_top_fuel ρ cce i r I ->
+  analysis_context_of Θ cce ->
+  wf_cenv Θ ρ ->
+  forall c0, interactions_respect (ainternals_of (ai_int (Θ c0))) c0 I.
+Proof. intros; eauto using approx_int_respect, cbstep_top_fuel_approx_int. Qed.
