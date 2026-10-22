@@ -745,6 +745,28 @@ Proof.
   - match goal with [HI' : _ \in I |- _] => exact (HI _ _ _ _ HI') end.
 Qed.
 
+Lemma approx_int_add {c AI cl I} :
+  approx_int c AI [set cl] ->
+  approx_int c AI I ->
+  approx_int c AI (cl |: I).
+Proof.
+  unfold approx_int.
+  intros H1 H2 c1 l1 c2 l2 Hin.
+  inv Hin; eauto.
+Qed.
+
+Lemma approx_int_singleton {c AI c1 l1 c2 l2} :
+  (c1 = c -> c2 = c -> (l1, l2) \in AI) ->
+  (c1 = c -> c2 <> c -> (l1, l_top_elim) \in AI) ->
+  (c1 <> c -> c2 = c -> (l_top_intro, l2) \in AI) ->
+  approx_int c AI [set ((c1, l1), (c2, l2))].
+Proof.
+  unfold approx_int.
+  intros H1 H2 H3 c1' l1' c2' l2' Hin.
+  inv Hin.
+  auto.
+Qed.
+
 (* Invariants for Escaped Values *)
 (* A value held by the unit wearing `c` that belongs to another unit must have
    escaped from that unit.  A closure must have escaped with its own allocation
@@ -1300,6 +1322,100 @@ Proof.
   - eapply cbstep_wf_cres_aux; eauto.
 Qed.
 
+(* The callee's entry environment is well-formed, and the callee runs under
+   the analysis result that `Θ` prescribes for its color. *)
+Lemma wf_cenv_callee {Θ ρ f A' c' l' f' ρ' xs' e xs vs ρ''} :
+  wf_cenv Θ ρ ->
+  M.get f ρ = Some (CTag A' c' l' (CVfun f' ρ' xs' e)) ->
+  get_list xs ρ = Some vs ->
+  set_lists xs' vs (M.set f' (CTag A' c' l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
+  Θ c' = A' /\ wf_cenv Θ ρ''.
+Proof.
+  intros Henv Hget Hgetl Hset.
+  pose proof (wf_cenv_get Henv _ _ Hget) as Hvf.
+  destruct (wf_cval_CTag_inv Hvf) as [HΘ' Hvf'].
+  pose proof (wf_cval_CVfun_inv Hvf') as Henv'.
+  split; [exact HΘ' |].
+  refine (wf_cenv_set_lists _ _ _ _ _ _ Hset);
+    [ apply wf_cenv_set; [exact Henv' | exact Hvf]
+    | exact (wf_cenv_get_list Henv _ _ Hgetl) ].
+Qed.
+
+(* Interactions collected under a unit are approximated from the point of view
+   of every *other* unit: an interaction in which another unit `c'` takes part
+   is either produced by a foreign call into one of its closures, whose callee
+   side is checked by `Cbstep_app_External`, or by code of `c'` itself, which
+   is checked by the `CbstepF_Step` of the nested run under `c'`. *)
+Lemma cbstep_approx_int_handover_aux Θ :
+  forall A c ρ e i Rs r I,
+    cbstep A c ρ e i Rs r I ->
+    Θ c = A ->
+    wf_cenv Θ ρ ->
+    forall c', c' <> c -> approx_int c' (ai_int (Θ c')) I.
+Proof.
+  intros A c ρ e i Rs r I Hstep.
+  induction Hstep using cbstep_ind' with
+    (P := fun A c ρ e i Rs r I =>
+            Θ c = A -> wf_cenv Θ ρ ->
+            forall c', c' <> c -> approx_int c' (ai_int (Θ c')) I)
+    (P0 := fun A c ρ e i Rs r I =>
+             Θ c = A -> wf_cenv Θ ρ ->
+             forall c', approx_int c' (ai_int (Θ c')) I);
+    intros HΘ Henv.
+  - (* Cbstep_ret *)
+    intros c' _; apply approx_int_empty.
+  - (* Cbstep_fun *)
+    intros c' _.
+    apply IHHstep; [exact HΘ |].
+    apply wf_cenv_set; [exact Henv |].
+    constructor; [exact HΘ |].
+    constructor; exact Henv.
+  - (* Cbstep_app_External: the edge is checked on the callee's side *)
+    intros c'' Hc''.
+    match goal with
+    | [Hget : M.get _ ρ = Some _, Hgetl : get_list _ ρ = Some _,
+       Hset : set_lists _ _ _ = Some _ |- _] =>
+        destruct (wf_cenv_callee Henv Hget Hgetl Hset) as [HΘ' Henv']
+    end.
+    subst.
+    apply approx_int_add; [apply approx_int_singleton | eapply IHHstep; eauto].
+    + intros _ Heq; exfalso; apply Hc''; symmetry; exact Heq.
+    + intros Heq _; subst c''; auto.
+    + intros _ Heq; exfalso; apply Hc''; symmetry; exact Heq.
+  - (* Cbstep_app_Internal: the edge does not involve other units *)
+    intros c'' Hc''.
+    match goal with
+    | [Hget : M.get _ ρ = Some _, Hgetl : get_list _ ρ = Some _,
+       Hset : set_lists _ _ _ = Some _ |- _] =>
+        destruct (wf_cenv_callee Henv Hget Hgetl Hset) as [HΘ' Henv']
+    end.
+    apply approx_int_add; [apply approx_int_singleton | eapply IHHstep; eauto].
+    + intros Heq _; exfalso; apply Hc''; symmetry; exact Heq.
+    + intros Heq _; exfalso; apply Hc''; symmetry; exact Heq.
+    + intros _ Heq; exfalso; apply Hc''; symmetry; exact Heq.
+  - (* CbstepF_OOT *)
+    intros c'; apply approx_int_empty.
+  - (* CbstepF_Step: the unit itself checks its own view *)
+    intros c'.
+    destruct (Nat.eq_dec c' c) as [Heq | Hneq].
+    + subst c'; rewrite HΘ; assumption.
+    + eapply IHHstep; eauto.
+Qed.
+
+Lemma cbstep_fuel_approx_int_handover Θ A c ρ e i Rs r I :
+  Θ c = A ->
+  wf_cenv Θ ρ ->
+  cbstep_fuel A c ρ e i Rs r I ->
+  forall c', approx_int c' (ai_int (Θ c')) I.
+Proof.
+  intros HΘ Henv Hstep c'.
+  destruct Hstep as [e' Rs' | e' i' Rs' r' I' Hcb Hres Hint].
+  - apply approx_int_empty.
+  - destruct (Nat.eq_dec c' c) as [Heq | Hneq].
+    + fcrush.
+    + eapply cbstep_approx_int_handover_aux; eauto.
+Qed.
+
 (* Cross-semantics Logical Relations *)
 Section LR.
 
@@ -1359,7 +1475,7 @@ Section LR.
                         set_lists xs1 vs1 (M.set f1 (Tag l1 (Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
                         set_lists xs2 vs2 (M.set f2 (CTag A2 c2 l2 (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
 
-                        (* invariants for escaped and locally introduced values *)
+                        (* invariants for escaped values and variable bindings *)
                         Forall (cescaped c2) vs2 ->
                         Forall2 (cbinding c2 A2) xs2 vs2 ->
 
@@ -2254,10 +2370,15 @@ Section LR.
           econstructor; [exact HRs | constructor].
 
         * assert (Hltop : (l_top_intro, l) \in (ai_int (θ c))) by fcrush.
-          assert (HI2 : approx_int c1 (ai_int (θ c1)) I2) by eauto using cbstep_fuel_approx_int.
-          edestruct H9 as [_ [_ Hesc]]; eauto.
-          admit.
-  Admitted.
+          apply approx_int_add.
+          -- apply approx_int_singleton.
+             ++ intros Heq _; exfalso; exact (n Heq).
+             ++ intros Heq _; exfalso; exact (n Heq).
+             ++ intros _ _; exact Hltop.
+          -- (* the interactions collected by the callee, as seen by our unit *)
+            eapply cbstep_fuel_approx_int_handover; eauto.
+            destruct (wf_cenv_callee (G_wf_cenv_r H0) Heqfv2 Heqvs2 Heqρ4) as [HΘ1 Henv4]; eauto.
+  Qed.
 
   Lemma fundamental_property {A c Γ e}:
     θ c = A ->
