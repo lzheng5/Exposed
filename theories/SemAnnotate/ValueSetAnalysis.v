@@ -2785,3 +2785,212 @@ Lemma cbstep_top_fuel_respect Θ ρ cce i r I :
   wf_cenv Θ ρ ->
   forall c0, interactions_respect (ainternals_of (ai_int (Θ c0))) c0 I.
 Proof. intros; eauto using approx_int_respect, cbstep_top_fuel_approx_int. Qed.
+
+Section LRTop.
+
+  (* Cross-language Logical Relations *)
+
+  Variable θ : analysis_context.
+  Hypothesis θ_escape_ok : analysis_context_escape_ok θ.
+
+  Definition E_top' (P : nat -> wval -> clval -> Prop) (i : nat) (ρ1 : env) (e1 : exp) (ρ2 : cenv) (e2 : ccexp) : Prop :=
+    forall j1 r1,
+      j1 <= i ->
+      bstep_fuel ρ1 e1 j1 r1 ->
+      exists j2 r2 I2,
+        cbstep_top_fuel ρ2 e2 j2 r2 I2 /\
+        R' P (i - j1) r1 r2.
+
+  Definition clval_top (cv : clval) : Prop :=
+    match cv with
+    | CTAG _ A (c, l) v =>
+        match v with
+        | CVfun f ρ xs e =>
+            (AVtop \in ai_env A f) /\
+              (AVfun l f xs e \in ai_esc A)
+        | _ => False
+        end
+    end.
+
+  Fixpoint V_top (i : nat) (wv : wval) (cv : clval) {struct i} : Prop :=
+    wf_val wv /\
+      wf_cval θ cv /\
+      match wv, cv with
+      | TAG _ l1 v1, CTAG _ A2 (c2, l2) v2 =>
+          l1 = l2 /\
+            match v1, v2 with
+              (*
+            | Vconstr c1 vs1, CVconstr c2 vs2 =>
+                c1 = c2 /\
+                  length vs1 = length vs2 /\
+                  match i with
+                  | 0 => True
+                  | S i0 => Forall2 (V_top i0) vs1 vs2
+                  end
+               *)
+            | Vfun f1 ρ1 xs1 e1, CVfun f2 ρ2 xs2 e2 =>
+                f1 = f2 /\ xs1 = xs2 /\ e1 = e2 /\
+                  approx_vals (ai_env A2 f2) cv /\
+
+                  (* the closure is recorded at its defining unit's escaping set *)
+                  (AVtop \in ai_env A2 f2) /\
+                  (AVfun l2 f2 xs2 e2 \in ai_esc A2) /\
+                  approx_env (ai_env A2) ρ2 /\
+
+                  (* the closure environment invariants *)
+                  cescaped_env c2 ρ2 /\
+                  cbinding_env c2 A2 ρ2 /\
+
+                  match i with
+                  | 0 => True
+                  | S i0 =>
+                      forall j vs1 vs2 ρ3 ρ4,
+                        j <= i0 ->
+                        Forall2 (V_top (i0 - (i0 - j))) vs1 vs2 ->
+                        set_lists xs1 vs1 (M.set f1 (Tag l1 (Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
+                        set_lists xs2 vs2 (M.set f2 (CTag A2 c2 l2 (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
+
+                        (* invariants for escaped values and variable bindings *)
+                        Forall (cescaped c2) vs2 ->
+                        Forall2 (cbinding c2 A2) xs2 vs2 ->
+
+                        (* all arguments are unknown *)
+                        Forall (fun x => AVtop \in (ai_env A2 x)) xs2 ->
+
+                        E_top' V_top (i0 - (i0 - j)) ρ3 e1 ρ4 (CCunit c2 A2 (ai_ret A2 l2) e1)
+                  end
+
+            | _, _ => False
+            end
+      end.
+
+  Lemma V_V_top_Forall :
+    forall i,
+      (forall m : nat,
+          m < S i ->
+          forall v1 v2,
+            clval_top v2 ->
+            V θ m v1 v2 <-> V_top m v1 v2) ->
+      forall j vs1 vs2,
+        j <= i ->
+        Forall clval_top vs2 ->
+        Forall2 (V θ j) vs1 vs2 <-> Forall2 (V_top j) vs1 vs2.
+  Proof.
+    intros.
+    revert vs1 j H0.
+    induction H1; simpl; intros.
+    - split; intros; inv H1; auto.
+    - split; intros; inv H3; constructor; auto;
+        solve [ eapply H; try lia; eauto |
+                eapply IHForall; eauto ].
+  Qed.
+
+  Lemma V_V_top :
+    forall i v1 v2,
+      clval_top v2 ->
+      (V θ i v1 v2 <-> V_top i v1 v2).
+  Proof.
+    intro i.
+    induction i as [i IH] using lt_wf_rec; intros v1 v2 Htop.
+    destruct v1 as [l1 w1], v2 as [A2 [c2 l2] w2].
+    destruct w2 as [f2 ρ2 xs2 e2 | t2 vs2]; [| simpl in Htop; contradiction].
+    simpl in Htop; destruct Htop as [Htopf Hesc].
+    destruct w1 as [f1 ρ1 xs1 e1 | t1 vs1].
+    2: { split; intros HV; destruct i; simpl in HV; destruct HV as [_ [_ [_ []]]]. }
+    split; intros HV; destruct i as [| i0]; simpl in HV |- *.
+
+    - (* V -> V_top, index 0 *)
+      destruct HV as [Hwf1 [Hwf2 [Heql [Heqf [Heqxs [Heqe [Havs [Hsite [Haenv [Hesc_env [Hbind _]]]]]]]]]]].
+      repeat (split; auto).
+
+    - (* V -> V_top, index S i0: `V` is used with a foreign caller *)
+      destruct HV as [Hwf1 [Hwf2 [Heql [Heqf [Heqxs [Heqe [Havs [Hsite [Haenv [Hesc_env [Hbind HV]]]]]]]]]]].
+      repeat (split; auto).
+      intros j vs1 vs2 ρ3 ρ4 Hj Hvs Hset1 Hset2 Hesc_vs Hbind_vs Htop_xs.
+      unfold E_top'.
+      intros j1 r1 Hj1 Hstep1.
+      assert (Hvs' : Forall2 (V θ (i0 - (i0 - j))) vs1 vs2).
+      { (* [STUCK] the induction hypothesis needs `Forall clval_top vs2` *)
+        admit. }
+      destruct (HV j (S c2) vs1 vs2 ρ3 ρ4 Hj Hvs' Hset1 Hset2 Hesc_vs Hbind_vs
+                  (fun Hc => False_ind _ (n_Sn c2 Hc))
+                  (fun _ => Hesc)
+                  j1 r1 Hj1 Hstep1)
+        as [j2 [r2 [I2 [Hstep2 HR]]]].
+      exists j2, r2, I2; split.
+      + eapply cbstep_fuel_cbstep_top_fuel; exact Hstep2.
+      + destruct r1, r2; simpl in HR |- *; try contradiction; auto.
+        refine (proj1 (IH _ _ _ _ _) HR); [lia |].
+        (* [STUCK] the returned value need not be `clval_top` *)
+        admit.
+
+    - (* V_top -> V, index 0 *)
+      destruct HV as [Hwf1 [Hwf2 [Heql [Heqf [Heqxs [Heqe [Havs [Htop' [Hesc' [Haenv [Hesc_env [Hbind _]]]]]]]]]]]].
+      repeat (split; auto).
+      (* [MISSING] `V_top` does not record the closure's exact site at its own name *)
+      admit.
+
+    - (* V_top -> V, index S i0: `V` must also serve internal callers *)
+      destruct HV as [Hwf1 [Hwf2 [Heql [Heqf [Heqxs [Heqe [Havs [Htop' [Hesc' [Haenv [Hesc_env [Hbind HV]]]]]]]]]]]].
+      pose proof (wf_cval_CTag_inv Hwf2) as [HA2 _].
+      subst A2.
+      repeat (split; auto).
+      + (* [MISSING] as in the index-0 case *)
+        admit.
+      + intros j c vs1 vs2 ρ3 ρ4 Hj Hvs Hset1 Hset2 Hesc_vs Hbind_vs Hint Hext.
+        unfold E'.
+        intros j1 r1 Hj1 Hstep1.
+        assert (Hvs' : Forall2 (V_top (i0 - (i0 - j))) vs1 vs2).
+        { (* [STUCK] needs `Forall clval_top vs2`, but the arguments of an
+             internal call (`c = c2`) need not have escaped *)
+          admit. }
+        (* the closure has escaped, so every parameter holds `AVtop` *)
+        assert (Hparams : Forall (fun x => AVtop \in ai_env (θ c2) x) xs2).
+        { destruct (θ_escape_ok c2) as [_ Hesc_ok].
+          destruct (Hesc_ok _ _ _ _ Hesc) as [Hpar _].
+          apply Forall_forall; exact Hpar. }
+        destruct (HV j vs1 vs2 ρ3 ρ4 Hj Hvs' Hset1 Hset2 Hesc_vs Hbind_vs Hparams
+                    j1 r1 Hj1 Hstep1)
+          as [j2 [r2 [I2 [Hstep2 HR]]]].
+        exists j2, r2, I2; split.
+        * eapply cbstep_top_fuel_cbstep_fuel; exact Hstep2.
+        * destruct r1, r2; simpl in HR |- *; try contradiction; auto.
+          refine (proj2 (IH _ _ _ _ _) HR); [lia |].
+          (* [STUCK] the returned value need not be `clval_top` *)
+          admit.
+  Admitted.
+
+  Definition E_top := (E_top' V_top).
+
+  (*
+  Lemma E_E_top c A Rs i ρ1 ρ2 e :
+    E θ A c i ρ1 ρ2 e Rs ->
+    E_top i ρ1 e ρ2 (CCunit c A Rs e).
+  Proof.
+    unfold E, E_top, E', E_top'.
+    intros.
+    edestruct H as [j2 [r2 [I2 [Hcbstep HR]]]]; eauto.
+    exists j2, r2, I2; split; eauto.
+  Qed.
+
+  Lemma E_top_E c A Rs i ρ1 ρ2 e :
+    E_top i ρ1 e ρ2 (CCunit c A Rs e) ->
+    E θ A c i ρ1 ρ2 e Rs.
+  Proof.
+    unfold E, E_top, E', E_top'.
+    intros.
+    edestruct H as [j2 [r2 [I2 [Hcbstep HR]]]]; eauto.
+    exists j2, r2, I2; split; eauto.
+    eapply cbstep_top_fuel_cbstep_fuel; eauto.
+  Qed.
+
+  Definition G_top i Γ1 ρ1 ρ2 :=
+    wf_env Γ1 ρ1 /\
+      wf_cenv θ ρ2 /\
+      forall x,
+        (x \in Γ1) ->
+        exists v1 v2,
+          M.get x ρ1 = Some v1 /\
+            M.get x ρ2 = Some v2 /\
+            V θ i v1 v2.
+*)
