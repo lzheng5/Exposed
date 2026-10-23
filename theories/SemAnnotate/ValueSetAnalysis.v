@@ -2801,168 +2801,26 @@ Section LRTop.
         cbstep_top_fuel ρ2 e2 j2 r2 I2 /\
         R' P (i - j1) r1 r2.
 
-  Definition clval_top (cv : clval) : Prop :=
+  (* A value that crosses the program boundary: a closure that has escaped
+     from its unit with its own allocation site. *)
+  Definition cescaped_top (cv : clval) : Prop :=
     match cv with
-    | CTAG _ A (c, l) v =>
-        match v with
-        | CVfun f ρ xs e =>
-            (AVtop \in ai_env A f) /\
-              (AVfun l f xs e \in ai_esc A)
-        | _ => False
-        end
+    | CTAG _ A (c, l) (CVfun f _ xs e) => AVfun l f xs e \in ai_esc A
+    | _ => False
     end.
 
-  Fixpoint V_top (i : nat) (wv : wval) (cv : clval) {struct i} : Prop :=
-    wf_val wv /\
-      wf_cval θ cv /\
-      match wv, cv with
-      | TAG _ l1 v1, CTAG _ A2 (c2, l2) v2 =>
-          l1 = l2 /\
-            match v1, v2 with
-              (*
-            | Vconstr c1 vs1, CVconstr c2 vs2 =>
-                c1 = c2 /\
-                  length vs1 = length vs2 /\
-                  match i with
-                  | 0 => True
-                  | S i0 => Forall2 (V_top i0) vs1 vs2
-                  end
-               *)
-            | Vfun f1 ρ1 xs1 e1, CVfun f2 ρ2 xs2 e2 =>
-                f1 = f2 /\ xs1 = xs2 /\ e1 = e2 /\
-                  approx_vals (ai_env A2 f2) cv /\
-
-                  (* the closure is recorded at its defining unit's escaping set *)
-                  (AVtop \in ai_env A2 f2) /\
-                  (AVfun l2 f2 xs2 e2 \in ai_esc A2) /\
-                  approx_env (ai_env A2) ρ2 /\
-
-                  (* the closure environment invariants *)
-                  cescaped_env c2 ρ2 /\
-                  cbinding_env c2 A2 ρ2 /\
-
-                  match i with
-                  | 0 => True
-                  | S i0 =>
-                      forall j vs1 vs2 ρ3 ρ4,
-                        j <= i0 ->
-                        Forall2 (V_top (i0 - (i0 - j))) vs1 vs2 ->
-                        set_lists xs1 vs1 (M.set f1 (Tag l1 (Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
-                        set_lists xs2 vs2 (M.set f2 (CTag A2 c2 l2 (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
-
-                        (* invariants for escaped values and variable bindings *)
-                        Forall (cescaped c2) vs2 ->
-                        Forall2 (cbinding c2 A2) xs2 vs2 ->
-
-                        (* all arguments are unknown *)
-                        Forall (fun x => AVtop \in (ai_env A2 x)) xs2 ->
-
-                        E_top' V_top (i0 - (i0 - j)) ρ3 e1 ρ4 (CCunit c2 A2 (ai_ret A2 l2) e1)
-                  end
-
-            | _, _ => False
-            end
-      end.
-
-  Lemma V_V_top_Forall :
-    forall i,
-      (forall m : nat,
-          m < S i ->
-          forall v1 v2,
-            clval_top v2 ->
-            V θ m v1 v2 <-> V_top m v1 v2) ->
-      forall j vs1 vs2,
-        j <= i ->
-        Forall clval_top vs2 ->
-        Forall2 (V θ j) vs1 vs2 <-> Forall2 (V_top j) vs1 vs2.
-  Proof.
-    intros.
-    revert vs1 j H0.
-    induction H1; simpl; intros.
-    - split; intros; inv H1; auto.
-    - split; intros; inv H3; constructor; auto;
-        solve [ eapply H; try lia; eauto |
-                eapply IHForall; eauto ].
-  Qed.
-
-  Lemma V_V_top :
-    forall i v1 v2,
-      clval_top v2 ->
-      (V θ i v1 v2 <-> V_top i v1 v2).
-  Proof.
-    intro i.
-    induction i as [i IH] using lt_wf_rec; intros v1 v2 Htop.
-    destruct v1 as [l1 w1], v2 as [A2 [c2 l2] w2].
-    destruct w2 as [f2 ρ2 xs2 e2 | t2 vs2]; [| simpl in Htop; contradiction].
-    simpl in Htop; destruct Htop as [Htopf Hesc].
-    destruct w1 as [f1 ρ1 xs1 e1 | t1 vs1].
-    2: { split; intros HV; destruct i; simpl in HV; destruct HV as [_ [_ [_ []]]]. }
-    split; intros HV; destruct i as [| i0]; simpl in HV |- *.
-
-    - (* V -> V_top, index 0 *)
-      destruct HV as [Hwf1 [Hwf2 [Heql [Heqf [Heqxs [Heqe [Havs [Hsite [Haenv [Hesc_env [Hbind _]]]]]]]]]]].
-      repeat (split; auto).
-
-    - (* V -> V_top, index S i0: `V` is used with a foreign caller *)
-      destruct HV as [Hwf1 [Hwf2 [Heql [Heqf [Heqxs [Heqe [Havs [Hsite [Haenv [Hesc_env [Hbind HV]]]]]]]]]]].
-      repeat (split; auto).
-      intros j vs1 vs2 ρ3 ρ4 Hj Hvs Hset1 Hset2 Hesc_vs Hbind_vs Htop_xs.
-      unfold E_top'.
-      intros j1 r1 Hj1 Hstep1.
-      assert (Hvs' : Forall2 (V θ (i0 - (i0 - j))) vs1 vs2).
-      { (* [STUCK] the induction hypothesis needs `Forall clval_top vs2` *)
-        admit. }
-      destruct (HV j (S c2) vs1 vs2 ρ3 ρ4 Hj Hvs' Hset1 Hset2 Hesc_vs Hbind_vs
-                  (fun Hc => False_ind _ (n_Sn c2 Hc))
-                  (fun _ => Hesc)
-                  j1 r1 Hj1 Hstep1)
-        as [j2 [r2 [I2 [Hstep2 HR]]]].
-      exists j2, r2, I2; split.
-      + eapply cbstep_fuel_cbstep_top_fuel; exact Hstep2.
-      + destruct r1, r2; simpl in HR |- *; try contradiction; auto.
-        refine (proj1 (IH _ _ _ _ _) HR); [lia |].
-        (* [STUCK] the returned value need not be `clval_top` *)
-        admit.
-
-    - (* V_top -> V, index 0 *)
-      destruct HV as [Hwf1 [Hwf2 [Heql [Heqf [Heqxs [Heqe [Havs [Htop' [Hesc' [Haenv [Hesc_env [Hbind _]]]]]]]]]]]].
-      repeat (split; auto).
-      (* [MISSING] `V_top` does not record the closure's exact site at its own name *)
-      admit.
-
-    - (* V_top -> V, index S i0: `V` must also serve internal callers *)
-      destruct HV as [Hwf1 [Hwf2 [Heql [Heqf [Heqxs [Heqe [Havs [Htop' [Hesc' [Haenv [Hesc_env [Hbind HV]]]]]]]]]]]].
-      pose proof (wf_cval_CTag_inv Hwf2) as [HA2 _].
-      subst A2.
-      repeat (split; auto).
-      + (* [MISSING] as in the index-0 case *)
-        admit.
-      + intros j c vs1 vs2 ρ3 ρ4 Hj Hvs Hset1 Hset2 Hesc_vs Hbind_vs Hint Hext.
-        unfold E'.
-        intros j1 r1 Hj1 Hstep1.
-        assert (Hvs' : Forall2 (V_top (i0 - (i0 - j))) vs1 vs2).
-        { (* [STUCK] needs `Forall clval_top vs2`, but the arguments of an
-             internal call (`c = c2`) need not have escaped *)
-          admit. }
-        (* the closure has escaped, so every parameter holds `AVtop` *)
-        assert (Hparams : Forall (fun x => AVtop \in ai_env (θ c2) x) xs2).
-        { destruct (θ_escape_ok c2) as [_ Hesc_ok].
-          destruct (Hesc_ok _ _ _ _ Hesc) as [Hpar _].
-          apply Forall_forall; exact Hpar. }
-        destruct (HV j vs1 vs2 ρ3 ρ4 Hj Hvs' Hset1 Hset2 Hesc_vs Hbind_vs Hparams
-                    j1 r1 Hj1 Hstep1)
-          as [j2 [r2 [I2 [Hstep2 HR]]]].
-        exists j2, r2, I2; split.
-        * eapply cbstep_top_fuel_cbstep_fuel; exact Hstep2.
-        * destruct r1, r2; simpl in HR |- *; try contradiction; auto.
-          refine (proj2 (IH _ _ _ _ _) HR); [lia |].
-          (* [STUCK] the returned value need not be `clval_top` *)
-          admit.
-  Admitted.
-
-  Definition E_top := (E_top' V_top).
-
   (*
+  (* Related values that cross the program boundary. *)
+  Definition V_top i v1 v2 := V θ i v1 v2 /\ cescaped_top v2.
+
+  (* Results are related by `V`: a returned value need not cross the boundary. *)
+  Definition E_top := E_top' (V θ).
+
+  Lemma V_V_top i v1 v2 :
+    cescaped_top v2 ->
+    (V θ i v1 v2 <-> V_top i v1 v2).
+  Proof. unfold V_top; tauto. Qed.
+
   Lemma E_E_top c A Rs i ρ1 ρ2 e :
     E θ A c i ρ1 ρ2 e Rs ->
     E_top i ρ1 e ρ2 (CCunit c A Rs e).
@@ -2984,6 +2842,105 @@ Section LRTop.
     eapply cbstep_top_fuel_cbstep_fuel; eauto.
   Qed.
 
+  (* A value crossing the boundary has escaped, whoever holds it. *)
+  Lemma cescaped_top_cescaped {c v} :
+    cescaped_top v ->
+    cescaped c v.
+  Proof.
+    intros Htop.
+    destruct v as [A' [c' l'] w].
+    destruct w as [f ρ xs e | t vs]; unfold cescaped_top in Htop; [| contradiction].
+    unfold cescaped; intros _; exact Htop.
+  Qed.
+
+  Lemma cescaped_top_cescaped_list {c vs} :
+    Forall cescaped_top vs ->
+    Forall (cescaped c) vs.
+  Proof. intros H; induction H; constructor; eauto using cescaped_top_cescaped. Qed.
+
+  (* A value crossing the boundary is bound as `cbinding` requires at a
+     variable holding `AVtop`: foreign values are stood for by `AVtop`, and the
+     unit's own closures coming back have escaped. *)
+  Lemma cescaped_top_cbinding {c x v} :
+    wf_cval θ v ->
+    cescaped_top v ->
+    AVtop \in ai_env (θ c) x ->
+    cbinding c (θ c) x v.
+  Proof.
+    intros Hwf Htop Hx.
+    destruct v as [A' [c' l'] w].
+    pose proof (wf_cval_CTag_inv Hwf) as [HA' _].
+    subst A'.
+    destruct w as [f ρ xs e | t vs]; unfold cescaped_top in Htop; [| contradiction].
+    unfold cbinding; split.
+    - intros Heq; subst c'; right; split; [exact Htop | exact Hx].
+    - intros _; exact Hx.
+  Qed.
+
+  Lemma cescaped_top_cbinding_list {c xs vs ρ ρ'} :
+    Forall (wf_cval θ) vs ->
+    Forall cescaped_top vs ->
+    (forall x, List.In x xs -> AVtop \in ai_env (θ c) x) ->
+    set_lists xs vs ρ = Some ρ' ->
+    Forall2 (cbinding c (θ c)) xs vs.
+  Proof.
+    intros Hwf Htop Hx Hset.
+    revert vs ρ' Hwf Htop Hx Hset.
+    induction xs as [| x xs IH]; intros vs ρ' Hwf Htop Hx Hset; simpl in Hset.
+    - destruct vs as [| v vs]; [constructor | discriminate Hset].
+    - destruct vs as [| v vs]; [discriminate Hset |].
+      destruct (set_lists xs vs ρ) as [ρ'' |] eqn:Heq; [| discriminate Hset].
+      inv Hwf; inv Htop.
+      constructor.
+      + apply cescaped_top_cbinding; [assumption | assumption | apply Hx; left; reflexivity].
+      + eapply IH; [eassumption | eassumption | | exact Heq].
+        intros y Hy; apply Hx; right; exact Hy.
+  Qed.
+
+  (* Calling a closure that crosses the boundary, with arguments that cross the
+     boundary as well, from the outside: the body runs as a unit.  This is `V`
+     used with a foreign caller; the invariants `V` asks of the arguments
+     follow from `cescaped_top`. *)
+  Lemma V_top_call {i0 l f ρ1 xs e A c2 ρ2 j vs1 vs2 ρ3 ρ4} :
+    V_top (S i0) (Tag l (Vfun f ρ1 xs e)) (CTag A c2 l (CVfun f ρ2 xs e)) ->
+    j <= i0 ->
+    Forall2 (V_top (i0 - (i0 - j))) vs1 vs2 ->
+    set_lists xs vs1 (M.set f (Tag l (Vfun f ρ1 xs e)) ρ1) = Some ρ3 ->
+    set_lists xs vs2 (M.set f (CTag A c2 l (CVfun f ρ2 xs e)) ρ2) = Some ρ4 ->
+    E_top (i0 - (i0 - j)) ρ3 e ρ4 (CCunit c2 A (ai_ret A l) e).
+  Proof.
+    intros [HV Htop] Hj Hvs Hset1 Hset2.
+    unfold Tag, CTag in HV, Htop.
+    unfold cescaped_top in Htop.
+    simpl in HV.
+    destruct HV as [Hwf1 [Hwf2 [_ [_ [_ [_ [Havs [Hsite [Haenv [Hesc_env [Hbind HV]]]]]]]]]]].
+    pose proof (wf_cval_CTag_inv Hwf2) as [HA _].
+    subst A.
+    (* the two components of the arguments *)
+    assert (HvsV : Forall2 (V θ (i0 - (i0 - j))) vs1 vs2).
+    { induction Hvs as [| ? ? ? ? [Hv _] _ IH]; constructor; assumption. }
+    assert (Htop_vs : Forall cescaped_top vs2).
+    { induction Hvs as [| ? ? ? ? [_ Hv] _ IH]; constructor; assumption. }
+    assert (Hwf_vs : Forall (wf_cval θ) vs2) by (eapply V_wf_cval_Forall_r; eauto).
+    (* the closure has escaped, so every parameter holds `AVtop` *)
+    destruct (θ_escape_ok c2) as [_ Hesc_ok].
+    destruct (Hesc_ok _ _ _ _ Htop) as [Hparams _].
+    (* use `V` with a foreign caller, say of color `S c2` *)
+    unfold E_top, E_top'.
+    intros j1 r1 Hj1 Hstep1.
+    destruct (HV j (S c2) vs1 vs2 ρ3 ρ4 Hj HvsV Hset1 Hset2
+                (cescaped_top_cescaped_list Htop_vs)
+                (cescaped_top_cbinding_list Hwf_vs Htop_vs Hparams Hset2)
+                (fun Hc => False_ind _ (n_Sn c2 Hc))
+                (fun _ => Htop)
+                j1 r1 Hj1 Hstep1)
+      as [j2 [r2 [I2 [Hstep2 HR]]]].
+    exists j2, r2, I2; split.
+    - eapply cbstep_fuel_cbstep_top_fuel; exact Hstep2.
+    - exact HR.
+  Qed.
+
+  (*
   Definition G_top i Γ1 ρ1 ρ2 :=
     wf_env Γ1 ρ1 /\
       wf_cenv θ ρ2 /\
@@ -2993,4 +2950,5 @@ Section LRTop.
           M.get x ρ1 = Some v1 /\
             M.get x ρ2 = Some v2 /\
             V θ i v1 v2.
+*)
 *)
