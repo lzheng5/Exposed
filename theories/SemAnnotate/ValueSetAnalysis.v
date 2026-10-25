@@ -1112,8 +1112,8 @@ with cbstep_fuel (A : analysis_result) (c : color) (bdr : bool) (ρ : cenv) : ex
     cbstep A c bdr ρ e i Rs r I ->
     approx_res Rs r ->
     approx_int c (ai_int A) I ->
-    (if bdr then cboundary_res r else True) ->
     cresult c A Rs r ->
+    (if bdr then cboundary_res r else True) ->
     cbstep_fuel A c bdr ρ e (S i) Rs r I.
 
 Hint Constructors cbstep : core.
@@ -2127,6 +2127,22 @@ Section LR.
       fcrush.
       inv H1; inv H6.
       edestruct (G_get H3) as [v2 [Heqv2 HV]]; eauto.
+      assert (Hwf : wf_cval θ v2).
+      {
+        eapply wf_cenv_get; eauto.
+        eapply G_wf_cenv_r; eauto. 
+      }
+      
+      assert (Hcres : cresult c (θ c) Rs (CRes v2)).
+      {
+          split.
+          -- eapply cescaped_env_get; [eapply G_cescaped_env; eauto | exact Heqv2].
+          -- eapply cflows_subset.
+             ++ eapply cbinding_cflows; eauto.
+                eapply cbinding_env_get; [eapply G_cbinding_env; eauto | exact Heqv2].
+             ++ assumption.
+      }
+      
       exists 1, (CRes v2), (Empty_set _); split; eauto; simpl.
       + econstructor; eauto.
 
@@ -2134,30 +2150,13 @@ Section LR.
         * eapply approx_int_empty; eauto.
 
         * destruct bdr; simpl; auto.
-          unfold cboundary.
-          destruct v2; destruct c0; destruct c1; simpl; auto.
-
-          -- assert (Hcbenv : cbinding_env c (θ c) ρ2) by eauto using G_cbinding_env.
-             pose proof (cbinding_env_get _ _ Hcbenv Heqv2) as Hloc_x.
-             unfold cbinding in Hloc_x.
-             destruct (Nat.eq_dec c0 c); subst.
-             ++ destruct Hloc_x as [Hown _].
-                edestruct (Hown eq_refl);
-                  unfold Ensembles.Included, Ensembles.In in *;
-                  fcrush.
-             ++ destruct Hloc_x as [_ Hext].
-                specialize (Hext n).
-                pose proof (cescaped_env_get x _ (G_cescaped_env H3) Heqv2) as Hesc.
-                unfold cescaped in *.
-                fcrush.
-          -- destruct w; destruct i; simpl in HV; fcrush.
-
-        * split.
-          -- eapply cescaped_env_get; [eapply G_cescaped_env; eauto | exact Heqv2].
-          -- eapply cflows_subset.
-             ++ eapply cbinding_cflows; eauto.
-                eapply cbinding_env_get; [eapply G_cbinding_env; eauto | exact Heqv2].
-             ++ assumption.
+          assert (cboundary_res (CRes v2)).
+          {
+            eapply cresult_cboundary; eauto.
+            destruct v2; destruct c0; destruct c1; simpl; auto.
+            destruct w; destruct i; simpl in HV; fcrush.
+          }
+          fcrush. 
 
       + eapply V_mono; eauto; lia.
   Qed.
@@ -2242,8 +2241,8 @@ Section LR.
         econstructor; eauto.
         eapply cbstep_fuel_approx_res; eauto.
         eapply cbstep_fuel_approx_int; eauto.
-        destruct bdr; [eapply cbstep_fuel_cboundary_res; eauto | exact I].
         eapply cbstep_fuel_cresult; eauto.
+        destruct bdr; [eapply cbstep_fuel_cboundary_res; eauto | exact I].
         eapply R_mono; eauto; lia.
   Qed.
 
