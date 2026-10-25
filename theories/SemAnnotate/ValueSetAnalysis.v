@@ -1001,16 +1001,16 @@ Qed.
    the invariants of a binding: a foreign value has escaped, and a closure of
    the unit itself is approximated in `Rs` by its own allocation site, unless
    it has escaped already.  Unlike `approx_res`, this survives `AVtop ∈ Rs`. *)
-Definition cres_inv (c : color) (A : analysis_result) (Rs : avals) (r : cres) : Prop :=
+Definition cresult (c : color) (A : analysis_result) (Rs : avals) (r : cres) : Prop :=
   match r with
   | COOT => True
   | CRes v => cescaped c v /\ cflows c A Rs v
   end.
 
-Lemma cres_inv_subset {c A Rs Rs' r} :
-  cres_inv c A Rs r ->
+Lemma cresult_subset {c A Rs Rs' r} :
+  cresult c A Rs r ->
   Rs \subset Rs' ->
-  cres_inv c A Rs' r.
+  cresult c A Rs' r.
 Proof.
   intros Hok Hsub.
   destruct r as [| v]; [exact I |].
@@ -1114,7 +1114,7 @@ with cbstep_fuel (A : analysis_result) (c : color) (bdr : bool) (ρ : cenv) : ex
     approx_res Rs r ->
     approx_int c (ai_int A) I ->
     (if bdr then cboundary_res r else True) ->
-    cres_inv c A Rs r ->
+    cresult c A Rs r ->
     cbstep_fuel A c bdr ρ e (S i) Rs r I.
 
 Hint Constructors cbstep : core.
@@ -1268,7 +1268,7 @@ Lemma wf_cval_CVfun_inv {Θ f ρ xs e} :
   wf_cenv Θ ρ.
 Proof. intros Hwf; inv Hwf; assumption. Qed.
 
-Lemma wf_cres_CRes_inv {Θ v} :
+Lemma wf_cres_wf_cval {Θ v} :
   wf_cres Θ (CRes v) ->
   wf_cval Θ v.
 Proof. intros Hwf; inv Hwf; assumption. Qed.
@@ -1331,26 +1331,26 @@ Lemma cbstep_fuel_approx_res A c bdr ρ e i Rs r I :
   approx_res Rs r.
 Proof. intros H. inv H; eauto. Qed.
 
-Lemma cbstep_fuel_cres_inv A c bdr ρ e i Rs r I :
+Lemma cbstep_fuel_cresult A c bdr ρ e i Rs r I :
   cbstep_fuel A c bdr ρ e i Rs r I ->
-  cres_inv c A Rs r.
+  cresult c A Rs r.
 Proof. intros Hstep. inv Hstep; [exact I | assumption]. Qed.
 
 (* A result returned into a return set that escapes crosses the boundary:
    - a closure of the unit itself is either approximated in `Rs` by its own
      allocation site, hence in `ai_esc`, or has escaped already;
    - a foreign closure has escaped from its own unit. *)
-Lemma cres_inv_cboundary Θ c Rs r :
+Lemma cresult_cboundary Θ c Rs r :
   wf_cres Θ r ->
   cres_is_fun r ->
-  cres_inv c (Θ c) Rs r ->
+  cresult c (Θ c) Rs r ->
   Rs \subset ai_esc (Θ c) ->
   cboundary_res r.
 Proof.
   intros Hwf Hfun Hok Hsub.
   destruct r as [| v]; [exact I |].
   destruct v as [A' [c' l'] w].
-  pose proof (wf_cval_CTag_inv (wf_cres_CRes_inv Hwf)) as [HA' _].
+  pose proof (wf_cval_CTag_inv (wf_cres_wf_cval Hwf)) as [HA' _].
   subst A'.
   destruct w as [f ρ xs e | t vs]; [| destruct Hfun].
   destruct Hok as [Hesc [Hown _]].
@@ -2244,7 +2244,7 @@ Section LR.
         eapply cbstep_fuel_approx_res; eauto.
         eapply cbstep_fuel_approx_int; eauto.
         destruct bdr; [eapply cbstep_fuel_cboundary_res; eauto | exact I].
-        eapply cbstep_fuel_cres_inv; eauto.
+        eapply cbstep_fuel_cresult; eauto.
         eapply R_mono; eauto; lia.
   Qed.
 
@@ -2255,113 +2255,7 @@ Section LR.
        approximating value) is in the value set of the variable, hence in
        `ai_esc (θ c)`;
      - if it belongs to a third unit, it had escaped already. *)
-  Lemma cescaped_handover {c x v} :
-    wf_cval θ v ->
-    cescaped c v ->
-    cbinding c (θ c) x v ->
-    approx_vals (ai_env (θ c) x) v ->
-    ai_env (θ c) x \subset ai_esc (θ c) ->
-    forall c1, cescaped c1 v.
-  Proof.
-    intros Hwf Hesc Hloc Happrox Hsub c1.
-    destruct v as [A' [c' l'] w].
-    pose proof (wf_cval_CTag_inv Hwf) as [HA' _]; subst.
-    destruct (Nat.eq_dec c' c1) as [Heq1 | Hneq1].
-    - (* c1 is the defining unit *)
-      subst c'.
-      eauto using cescaped_defining.
-    - (* c1 is not the defining unit *)
-      destruct (Nat.eq_dec c' c) as [Heqc | Hneqc].
-      + (* c is the defining unit -> v has escaped but bound by x in unit c -> only the defining unit, c', matters *)
-        subst c'.
-        unfold cescaped.
-        destruct w as [f' ρ' xs' e' | t vs]; intros _.
-        * unfold cbinding in Hloc.
-          destruct Hloc as [Hown _].
-          destruct (Hown eq_refl) as [Hin | [Hin _]].
-          -- eauto using Hsub.
-          -- auto.
-        * unfold approx_vals in *.
-          destruct Happrox as [av [Hav Hap]]; eauto.
-      + (* c is not the defining unit *)
-        (* the value belongs to a third unit: it had escaped already -> only the defining unit, c', matters *)
-        unfold cescaped in *.
-        destruct w; simpl in Hesc |- *; intros _.
-        * auto.
-        * apply Hesc; exact Hneqc.
-  Qed.
-
-  Lemma cescaped_handover_list {c c1 i Γ ρ1 ρ2 xs vs} :
-    G c i Γ ρ1 ρ2 ->
-    Forall (fun x => ai_env (θ c) x \subset ai_esc (θ c)) xs ->
-    get_list xs ρ2 = Some vs ->
-    Forall (cescaped c1) vs.
-  Proof.
-    intros HG Hsub.
-    revert vs.
-    induction Hsub as [| x xs Hxsub Hsub IH]; simpl; intros vs Hget.
-    - inv Hget; constructor.
-    - destruct (M.get x ρ2) as [v |] eqn:Hx; [| discriminate Hget].
-      destruct (get_list xs ρ2) as [vs' |] eqn:Hxs; [| discriminate Hget].
-      inv Hget.
-      constructor.
-      + apply (@cescaped_handover c x v).
-        * eapply wf_cenv_get; [eapply G_wf_cenv_r; eauto | exact Hx].
-        * eapply cescaped_env_get; [eapply G_cescaped_env; eauto | exact Hx].
-        * eapply cbinding_env_get; [eapply G_cbinding_env; eauto | exact Hx].
-        * eapply approx_env_get; [eapply G_approx_env; eauto | exact Hx].
-        * exact Hxsub.
-      + eapply IH; eauto.
-  Qed.
-
-  (* A value handed over by the unit `c` to another unit `c1`, at a parameter
-     whose value set contains `AVtop`, is bound as `cbinding` requires:
-     - a closure of `c1` itself comes back from the context, so it has escaped
-       from `c1` and `AVtop` stands for it at the parameter;
-     - any other value is foreign to `c1`, hence approximated by `AVtop`. *)
-  Lemma cbinding_handover {c c1 x v} :
-    c1 <> c ->
-    wf_cval θ v ->
-    cescaped c v ->
-    AVtop \in ai_env (θ c1) x ->
-    cbinding c1 (θ c1) x v.
-  Proof.
-    intros Hneq Hwf Hesc Htop.
-    destruct v as [A' [c' l'] w].
-    pose proof (wf_cval_CTag_inv Hwf) as [HA' _].
-    subst A'.
-    destruct w as [f ρ xs e | t vs]; unfold cbinding, cescaped in *.
-    - split.
-      + intros Heq; subst c'.
-        right; split; [apply Hesc; exact Hneq | exact Htop].
-      + intros _; exact Htop.
-    - intros _; exact Htop.
-  Qed.
-
-  Lemma cbinding_handover_list {c c1 xs vs ρ ρ'} :
-    c1 <> c ->
-    Forall (wf_cval θ) vs ->
-    Forall (cescaped c) vs ->
-    (forall x, List.In x xs -> AVtop \in ai_env (θ c1) x) ->
-    set_lists xs vs ρ = Some ρ' ->
-    Forall2 (cbinding c1 (θ c1)) xs vs.
-  Proof.
-    intros Hneq Hwf Hesc Htop Hset.
-    revert vs ρ' Hwf Hesc Htop Hset.
-    induction xs as [| x xs IH]; intros vs ρ' Hwf Hesc Htop Hset; simpl in Hset.
-    - destruct vs as [| v vs]; [constructor | discriminate Hset].
-    - destruct vs as [| v vs]; [discriminate Hset |].
-      destruct (set_lists xs vs ρ) as [ρ'' |] eqn:Heq; [| discriminate Hset].
-      inv Hwf; inv Hesc.
-      constructor.
-      + eapply cbinding_handover;
-          [exact Hneq | assumption | assumption | apply Htop; left; reflexivity].
-      + eapply IH; [eassumption | eassumption | | exact Heq].
-        intros y Hy; apply Htop; right; exact Hy.
-  Qed.
-
-  (* `cescaped_handover` over an arbitrary value set `avs` that escapes. *)
-  Lemma cescaped_handover_avs {c avs v} :
+  Lemma cescaped_handover {c avs v} :
     wf_cval θ v ->
     cescaped c v ->
     cflows c (θ c) avs v ->
@@ -2395,6 +2289,29 @@ Section LR.
         * apply Hesc; exact Hneqc.
   Qed.
 
+  Lemma cescaped_handover_list {c c1 i Γ ρ1 ρ2 xs vs} :
+    G c i Γ ρ1 ρ2 ->
+    Forall (fun x => ai_env (θ c) x \subset ai_esc (θ c)) xs ->
+    get_list xs ρ2 = Some vs ->
+    Forall (cescaped c1) vs.
+  Proof.
+    intros HG Hsub.
+    revert vs.
+    induction Hsub as [| x xs Hxsub Hsub IH]; simpl; intros vs Hget.
+    - inv Hget; constructor.
+    - destruct (M.get x ρ2) as [v |] eqn:Hx; [| discriminate Hget].
+      destruct (get_list xs ρ2) as [vs' |] eqn:Hxs; [| discriminate Hget].
+      inv Hget.
+      constructor.
+      + eapply (@cescaped_handover c).
+        * eapply wf_cenv_get; [eapply G_wf_cenv_r; eauto | exact Hx].
+        * eapply cescaped_env_get; [eapply G_cescaped_env; eauto | exact Hx].
+        * eapply cbinding_env_get; [eapply G_cbinding_env; eauto | exact Hx].
+        * eapply approx_env_get; [eapply G_approx_env; eauto | exact Hx].
+        * exact Hxsub.
+      + eapply IH; eauto.
+  Qed.
+
   (* `cbinding_handover` over an arbitrary value set `avs` holding `AVtop`. *)
   Lemma cflows_handover {c c1 avs v} :
     c1 <> c ->
@@ -2415,26 +2332,65 @@ Section LR.
     - intros _; exact Htop.
   Qed.
 
+  (* A value handed over by the unit `c` to another unit `c1`, at a parameter
+     whose value set contains `AVtop`, is bound as `cbinding` requires:
+     - a closure of `c1` itself comes back from the context, so it has escaped
+       from `c1` and `AVtop` stands for it at the parameter;
+     - any other value is foreign to `c1`, hence approximated by `AVtop`. *)
+  Lemma cbinding_handover {c c1 x v} :
+    c1 <> c ->
+    wf_cval θ v ->
+    cescaped c v ->
+    AVtop \in ai_env (θ c1) x ->
+    cbinding c1 (θ c1) x v.
+  Proof.
+    intros Hneq Hwf Hesc Htop.
+    eapply cflows_cbinding; eauto.
+    eapply cflows_handover; eauto.
+  Qed.
+
+  Lemma cbinding_handover_list {c c1 xs vs ρ ρ'} :
+    c1 <> c ->
+    Forall (wf_cval θ) vs ->
+    Forall (cescaped c) vs ->
+    (forall x, List.In x xs -> AVtop \in ai_env (θ c1) x) ->
+    set_lists xs vs ρ = Some ρ' ->
+    Forall2 (cbinding c1 (θ c1)) xs vs.
+  Proof.
+    intros Hneq Hwf Hesc Htop Hset.
+    revert vs ρ' Hwf Hesc Htop Hset.
+    induction xs as [| x xs IH]; intros vs ρ' Hwf Hesc Htop Hset; simpl in Hset.
+    - destruct vs as [| v vs]; [constructor | discriminate Hset].
+    - destruct vs as [| v vs]; [discriminate Hset |].
+      destruct (set_lists xs vs ρ) as [ρ'' |] eqn:Heq; [| discriminate Hset].
+      inv Hwf; inv Hesc.
+      constructor.
+      + eapply cbinding_handover;
+          [exact Hneq | assumption | assumption | apply Htop; left; reflexivity].
+      + eapply IH; [eassumption | eassumption | | exact Heq].
+        intros y Hy; apply Htop; right; exact Hy.
+  Qed.
+
   (* A result returned by the unit `c` into an escaping return set `Rs1` is
      handed over to the unit `c1`, which receives it into `Rs` as an unknown
      value (`AVtop ∈ Rs`). *)
-  Lemma cres_inv_handover {c c1 Rs1 Rs r} :
+  Lemma cresult_handover {c c1 Rs1 Rs r} :
     c1 <> c ->
     wf_cres θ r ->
     approx_res Rs1 r ->
-    cres_inv c (θ c) Rs1 r ->
+    cresult c (θ c) Rs1 r ->
     Rs1 \subset ai_esc (θ c) ->
     AVtop \in Rs ->
-    cres_inv c1 (θ c1) Rs r.
+    cresult c1 (θ c1) Rs r.
   Proof.
     intros Hneq Hwf Happrox Hok Hsub Htop.
     destruct r as [| v]; [exact I |].
-    pose proof (wf_cres_CRes_inv Hwf) as Hwfv.
+    pose proof (wf_cres_wf_cval Hwf) as Hwfv.
     destruct Hok as [Hesc Hfl].
     assert (Happrox_v : approx_vals Rs1 v)
       by (inv Happrox; eexists; split; eauto).
     split.
-    - exact (cescaped_handover_avs Hwfv Hesc Hfl Happrox_v Hsub c1).
+    - exact (cescaped_handover Hwfv Hesc Hfl Happrox_v Hsub c1).
     - exact (cflows_handover Hneq Hwfv Hesc Htop).
   Qed.
 
@@ -2584,8 +2540,8 @@ Section LR.
           - destruct (H10 Htop) as [_ [_ Hesc_fun]].
             destruct (Hesc_fun _ _ _ _ Hesc) as [_ [_ [_ [_ Hsub]]]]; exact Hsub. }
 
-        assert (Hok : cres_inv c (θ c) Rs (CRes v2))
-          by (eapply cres_inv_subset; [eapply cbstep_fuel_cres_inv; eauto | exact Hret]).
+        assert (Hok : cresult c (θ c) Rs (CRes v2))
+          by (eapply cresult_subset; [eapply cbstep_fuel_cresult; eauto | exact Hret]).
 
         econstructor; eauto.
         * eapply Cbstep_app_Internal; eauto.
@@ -2616,7 +2572,7 @@ Section LR.
 
         * (* the result crosses the boundary if `Rs` escapes *)
           destruct bdr; [| exact I].
-          eapply (cres_inv_cboundary θ c Rs);
+          eapply (cresult_cboundary θ c Rs);
             [ eapply V_wf_cres_r; eauto
             | eapply V_cres_is_fun; eauto
             | exact Hok
@@ -2640,14 +2596,14 @@ Section LR.
 
         (* the callee returns into `ai_ret (θ c1) l0`, which escapes from
            `c1`, and the caller receives the result as unknown *)
-        assert (Hok : cres_inv c (θ c) Rs (CRes v2)).
+        assert (Hok : cresult c (θ c) Rs (CRes v2)).
         { destruct (θ_escape_ok c1) as [_ Hesc_ok].
           destruct (Hesc_ok _ _ _ _ Hafv) as [_ Hret_esc].
           destruct (H10 Htop) as [_ [HRs _]].
-          eapply (cres_inv_handover (not_eq_sym n));
+          eapply (cresult_handover (not_eq_sym n));
             [ eapply V_wf_cres_r; eauto
             | eapply cbstep_fuel_approx_res; eauto
-            | eapply cbstep_fuel_cres_inv; eauto
+            | eapply cbstep_fuel_cresult; eauto
             | exact Hret_esc
             | exact HRs ]. }
 
@@ -2682,7 +2638,7 @@ Section LR.
 
         * (* the result crosses the boundary if `Rs` escapes *)
           destruct bdr; [| exact I].
-          eapply (cres_inv_cboundary θ c Rs);
+          eapply (cresult_cboundary θ c Rs);
             [ eapply V_wf_cres_r; eauto
             | eapply V_cres_is_fun; eauto
             | exact Hok
@@ -3035,7 +2991,7 @@ Proof.
   - (* CbstepT_link_Res: the linked value agrees with Θ, so the second unit
        still runs in a Θ-consistent environment *)
     intros HΘ Hρ.
-    pose proof (wf_cres_CRes_inv (IH1 (analysis_context_of_link1 HΘ) Hρ))
+    pose proof (wf_cres_wf_cval (IH1 (analysis_context_of_link1 HΘ) Hρ))
       as Hclo.
     pose proof (wf_cenv_set x (CTag A c l v) Hρ Hclo) as Hρx.
     exact (Hfuel2 (analysis_context_of_link2 HΘ) Hρx).
@@ -3108,7 +3064,7 @@ Proof.
     intros HΘ Hρ c0.
     pose proof (analysis_context_of_link1 HΘ) as HΘ1.
     pose proof (analysis_context_of_link2 HΘ) as HΘ2.
-    pose proof (wf_cres_CRes_inv
+    pose proof (wf_cres_wf_cval
                   (cbstep_top_fuel_wf_cres Θ ρ cce1 i1 _ I1 HΘ1 Hρ Hfuel1))
       as Hclo.
     pose proof (wf_cenv_set x (CTag A c l v) Hρ Hclo) as Hρx.
