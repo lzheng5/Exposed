@@ -954,22 +954,37 @@ Proof.
   - constructor; [eapply cbinding_subset; eauto | eapply IH; eauto].
 Qed.
 
+(* A value that crosses the program boundary: a closure that has escaped
+   from its unit with its own allocation site. *)
+Definition cboundary (cv : clval) : Prop :=
+  match cv with
+  | CTAG _ A (c, l) (CVfun f _ xs e) => AVfun l f xs e \in ai_esc A
+  | _ => False
+  end.
+
+(* A result that crosses the program boundary. *)
+Definition cboundary_res (r : cres) : Prop :=
+  match r with
+  | COOT => True
+  | CRes v => cboundary v
+  end.
+
 (* Checking Semantics based on the Collecting Semantics *)
 (* This semantics dynamically validates the analysis result, `A`.
    The collected interactions are validated against `ai_int A` once, in
    `CbstepF_Step`, which covers every interaction produced underneath it,
    including the call edge added by `Cbstep_app_*`. *)
-Inductive cbstep (A : analysis_result) (c : color) (ρ : cenv) : exp -> fuel -> avals -> cres -> interactions -> Prop :=
+Inductive cbstep (A : analysis_result) (c : color) (bdr : bool) (ρ : cenv) : exp -> fuel -> avals -> cres -> interactions -> Prop :=
 | Cbstep_ret :
   forall {x v Rs},
     M.get x ρ = Some v ->
-    cbstep A c ρ (Eret x) 0 Rs (CRes v) (Empty_set _)
+    cbstep A c bdr ρ (Eret x) 0 Rs (CRes v) (Empty_set _)
 
 | Cbstep_fun :
   forall {f l xs e k i Rs r I},
-    cbstep_fuel A c (M.set f (CTag A c l (CVfun f ρ xs e)) ρ) k i Rs r I ->
+    cbstep_fuel A c bdr (M.set f (CTag A c l (CVfun f ρ xs e)) ρ) k i Rs r I ->
     approx_vals (ai_env A f) (CTag A c l (CVfun f ρ xs e)) ->
-    cbstep A c ρ (Efun f l xs e k) i Rs r I
+    cbstep A c bdr ρ (Efun f l xs e k) i Rs r I
 
 (* Foreign call: dynamic counterpart of the unknown-callee branch of `Acheck_app`,
    validated from both sides.  The caller (`A`) sees an unknown value being
@@ -995,9 +1010,9 @@ Inductive cbstep (A : analysis_result) (c : color) (ρ : cenv) : exp -> fuel -> 
 
     (* the body is validated against the callee's own analysis result and
        returns into `ai_ret A' l'` *)
-    cbstep_fuel A' c' ρ'' e i (ai_ret A' l') r I ->
+    cbstep_fuel A' c' true ρ'' e i (ai_ret A' l') r I ->
 
-    cbstep A c ρ (Eapp f l xs) i Rs r (((c', l'), (c, l)) |: I)
+    cbstep A c bdr ρ (Eapp f l xs) i Rs r (((c', l'), (c, l)) |: I)
 
 (* Internal call: dynamic counterpart of the known-callee branch of
    `Acheck_app`.  The callee wears the caller's color, so it belongs to the
@@ -1012,21 +1027,22 @@ Inductive cbstep (A : analysis_result) (c : color) (ρ : cenv) : exp -> fuel -> 
     approx_env (ai_env A) ρ'' ->
 
     (* the body returns into `ai_ret A l'` *)
-    cbstep_fuel A c ρ'' e i (ai_ret A l') r I ->
+    cbstep_fuel A c false ρ'' e i (ai_ret A l') r I ->
 
-    cbstep A c ρ (Eapp f l xs) i Rs r (((c, l'), (c, l)) |: I)
+    cbstep A c bdr ρ (Eapp f l xs) i Rs r (((c, l'), (c, l)) |: I)
 
-with cbstep_fuel (A : analysis_result) (c : color) (ρ : cenv) : exp -> fuel -> avals -> cres -> interactions -> Prop :=
+with cbstep_fuel (A : analysis_result) (c : color) (bdr : bool) (ρ : cenv) : exp -> fuel -> avals -> cres -> interactions -> Prop :=
 | CbstepF_OOT :
   forall {e Rs},
-    cbstep_fuel A c ρ e 0 Rs COOT (Empty_set _)
+    cbstep_fuel A c bdr ρ e 0 Rs COOT (Empty_set _)
 
 | CbstepF_Step :
   forall {e i Rs r I},
-    cbstep A c ρ e i Rs r I ->
+    cbstep A c bdr ρ e i Rs r I ->
     approx_res Rs r ->
     approx_int c (ai_int A) I ->
-    cbstep_fuel A c ρ e (S i) Rs r I.
+    (if bdr then cboundary_res r else True) ->
+    cbstep_fuel A c bdr ρ e (S i) Rs r I.
 
 Hint Constructors cbstep : core.
 Hint Constructors cbstep_fuel : core.
@@ -1034,9 +1050,9 @@ Hint Constructors cbstep_fuel : core.
 Scheme cbstep_ind' := Minimality for cbstep Sort Prop
 with cbstep_fuel_ind' := Minimality for cbstep_fuel Sort Prop.
 
-Lemma cbstep_deterministic_aux v v' {A I I' c ρ e i i' Rs r r'}:
-  cbstep A c ρ e i Rs r I ->
-  cbstep A c ρ e i' Rs r' I' ->
+Lemma cbstep_deterministic_aux v v' {A I I' c bdr ρ e i i' Rs r r'}:
+  cbstep A c bdr ρ e i Rs r I ->
+  cbstep A c bdr ρ e i' Rs r' I' ->
   r = CRes v ->
   r' = CRes v' ->
   (v = v' /\ i = i' /\ I <--> I').
@@ -1047,14 +1063,14 @@ Proof.
   generalize dependent i'.
   generalize dependent v.
   generalize dependent I'.
-  induction H using cbstep_ind' with (P := fun A c ρ e i Rs r I =>
+  induction H using cbstep_ind' with (P := fun A c bdr ρ e i Rs r I =>
                                              forall I' v i' r' v',
-                                               cbstep A c ρ e i' Rs r' I' ->
+                                               cbstep A c bdr ρ e i' Rs r' I' ->
                                                r = CRes v -> r' = CRes v' ->
                                                v = v' /\ i = i' /\ I <--> I')
-                                     (P0 := fun A c ρ e i Rs r I =>
+                                     (P0 := fun A c bdr ρ e i Rs r I =>
                                               forall I' v i' r' v',
-                                                cbstep_fuel A c ρ e i' Rs r' I' ->
+                                                cbstep_fuel A c bdr ρ e i' Rs r' I' ->
                                                 r = CRes v -> r' = CRes v' ->
                                                 v = v' /\ i = i' /\ I <--> I');
     intros; subst.
@@ -1070,34 +1086,39 @@ Proof.
     edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto; subst;
       hauto lq: on use: Extensionality_Ensembles unfold: Same_set, Included, interactions.
   - fcrush.
-  - inv H2;
+  - inv H3;
       edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto.
 Qed.
 
-Lemma cbstep_fuel_deterministic_aux v v' {A I I' c ρ e i i' Rs r r'}:
-  cbstep_fuel A c ρ e i Rs r I ->
-  cbstep_fuel A c ρ e i' Rs r' I' ->
+Lemma cbstep_fuel_deterministic_aux v v' {A I I' c bdr ρ e i i' Rs r r'}:
+  cbstep_fuel A c bdr ρ e i Rs r I ->
+  cbstep_fuel A c bdr ρ e i' Rs r' I' ->
   r = CRes v ->
   r' = CRes v' ->
   (v = v' /\ i = i' /\ I <--> I').
 Proof.
   intros Hstep Hstep' Heqr Heqr'; subst.
   inv Hstep; inv Hstep'.
-  edestruct (cbstep_deterministic_aux v v' H H2) as [Heqv [Heqi HeqI]];
+  edestruct (cbstep_deterministic_aux v v' H H3) as [Heqv [Heqi HeqI]];
     subst; eauto.
 Qed.
 
-Theorem cbstep_deterministic v v' {A I I' c ρ e Rs i i'}:
-  cbstep A c ρ e i Rs (CRes v) I ->
-  cbstep A c ρ e i' Rs (CRes v') I' ->
+Theorem cbstep_deterministic v v' {A I I' c bdr ρ e Rs i i'}:
+  cbstep A c bdr ρ e i Rs (CRes v) I ->
+  cbstep A c bdr ρ e i' Rs (CRes v') I' ->
   (v = v' /\ i = i' /\ I <--> I').
 Proof. srun eauto using cbstep_deterministic_aux. Qed.
 
-Theorem cbstep_fuel_deterministic v v' {A I I' c ρ e Rs i i'}:
-  cbstep_fuel A c ρ e i Rs (CRes v) I ->
-  cbstep_fuel A c ρ e i' Rs (CRes v') I' ->
+Theorem cbstep_fuel_deterministic v v' {A I I' c bdr ρ e Rs i i'}:
+  cbstep_fuel A c bdr ρ e i Rs (CRes v) I ->
+  cbstep_fuel A c bdr ρ e i' Rs (CRes v') I' ->
   (v = v' /\ i = i' /\ I <--> I').
 Proof. srun eauto using cbstep_fuel_deterministic_aux. Qed.
+
+Lemma cbstep_fuel_cboundary_res A c ρ e i Rs r I :
+  cbstep_fuel A c true ρ e i Rs r I ->
+  cboundary_res r.
+Proof. intros. inv H; fcrush. Qed.
 
 (* Analysis Context *)
 Definition analysis_context := color -> analysis_result.
@@ -1228,21 +1249,21 @@ Proof.
     end.
 Qed.
 
-Lemma cbstep_fuel_approx_res A c ρ e i Rs r I :
-  cbstep_fuel A c ρ e i Rs r I ->
+Lemma cbstep_fuel_approx_res A c bdr ρ e i Rs r I :
+  cbstep_fuel A c bdr ρ e i Rs r I ->
   approx_res Rs r.
 Proof. intros H. inv H; eauto. Qed.
 
-Lemma cbstep_fuel_approx_int A c ρ e i Rs r I :
-  cbstep_fuel A c ρ e i Rs r I ->
+Lemma cbstep_fuel_approx_int A c bdr ρ e i Rs r I :
+  cbstep_fuel A c bdr ρ e i Rs r I ->
   approx_int c (ai_int A) I.
 Proof.
   intros H. inv H; eauto.
   eapply approx_int_empty; eauto.
 Qed.
 
-Lemma cbstep_fuel_closed A c ρ e i Rs r I :
-  cbstep_fuel A c ρ e i Rs r I ->
+Lemma cbstep_fuel_closed A c bdr ρ e i Rs r I :
+  cbstep_fuel A c bdr ρ e i Rs r I ->
   internals_closed (ainternals_of (ai_int A)) c I.
 Proof.
   intros.
@@ -1255,16 +1276,16 @@ Qed.
    own analysis result, for which no `acheck` is available, so the induction
    is carried out without it. *)
 Lemma cbstep_wf_cres_aux Θ :
-  forall A c ρ e i Rs r I,
-    cbstep A c ρ e i Rs r I ->
+  forall A c bdr ρ e i Rs r I,
+    cbstep A c bdr ρ e i Rs r I ->
     Θ c = A ->
     wf_cenv Θ ρ ->
     wf_cres Θ r.
 Proof.
-  intros A c ρ e i Rs r I Hstep.
+  intros A c bdr ρ e i Rs r I Hstep.
   induction Hstep using cbstep_ind' with
-    (P := fun A c ρ e i Rs r I => Θ c = A -> wf_cenv Θ ρ -> wf_cres Θ r)
-    (P0 := fun A c ρ e i Rs r I => Θ c = A -> wf_cenv Θ ρ -> wf_cres Θ r);
+    (P := fun A c bdr ρ e i Rs r I => Θ c = A -> wf_cenv Θ ρ -> wf_cres Θ r)
+    (P0 := fun A c bdr ρ e i Rs r I => Θ c = A -> wf_cenv Θ ρ -> wf_cres Θ r);
     intros HΘ Henv.
   - (* Cbstep_ret *)
     constructor.
@@ -1310,20 +1331,20 @@ Qed.
 
 (* A returned value agrees with Θ as well. *)
 Lemma cbstep_wf_cres Θ :
-  forall A c ρ e i Rs r I,
-    cbstep A c ρ e i Rs r I ->
+  forall A c bdr ρ e i Rs r I,
+    cbstep A c bdr ρ e i Rs r I ->
     Θ c = A ->
     wf_cenv Θ ρ ->
     wf_cres Θ r.
 Proof.
-  intros A c ρ e i Rs r I Hstep.
-  exact (cbstep_wf_cres_aux Θ A c ρ e i Rs r I Hstep).
+  intros A c bdr ρ e i Rs r I Hstep.
+  exact (cbstep_wf_cres_aux Θ A c bdr ρ e i Rs r I Hstep).
 Qed.
 
-Lemma cbstep_fuel_wf_cres Θ A c ρ e i Rs r I :
+Lemma cbstep_fuel_wf_cres Θ A c bdr ρ e i Rs r I :
   Θ c = A ->
   wf_cenv Θ ρ ->
-  cbstep_fuel A c ρ e i Rs r I ->
+  cbstep_fuel A c bdr ρ e i Rs r I ->
   wf_cres Θ r.
 Proof.
   intros HΘ Henv Hstep.
@@ -1357,18 +1378,18 @@ Qed.
    side is checked by `Cbstep_app_External`, or by code of `c'` itself, which
    is checked by the `CbstepF_Step` of the nested run under `c'`. *)
 Lemma cbstep_approx_int_handover_aux Θ :
-  forall A c ρ e i Rs r I,
-    cbstep A c ρ e i Rs r I ->
+  forall A c bdr ρ e i Rs r I,
+    cbstep A c bdr ρ e i Rs r I ->
     Θ c = A ->
     wf_cenv Θ ρ ->
     forall c', c' <> c -> approx_int c' (ai_int (Θ c')) I.
 Proof.
-  intros A c ρ e i Rs r I Hstep.
+  intros A c bdr ρ e i Rs r I Hstep.
   induction Hstep using cbstep_ind' with
-    (P := fun A c ρ e i Rs r I =>
+    (P := fun A c bdr ρ e i Rs r I =>
             Θ c = A -> wf_cenv Θ ρ ->
             forall c', c' <> c -> approx_int c' (ai_int (Θ c')) I)
-    (P0 := fun A c ρ e i Rs r I =>
+    (P0 := fun A c bdr ρ e i Rs r I =>
              Θ c = A -> wf_cenv Θ ρ ->
              forall c', approx_int c' (ai_int (Θ c')) I);
     intros HΘ Henv.
@@ -1412,10 +1433,10 @@ Proof.
     + eapply IHHstep; eauto.
 Qed.
 
-Lemma cbstep_fuel_approx_int_handover Θ A c ρ e i Rs r I :
+Lemma cbstep_fuel_approx_int_handover Θ A c bdr ρ e i Rs r I :
   Θ c = A ->
   wf_cenv Θ ρ ->
-  cbstep_fuel A c ρ e i Rs r I ->
+  cbstep_fuel A c bdr ρ e i Rs r I ->
   forall c', approx_int c' (ai_int (Θ c')) I.
 Proof.
   intros HΘ Henv Hstep c'.
@@ -1439,12 +1460,12 @@ Section LR.
     | _, _ => False
     end.
 
-  Definition E' (P : nat -> wval -> clval -> Prop) (A : analysis_result) (c : color) (i : nat) (ρ1 : env) (ρ2 : cenv) (e : exp) (Rs : avals) : Prop :=
+  Definition E' (P : nat -> wval -> clval -> Prop) (A : analysis_result) (c : color) (bdr : bool) (i : nat) (ρ1 : env) (ρ2 : cenv) (e : exp) (Rs : avals) : Prop :=
     forall j1 r1,
       j1 <= i ->
       bstep_fuel ρ1 e j1 r1 ->
       exists j2 r2 I2,
-        cbstep_fuel A c ρ2 e j2 Rs r2 I2 /\
+        cbstep_fuel A c bdr ρ2 e j2 Rs r2 I2 /\
           R' P (i - j1) r1 r2.
 
   Fixpoint V (i : nat) (wv : wval) (cv : clval) {struct i} : Prop :=
@@ -1479,7 +1500,7 @@ Section LR.
                   match i with
                   | 0 => True
                   | S i0 =>
-                      forall j c vs1 vs2 ρ3 ρ4,
+                      forall bdr j c vs1 vs2 ρ3 ρ4,
                         j <= i0 ->
                         Forall2 (V (i0 - (i0 - j))) vs1 vs2 ->
                         set_lists xs1 vs1 (M.set f1 (Tag l1 (Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
@@ -1494,7 +1515,7 @@ Section LR.
                         (* foreign call: the closure has escaped its unit *)
                         (c2 <> c -> AVfun l2 f2 xs2 e2 \in ai_esc A2) ->
 
-                        E' V A2 c2 (i0 - (i0 - j)) ρ3 ρ4 e1 (ai_ret A2 l2)
+                        E' V A2 c2 bdr (i0 - (i0 - j)) ρ3 ρ4 e1 (ai_ret A2 l2)
                   end
 
             | _, _ => False
@@ -1796,7 +1817,7 @@ Section LR.
       destruct v; destruct c0; try contradiction.
       destruct HV as [Heqv [Heql [Heqe [Havs [Hsite [Haenv [Hesc [Hloc HV]]]]]]]]; subst.
       repeat (split; eauto); intros.
-      specialize (HV j0 c0 vs1 vs2 ρ3 ρ4).
+      specialize (HV bdr j0 c0 vs1 vs2 ρ3 ρ4).
       rewrite normalize_step in *; try lia.
       eapply HV; eauto; try lia.
       (* + destruct HV as [Heqc [Hlen HV]]; subst.
@@ -1828,10 +1849,10 @@ Section LR.
     eapply V_mono; eauto.
   Qed.
 
-  Lemma E_mono {A Rs c ρ1 ρ2 e} i j:
-    E A c i ρ1 ρ2 e Rs ->
+  Lemma E_mono {A Rs c bdr ρ1 ρ2 e} i j:
+    E A c bdr i ρ1 ρ2 e Rs ->
     j <= i ->
-    E A c j ρ1 ρ2 e Rs.
+    E A c bdr j ρ1 ρ2 e Rs.
   Proof.
     unfold E, R, E', R'.
     intros.
@@ -1959,13 +1980,14 @@ Section LR.
   Qed.
 
   (* `Rs` is quantified inside as function bodies are checked against other return sets. *)
-  Definition well_annotated A c Γ e :=
+  Definition well_annotated A c Γ e : Prop :=
     θ c = A /\
-    forall Rs,
+    forall Rs (bdr : bool),
       acheck A e Rs ->
+      (if bdr then (Rs \subset (ai_esc A)) else True) ->
       forall i ρ1 ρ2,
         G c i Γ ρ1 ρ2 ->
-        E A c i ρ1 ρ2 e Rs.
+        E A c bdr i ρ1 ρ2 e Rs.
 
   Lemma ret_compat A c Γ x :
     θ c = A ->
@@ -1976,22 +1998,34 @@ Section LR.
     intros; simpl.
     split; auto; intros.
 
-    inv H4.
+    inv H5.
     - fcrush.
     - destruct r1.
       fcrush.
-      inv H1; inv H5.
-      edestruct (G_get H2) as [v2 [Heqv2 HV]]; eauto.
+      inv H1; inv H6.
+      edestruct (G_get H3) as [v2 [Heqv2 HV]]; eauto.
       exists 1, (CRes v2), (Empty_set _); split; eauto; simpl.
       econstructor; eauto.
 
-      (* `v2` is approximated by `ai_env (θ c) x`, which flows into `Rs` *)
-      destruct (approx_env_get (G_approx_env H2) Heqv2) as [av [Hav Happrox]]; eauto.
+      destruct (approx_env_get (G_approx_env H3) Heqv2) as [av [Hav Happrox]]; eauto.
       eapply approx_int_empty; eauto.
 
-      eapply V_mono; eauto; lia.
-  Qed.
+      destruct bdr; simpl; auto.
+      unfold cboundary.
+      destruct v2; destruct c0; destruct c1; simpl; auto.
+      (*
+      assert (Hcbenv : cbinding_env c (θ c) ρ2) by eauto using G_cbinding_env.
+      pose proof (cbinding_env_get _ _ Hcbenv Heqv2) as Hloc_x.
+      unfold cbinding in Hloc_x.
+      *)
+      admit.
 
+      admit.
+
+      eapply V_mono; eauto; lia.
+  Admitted.
+
+  (*
   Lemma Vfun_V Γ f l A c xs e  :
     occurs_free e \subset FromList xs :|: (f |: Γ) ->
     well_annotated A c (FromList xs :|: (f |: Γ)) e ->
@@ -2559,43 +2593,28 @@ Qed.
 Definition analysis_context_of (Θ : analysis_context) (cce : ccexp) : Prop :=
   forall c A, has_unit cce c A -> A = Θ c.
 
-(* A value that crosses the program boundary: a closure that has escaped
-   from its unit with its own allocation site. *)
-Definition cescaped_top (cv : clval) : Prop :=
-  match cv with
-  | CTAG _ A (c, l) (CVfun f _ xs e) => AVfun l f xs e \in ai_esc A
-  | _ => False
-  end.
-
-(* A result that crosses the program boundary. *)
-Definition cescaped_res_top (r : cres) : Prop :=
-  match r with
-  | COOT => True
-  | CRes v => cescaped_top v
-  end.
-
 (* A value crossing the boundary has escaped, whoever holds it. *)
-Lemma cescaped_top_cescaped {c v} :
-  cescaped_top v ->
+Lemma cboundary_cescaped {c v} :
+  cboundary v ->
   cescaped c v.
 Proof.
   intros Htop.
   destruct v as [A' [c' l'] w].
-  destruct w as [f ρ xs e | t vs]; unfold cescaped_top in Htop; [| contradiction].
+  destruct w as [f ρ xs e | t vs]; unfold cboundary in Htop; [| contradiction].
   unfold cescaped; intros _; exact Htop.
 Qed.
 
-Lemma cescaped_top_cescaped_list {c vs} :
-  Forall cescaped_top vs ->
+Lemma cboundary_cescaped_list {c vs} :
+  Forall cboundary vs ->
   Forall (cescaped c) vs.
-Proof. intros H; induction H; constructor; eauto using cescaped_top_cescaped. Qed.
+Proof. intros H; induction H; constructor; eauto using cboundary_cescaped. Qed.
 
 (* A value crossing the boundary is bound as `cbinding` requires at a
      variable holding `AVtop`: foreign values are stood for by `AVtop`, and the
      unit's own closures coming back have escaped. *)
-Lemma cescaped_top_cbinding {θ c x v} :
+Lemma cboundary_cbinding {θ c x v} :
   wf_cval θ v ->
-  cescaped_top v ->
+  cboundary v ->
   (AVtop \in ai_env (θ c) x) ->
   cbinding c (θ c) x v.
 Proof.
@@ -2603,15 +2622,15 @@ Proof.
   destruct v as [A' [c' l'] w].
   pose proof (wf_cval_CTag_inv Hwf) as [HA' _].
   subst A'.
-  destruct w as [f ρ xs e | t vs]; unfold cescaped_top in Htop; [| contradiction].
+  destruct w as [f ρ xs e | t vs]; unfold cboundary in Htop; [| contradiction].
   unfold cbinding; split.
   - intros Heq; subst c'; right; split; [exact Htop | exact Hx].
   - intros _; exact Hx.
 Qed.
 
-Lemma cescaped_top_cbinding_list {θ c xs vs ρ ρ'} :
+Lemma cboundary_cbinding_list {θ c xs vs ρ ρ'} :
   Forall (wf_cval θ) vs ->
-  Forall cescaped_top vs ->
+  Forall cboundary vs ->
   (forall x, List.In x xs -> AVtop \in ai_env (θ c) x) ->
   set_lists xs vs ρ = Some ρ' ->
   Forall2 (cbinding c (θ c)) xs vs.
@@ -2624,7 +2643,7 @@ Proof.
     destruct (set_lists xs vs ρ) as [ρ'' |] eqn:Heq; [| discriminate Hset].
     inv Hwf; inv Htop.
     constructor.
-    + apply cescaped_top_cbinding; [assumption | assumption | apply Hx; left; reflexivity].
+    + apply cboundary_cbinding; [assumption | assumption | apply Hx; left; reflexivity].
     + eapply IH; [eassumption | eassumption | | exact Heq].
       intros y Hy; apply Hx; right; exact Hy.
 Qed.
@@ -2651,7 +2670,7 @@ with cbstep_top_fuel (ρ : cenv) : ccexp -> fuel -> cres -> interactions -> Prop
   forall {A c e i Rs r I},
     cbstep_fuel A c ρ e i Rs r I ->
     (* the result of a unit is handed to the context *)
-    cescaped_res_top r ->
+    cboundary_res r ->
     cbstep_top_fuel ρ (CCunit c A Rs e) i r I
 
 | CbstepTF_link_OOT :
@@ -2672,7 +2691,7 @@ with cbstep_top_fuel_ind' := Minimality for cbstep_top_fuel Sort Prop.
 (* The step-index is aligned between the two semantics. *)
 Lemma cbstep_fuel_cbstep_top_fuel A I c ρ e j Rs r:
   cbstep_fuel A c ρ e j Rs r I ->
-  cescaped_res_top r ->
+  cboundary_res r ->
   cbstep_top_fuel ρ (CCunit c A Rs e) j r I.
 Proof. intros H Hr. eapply CbstepTF_unit; eauto. Qed.
 
@@ -2682,24 +2701,24 @@ Lemma cbstep_top_fuel_cbstep_fuel A Rs c ρ e j r I:
 Proof. intros H. fcrush. Qed.
 
 (* Every result of the top-level semantics crosses the program boundary. *)
-Lemma cbstep_top_cescaped_res_top :
+Lemma cbstep_top_cboundary_res :
   forall ρ cce i r I,
     cbstep_top ρ cce i r I ->
-    cescaped_res_top r.
+    cboundary_res r.
 Proof.
   intros ρ cce i r I Hstep.
   induction Hstep using cbstep_top_ind'
-    with (P := fun ρ cce i r I => cescaped_res_top r)
-         (P0 := fun ρ cce i r I => cescaped_res_top r);
+    with (P := fun ρ cce i r I => cboundary_res r)
+         (P0 := fun ρ cce i r I => cboundary_res r);
     simpl; auto.
 Qed.
 
-Lemma cbstep_top_fuel_cescaped_res_top ρ cce i r I :
+Lemma cbstep_top_fuel_cboundary_res ρ cce i r I :
   cbstep_top_fuel ρ cce i r I ->
-  cescaped_res_top r.
+  cboundary_res r.
 Proof.
   intros Hstep.
-  inv Hstep; simpl; eauto using cbstep_top_cescaped_res_top.
+  inv Hstep; simpl; eauto using cbstep_top_cboundary_res.
 Qed.
 
 (* `analysis_context_of` reads off a single unit, and restricts to subtrees. *)
@@ -2896,22 +2915,22 @@ Section LRTop.
         R' P (i - j1) r1 r2.
 
   (* Related values that cross the program boundary. *)
-  Definition V_top i v1 v2 := V θ i v1 v2 /\ cescaped_top v2.
+  Definition V_top i v1 v2 := V θ i v1 v2 /\ cboundary v2.
 
   Definition R_top := R' V_top.
   Definition E_top := E_top' V_top.
 
   Lemma V_V_top i v1 v2 :
-    cescaped_top v2 ->
+    cboundary v2 ->
     (V θ i v1 v2 <-> V_top i v1 v2).
   Proof. unfold V_top; tauto. Qed.
 
   Lemma R_R_top :
     forall i r1 r2,
-      cescaped_res_top r2 ->
+      cboundary_res r2 ->
       (R θ i r1 r2 <-> R_top i r1 r2).
   Proof.
-    unfold R, R_top, R', cescaped_res_top.
+    unfold R, R_top, R', cboundary_res.
     intros.
     split; destruct r1; destruct r2; try contradiction;
       intros; eauto;
@@ -2938,7 +2957,7 @@ Section LRTop.
     exists j2, r2, I2; split; eauto.
     eapply cbstep_top_fuel_cbstep_fuel; eauto.
     eapply R_R_top; eauto.
-    eapply cbstep_top_fuel_cescaped_res_top; eauto.
+    eapply cbstep_top_fuel_cboundary_res; eauto.
   Qed.
 
   Definition G_top i Γ1 ρ1 ρ2 :=
@@ -3071,3 +3090,4 @@ End LRTop.
     }
 
   Admitted.
+*)
