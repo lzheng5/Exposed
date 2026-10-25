@@ -1096,7 +1096,6 @@ Inductive cbstep (A : analysis_result) (c : color) (bdr : bool) (ρ : cenv) : ex
     (* the arguments flow to the parameters *)
     get_list xs ρ = Some vs ->
     set_lists xs' vs (M.set f' (CTag A c l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
-    approx_env (ai_env A) ρ'' ->
 
     (* the body returns into `ai_ret A l'` *)
     cbstep_fuel A c false ρ'' e i (ai_ret A l') r I ->
@@ -1154,7 +1153,7 @@ Proof.
     edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto; subst;
       hauto lq: on use: Extensionality_Ensembles unfold: Same_set, Included, interactions.
     fcrush.
-  - inv H4; invc.
+  - inv H3; invc.
     fcrush.
     edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto; subst;
       hauto lq: on use: Extensionality_Ensembles unfold: Same_set, Included, interactions.
@@ -2544,22 +2543,6 @@ Section LR.
           by (eapply cresult_subset; [eapply cbstep_fuel_cresult; eauto | exact Hret]).
 
         econstructor; eauto.
-        * eapply Cbstep_app_Internal; eauto.
-
-          assert (Happrox : approx_env (ai_env (θ c)) (M.set v0 (CTag (θ c) c l0 (CVfun v0 t l1 e0)) t)) by eauto using approx_env_set.
-          eapply (approx_env_set_lists Happrox l1 vs2); eauto.
-
-          inv Hint.
-          -- (* internal *)
-            edestruct H9 as [_ [_ [Hsub _]]]; eauto.
-            eapply approx_vals_subset_list; eauto.
-
-          -- (* foreign *)
-            inv H; eauto.
-            eapply set_lists_approx_top; eauto.
-            destruct (θ_escape_ok c) as [_ Hesc_ok].
-            eapply Hesc_ok; eauto.
-
         * assert (approx_res (ai_ret (θ c) l0) (CRes v2)) by eauto using cbstep_fuel_approx_res.
           eapply approx_res_subset; eauto.
 
@@ -2643,7 +2626,6 @@ Section LR.
             | eapply V_cres_is_fun; eauto
             | exact Hok
             | assumption ].
-
   Qed.
 
   Lemma fundamental_property {A c Γ e}:
