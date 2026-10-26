@@ -1555,7 +1555,7 @@ Proof.
 Qed.
 
 (* Cross-semantics Logical Relations *)
-Section LR.
+Section LRBase.
 
   Variable θ : analysis_context.
   Hypothesis θ_escape_ok : analysis_context_escape_ok θ.
@@ -1998,6 +1998,10 @@ Section LR.
     eauto using V_mono.
   Qed.
 
+End LRBase.
+
+Section Compat.
+
   (* Compatibility Lemmas *)
   (* Well Scoped *)
   (* This essentially says `occurs_free e` ⊆ Γ *)
@@ -2103,36 +2107,36 @@ Section LR.
   Qed.
 
   (* `Rs` is quantified inside as function bodies are checked against other return sets. *)
+  (* TODO: swap Rs and bdr *)
   Definition well_annotated A c Γ e : Prop :=
-    θ c = A /\
-    forall Rs (bdr : bool),
+    forall θ Rs (bdr : bool),
+      θ c = A ->
+      analysis_context_escape_ok θ ->
       acheck A e Rs ->
       (if bdr then (Rs \subset (ai_esc A)) else True) ->
       forall i ρ1 ρ2,
-        G c i Γ ρ1 ρ2 ->
-        E A c bdr i ρ1 ρ2 e Rs.
+        G θ c i Γ ρ1 ρ2 -> (* note θ is constrained by the environment as well *)
+        E θ A c bdr i ρ1 ρ2 e Rs.
 
   Lemma ret_compat A c Γ x :
-    θ c = A ->
     (x \in Γ) ->
     well_annotated A c Γ (Eret x).
   Proof.
     unfold well_annotated, E, E', R, R', Ensembles.Included, Ensembles.In.
-    intros; simpl.
-    split; auto; intros.
+    intros Hx θ Rs bdr Heqθ Hescθ Hack Hesc; intros.
 
-    inv H5.
+    inv H1.
     - fcrush.
     - destruct r1.
       fcrush.
-      inv H1; inv H6.
-      edestruct (G_get H3) as [v2 [Heqv2 HV]]; eauto.
+      inv Hack; inv H2.
+      edestruct (G_get _ H) as [v2 [Heqv2 HV]]; eauto.
       assert (Hwf : wf_cval θ v2).
       {
         eapply wf_cenv_get; eauto.
-        eapply G_wf_cenv_r; eauto. 
+        eapply G_wf_cenv_r; eauto.
       }
-      
+
       assert (Hcres : cresult c (θ c) Rs (CRes v2)).
       {
           split.
@@ -2142,11 +2146,11 @@ Section LR.
                 eapply cbinding_env_get; [eapply G_cbinding_env; eauto | exact Heqv2].
              ++ assumption.
       }
-      
+
       exists 1, (CRes v2), (Empty_set _); split; eauto; simpl.
       + econstructor; eauto.
 
-        * destruct (approx_env_get (G_approx_env H3) Heqv2) as [av [Hav Happrox]]; eauto.
+        * destruct (approx_env_get (G_approx_env _ H) Heqv2) as [av [Hav Happrox]]; eauto.
         * eapply approx_int_empty; eauto.
 
         * destruct bdr; simpl; auto.
@@ -2156,13 +2160,15 @@ Section LR.
             destruct v2; destruct c0; destruct c1; simpl; auto.
             destruct w; destruct i; simpl in HV; fcrush.
           }
-          fcrush. 
+          fcrush.
 
       + eapply V_mono; eauto; lia.
   Qed.
 
-  Lemma Vfun_V Γ f l A c xs e  :
+  Lemma Vfun_V θ Γ f l A c xs e  :
     occurs_free e \subset FromList xs :|: (f |: Γ) ->
+    θ c = A ->
+    analysis_context_escape_ok θ ->
     well_annotated A c (FromList xs :|: (f |: Γ)) e ->
     acheck A e (ai_ret A l) ->
     forall {i ρ1 ρ2},
@@ -2170,11 +2176,11 @@ Section LR.
       wf_cval θ (CTag A c l (CVfun f ρ2 xs e)) ->
       (AVfun l f xs e) \in (ai_env A f) ->
       approx_vals (ai_env A f) (CTag A c l (CVfun f ρ2 xs e)) ->
-      G c i Γ ρ1 ρ2 ->
-      V i (Tag l (Vfun f ρ1 xs e)) (CTag A c l (CVfun f ρ2 xs e)).
+      G θ c i Γ ρ1 ρ2 ->
+      V θ i (Tag l (Vfun f ρ1 xs e)) (CTag A c l (CVfun f ρ2 xs e)).
   Proof.
     unfold well_annotated.
-    intros HS [HU He] Hack i.
+    intros HS Hθ Hesc He Hack i.
     induction i; simpl; subst; intros; auto;
       assert (Haenv : approx_env (ai_env (θ c)) ρ2) by eauto using G_approx_env;
       assert (Hesc_env : cescaped_env c ρ2) by eauto using G_cescaped_env;
@@ -2182,9 +2188,9 @@ Section LR.
       repeat (split; auto);
       intros; (repeat split; auto).
 
-    eapply (He _ _ Hack) with (i := (i - (i - j))) (ρ1 :=  ρ3) (ρ2 := ρ4); eauto.
+    eapply (He _ _ _ eq_refl Hesc Hack) with (i := (i - (i - j))) (ρ1 :=  ρ3) (ρ2 := ρ4); eauto.
     - destruct bdr; auto.
-      destruct (θ_escape_ok c) as [_ Hres].
+      destruct (Hesc c) as [_ Hres].
       fcrush.
     - eapply G_subset; eauto.
       eapply G_set_lists; eauto.
@@ -2198,7 +2204,7 @@ Section LR.
         split; intros; fcrush.
       + destruct (Nat.eq_dec c0 c); try auto.
         eapply set_lists_approx_top; eauto.
-        edestruct θ_escape_ok as [_ Hesc_fun]; eauto.
+        edestruct Hesc as [_ Hesc_fun]; eauto.
         eapply Hesc_fun; eauto.
       + eapply Included_refl; eauto.
   Qed.
@@ -2210,23 +2216,22 @@ Section LR.
     well_annotated A c Γ (Efun f l xs e k).
   Proof.
     unfold well_annotated, E, E'.
-    intros HS He [HU Hk].
-    split; auto; intros.
+    intros HS He Hk θ Rs bdr Heqθ Hescθ Hack Hbdr; intros.
 
-    inv H3.
+    inv H1.
     - fcrush.
     - destruct r1.
       fcrush.
       assert (Hwfρ1 : wf_env Γ ρ1) by eauto using G_wf_env_l.
       assert (Hwfρ2 : wf_cenv θ ρ2) by eauto using G_wf_cenv_r.
-      inv H; inv H4.
+      inv Hack; inv H2.
       assert (Happrox : approx_vals (ai_env (θ c) f) (CTag (θ c) c l (CVfun f ρ2 xs e))).
       {
         unfold approx_vals.
         eexists; split; sfirstorder.
       }
 
-      edestruct (Hk Rs bdr H12 H0 (i - 1) (M.set f (Tag l (Vfun f ρ1 xs e)) ρ1) (M.set f (CTag (θ c) c l (CVfun f ρ2 xs e)) ρ2)) with (j1 := c0) (r1 := (Res w)) as [j2 [r2 [I2 [Hk2 Rr]]]]; eauto; try lia.
+      edestruct (Hk _ Rs bdr eq_refl Hescθ H10 Hbdr (i - 1) (M.set f (Tag l (Vfun f ρ1 xs e)) ρ1) (M.set f (CTag (θ c) c l (CVfun f ρ2 xs e)) ρ2)) with (j1 := c0) (r1 := (Res w)) as [j2 [r2 [I2 [Hk2 Rr]]]]; eauto; try lia.
       + eapply G_subset.
         eapply G_set; eauto.
         eapply G_mono with i; eauto; lia.
@@ -2253,7 +2258,7 @@ Section LR.
        approximating value) is in the value set of the variable, hence in
        `ai_esc (θ c)`;
      - if it belongs to a third unit, it had escaped already. *)
-  Lemma cescaped_handover {c avs v} :
+  Lemma cescaped_handover {θ c avs v} :
     wf_cval θ v ->
     cescaped c v ->
     cflows c (θ c) avs v ->
@@ -2287,8 +2292,8 @@ Section LR.
         * apply Hesc; exact Hneqc.
   Qed.
 
-  Lemma cescaped_handover_list {c c1 i Γ ρ1 ρ2 xs vs} :
-    G c i Γ ρ1 ρ2 ->
+  Lemma cescaped_handover_list {θ c c1 i Γ ρ1 ρ2 xs vs} :
+    G θ c i Γ ρ1 ρ2 ->
     Forall (fun x => ai_env (θ c) x \subset ai_esc (θ c)) xs ->
     get_list xs ρ2 = Some vs ->
     Forall (cescaped c1) vs.
@@ -2301,7 +2306,7 @@ Section LR.
       destruct (get_list xs ρ2) as [vs' |] eqn:Hxs; [| discriminate Hget].
       inv Hget.
       constructor.
-      + eapply (@cescaped_handover c).
+      + eapply (@cescaped_handover _ c).
         * eapply wf_cenv_get; [eapply G_wf_cenv_r; eauto | exact Hx].
         * eapply cescaped_env_get; [eapply G_cescaped_env; eauto | exact Hx].
         * eapply cbinding_env_get; [eapply G_cbinding_env; eauto | exact Hx].
@@ -2311,7 +2316,7 @@ Section LR.
   Qed.
 
   (* `cbinding_handover` over an arbitrary value set `avs` holding `AVtop`. *)
-  Lemma cflows_handover {c c1 avs v} :
+  Lemma cflows_handover {θ c c1 avs v} :
     c1 <> c ->
     wf_cval θ v ->
     cescaped c v ->
@@ -2335,7 +2340,7 @@ Section LR.
      - a closure of `c1` itself comes back from the context, so it has escaped
        from `c1` and `AVtop` stands for it at the parameter;
      - any other value is foreign to `c1`, hence approximated by `AVtop`. *)
-  Lemma cbinding_handover {c c1 x v} :
+  Lemma cbinding_handover {θ c c1 x v} :
     c1 <> c ->
     wf_cval θ v ->
     cescaped c v ->
@@ -2347,7 +2352,7 @@ Section LR.
     eapply cflows_handover; eauto.
   Qed.
 
-  Lemma cbinding_handover_list {c c1 xs vs ρ ρ'} :
+  Lemma cbinding_handover_list {θ c c1 xs vs ρ ρ'} :
     c1 <> c ->
     Forall (wf_cval θ) vs ->
     Forall (cescaped c) vs ->
@@ -2372,7 +2377,7 @@ Section LR.
   (* A result returned by the unit `c` into an escaping return set `Rs1` is
      handed over to the unit `c1`, which receives it into `Rs` as an unknown
      value (`AVtop ∈ Rs`). *)
-  Lemma cresult_handover {c c1 Rs1 Rs r} :
+  Lemma cresult_handover {θ c c1 Rs1 Rs r} :
     c1 <> c ->
     wf_cres θ r ->
     approx_res Rs1 r ->
@@ -2393,36 +2398,34 @@ Section LR.
   Qed.
 
   Lemma app_compat A Γ xs f l c :
-    θ c = A ->
     (f \in Γ) ->
     (FromList xs \subset Γ) ->
     well_annotated A c Γ (Eapp f l xs).
   Proof.
     unfold well_annotated, E, E'.
-    intross HU Hf Hxs; simpl.
-    split; auto; intros.
+    intross Hf Hxs θ Rs bdr Heqθ Hescθ Hack Hbdr; simpl.
 
-    inv H3.
+    inv H1.
     - fcrush.
     - destruct r1.
       fcrush.
-      inv H; inv H4.
-      edestruct (G_get H1 f) as [fv2 [Heqfv2 HV]]; eauto.
+      inv Hack; inv H2.
+      edestruct (G_get _ H f) as [fv2 [Heqfv2 HV]]; eauto.
       destruct i.
-      inv H2.
+      inv H0.
       rename w into v.
       destruct fv2; destruct c1; destruct c2; simpl in HV; invc.
       2 : { fcrush. }
       destruct HV as [Hwf1 [Hwf2 [Heql [Heqf [Heqxs [Heqe [Havs [Hsite [Haenv [Hesc_t [Hloc_t HV]]]]]]]]]]]; subst; invc.
       rename a into A0.
-      edestruct (G_get_list H1 xs vs) as [vs2 [Heqvs2 Vvs]]; eauto; invc.
+      edestruct (G_get_list _ H xs vs) as [vs2 [Heqvs2 Vvs]]; eauto; invc.
 
       destruct (set_lists_length3 (M.set v0 (CTag A0 c1 l0 (CVfun v0 t l1 e0)) t) l1 vs2) as [ρ4 Heqρ4].
       unfold clval in *.
-      rewrite (set_lists_length_eq _ _ _ _ H13); auto.
+      rewrite (set_lists_length_eq _ _ _ _ H12); auto.
       eapply Forall2_length; eauto.
 
-      assert (HE : E A0 c1 (negb (c1 =? c)) (i - (i - i)) ρ'' ρ4 e0 (ai_ret A0 l0)).
+      assert (HE : E θ  A0 c1 (negb (c1 =? c)) (i - (i - i)) ρ'' ρ4 e0 (ai_ret A0 l0)).
       {
         eapply (HV _ i c vs vs2); eauto.
         - apply V_mono_Forall with (S i); auto; lia.
@@ -2432,11 +2435,11 @@ Section LR.
             eapply cescaped_env_get_list; [eapply G_cescaped_env; eauto | exact Heqvs2].
           + (* foreign call: the caller approximates the callee by `AVtop`, so its arguments escape *)
             assert (Htop : AVtop \in ai_env (θ c) f).
-            { pose proof (cbinding_env_get f _ (G_cbinding_env H1) Heqfv2) as Hloc_f.
+            { pose proof (cbinding_env_get f _ (G_cbinding_env _ H) Heqfv2) as Hloc_f.
               unfold cbinding in Hloc_f.
               destruct Hloc_f as [_ Hforeign].
               exact (Hforeign Hneqc). }
-            destruct (H10 Htop) as [Hargs _].
+            destruct (H8 Htop) as [Hargs _].
             eapply cescaped_handover_list; eauto.
 
         - destruct (Nat.eq_dec c1 c) as [Heqc | Hneqc]; subst.
@@ -2451,28 +2454,28 @@ Section LR.
             destruct Hcbinding_f as [Hfown _].
 
             destruct (Hfown eq_refl) as [Hin | [Hesc Htop]].
-            * edestruct (H9 _ _ _ _ Hin) as [_ [_ [Hsub _]]]; eauto.
+            * edestruct (H7 _ _ _ _ Hin) as [_ [_ [Hsub _]]]; eauto.
               eapply cbinding_subset_list; eauto.
-            * destruct (H10 Htop) as [_ [_ Hesc_fun]].
+            * destruct (H8 Htop) as [_ [_ Hesc_fun]].
               destruct (Hesc_fun _ _ _ _ Hesc) as [_ [_ [_ [Hsub _]]]].
               eapply cbinding_subset_list; eauto.
 
           + assert (Htop : AVtop \in ai_env (θ c) f).
-            { pose proof (cbinding_env_get f _ (G_cbinding_env H1) Heqfv2) as Hloc_f.
+            { pose proof (cbinding_env_get f _ (G_cbinding_env _ H) Heqfv2) as Hloc_f.
               unfold cbinding in Hloc_f.
               destruct Hloc_f as [_ Hforeign].
               exact (Hforeign Hneqc). }
-            destruct (H10 Htop) as [Hargs [HRs Hesc_fun]].
+            destruct (H8 Htop) as [Hargs [HRs Hesc_fun]].
             (* the parameters belong to the callee's unit: its closure has
                escaped, so by `escapes_ok` every parameter holds `AVtop` *)
             pose proof (wf_cval_CTag_inv Hwf2) as [HA0 _].
             subst A0.
 
             assert (Hfesc : AVfun l0 v0 l1 e0 \in ai_esc (θ c1)).
-            { pose proof (cescaped_env_get f _ (G_cescaped_env H1) Heqfv2) as Hf_esc.
+            { pose proof (cescaped_env_get f _ (G_cescaped_env _ H) Heqfv2) as Hf_esc.
               unfold cescaped in Hf_esc.
               exact (Hf_esc Hneqc). }
-            destruct (θ_escape_ok c1) as [_ Hesc_ok].
+            destruct (Hescθ c1) as [_ Hesc_ok].
             destruct (Hesc_ok _ _ _ _ Hfesc) as [Hparams _].
             eapply (cbinding_handover_list Hneqc);
               [ eapply wf_cenv_get_list; [eapply G_wf_cenv_r; eauto | exact Heqvs2]
@@ -2482,34 +2485,34 @@ Section LR.
 
         - intros; subst.
           inv Hwf2.
-          pose proof (approx_env_get_list (G_approx_env H1) _ _ Heqvs2) as Happrox_xs.
-          pose proof (cbinding_env_get f _ (G_cbinding_env H1) Heqfv2) as Hloc_f.
+          pose proof (approx_env_get_list (G_approx_env _ H) _ _ Heqvs2) as Happrox_xs.
+          pose proof (cbinding_env_get f _ (G_cbinding_env _ H) Heqfv2) as Hloc_f.
           unfold cbinding in Hloc_f.
           destruct Hloc_f as [Hint _].
           specialize (Hint eq_refl).
           inv Hint.
           * (* internal *)
-            edestruct H9 as [_ [_ [Hsub _]]]; eauto.
+            edestruct H7 as [_ [_ [Hsub _]]]; eauto.
             eapply approx_vals_subset_list; eauto.
           * (* foreign *)
-            inv H; eauto.
+            inv H1; eauto.
             eapply set_lists_approx_top; eauto.
-            destruct (θ_escape_ok c) as [_ Hesc_ok].
+            destruct (Hescθ c) as [_ Hesc_ok].
             eapply Hesc_ok; eauto.
 
         - intros Hneq.
-          pose proof (cescaped_env_get f _ (G_cescaped_env H1) Heqfv2) as Hf_esc.
+          pose proof (cescaped_env_get f _ (G_cescaped_env _ H) Heqfv2) as Hf_esc.
           unfold cescaped in Hf_esc.
           exact (Hf_esc Hneq).
 
         - (* only a foreign call runs the body at the boundary, and then the
              closure has escaped *)
           destruct (Nat.eqb_spec c1 c); simpl; auto.
-          pose proof (cescaped_env_get f _ (G_cescaped_env H1) Heqfv2) as Hf_esc.
+          pose proof (cescaped_env_get f _ (G_cescaped_env _ H) Heqfv2) as Hf_esc.
           unfold cescaped in Hf_esc; eauto.
       }
 
-      apply (E_mono _ i) in HE; try lia.
+      apply (E_mono θ _ i) in HE; try lia.
       unfold E, E' in HE.
       destruct (HE c0 (Res v)) as [j2 [r2 [I2 [He0 Rr]]]]; try lia; auto.
       edestruct R_res_inv_l as [v2 [Heqv2 HVv]]; eauto; subst.
@@ -2520,12 +2523,12 @@ Section LR.
 
         exists (S j2), (CRes v2), (((c, l0), (c, l)) |: I2); split; eauto.
 
-        pose proof (approx_env_get_list (G_approx_env H1) _ _ Heqvs2) as Happrox_xs.
+        pose proof (approx_env_get_list (G_approx_env _ H) _ _ Heqvs2) as Happrox_xs.
 
         assert (Hint : Ensembles.In aval (ai_env (θ c) f) (AVfun l0 v0 l1 e0) \/
                         (Ensembles.In aval (ai_esc (θ c)) (AVfun l0 v0 l1 e0) /\ Ensembles.In aval (ai_env (θ c) f) AVtop)).
         {
-          pose proof (cbinding_env_get f _ (G_cbinding_env H1) Heqfv2) as Hloc_f.
+          pose proof (cbinding_env_get f _ (G_cbinding_env _ H) Heqfv2) as Hloc_f.
           unfold cbinding in Hloc_f.
           destruct Hloc_f as [Hint _].
           apply (Hint eq_refl).
@@ -2534,8 +2537,8 @@ Section LR.
         (* what the callee may return can be returned from this call site *)
         assert (Hret : ai_ret (θ c) l0 \subset Rs).
         { destruct Hint as [Hin | [Hesc Htop]].
-          - destruct (H9 _ _ _ _ Hin) as [_ [_ [_ Hsub]]]; exact Hsub.
-          - destruct (H10 Htop) as [_ [_ Hesc_fun]].
+          - destruct (H7 _ _ _ _ Hin) as [_ [_ [_ Hsub]]]; exact Hsub.
+          - destruct (H8 Htop) as [_ [_ Hesc_fun]].
             destruct (Hesc_fun _ _ _ _ Hesc) as [_ [_ [_ [_ Hsub]]]]; exact Hsub. }
 
         assert (Hok : cresult c (θ c) Rs (CRes v2))
@@ -2548,8 +2551,8 @@ Section LR.
         * assert (HI2 : approx_int c (ai_int (θ c)) I2) by eauto using cbstep_fuel_approx_int.
           apply approx_int_add_internal; [| exact HI2].
           destruct Hint as [Hin | [Hesc Htop]].
-          -- apply (H7 _ Hin).
-          -- destruct (H10 Htop) as [_ [_ Hesc_fun]].
+          -- apply (H5 _ Hin).
+          -- destruct (H8 Htop) as [_ [_ Hesc_fun]].
              eapply (Hesc_fun _ _ _ _ Hesc); eauto.
 
         * (* the result crosses the boundary if `Rs` escapes *)
@@ -2566,12 +2569,12 @@ Section LR.
         exists (S j2), (CRes v2), (((c1, l0), (c, l)) |: I2); split; eauto.
         assert (Hafv : (AVfun l0 v0 l1 e0) \in (ai_esc (θ c1))).
         {
-          pose proof (cescaped_env_get f _ (G_cescaped_env H1) Heqfv2) as Hf_esc.
+          pose proof (cescaped_env_get f _ (G_cescaped_env _ H) Heqfv2) as Hf_esc.
           unfold cescaped in Hf_esc; eauto.
         }
 
         assert (Htop : AVtop \in ai_env (θ c) f).
-        { pose proof (cbinding_env_get f _ (G_cbinding_env H1) Heqfv2) as Hloc_f.
+        { pose proof (cbinding_env_get f _ (G_cbinding_env _ H) Heqfv2) as Hloc_f.
           unfold cbinding in Hloc_f.
           destruct Hloc_f as [_ Hforeign].
           exact (Hforeign n). }
@@ -2579,9 +2582,9 @@ Section LR.
         (* the callee returns into `ai_ret (θ c1) l0`, which escapes from
            `c1`, and the caller receives the result as unknown *)
         assert (Hok : cresult c (θ c) Rs (CRes v2)).
-        { destruct (θ_escape_ok c1) as [_ Hesc_ok].
+        { destruct (Hescθ c1) as [_ Hesc_ok].
           destruct (Hesc_ok _ _ _ _ Hafv) as [_ Hret_esc].
-          destruct (H10 Htop) as [_ [HRs _]].
+          destruct (H8 Htop) as [_ [HRs _]].
           eapply (cresult_handover (not_eq_sym n));
             [ eapply V_wf_cres_r; eauto
             | eapply cbstep_fuel_approx_res; eauto
@@ -2593,19 +2596,19 @@ Section LR.
         * eapply Cbstep_app_External; eauto.
           -- sfirstorder.
 
-          -- destruct (H10 Htop) as [Hargs _].
+          -- destruct (H8 Htop) as [Hargs _].
              eapply cescaped_handover_list; eauto.
 
           -- assert (Happrox : approx_env (ai_env (θ c1)) (M.set v0 (CTag (θ c1) c1 l0 (CVfun v0 t l1 e0)) t)) by eauto using approx_env_set.
              eapply (approx_env_set_lists Happrox l1 vs2); eauto.
-             pose proof (approx_env_get_list (G_approx_env H1) _ _ Heqvs2) as Happrox_xs.
+             pose proof (approx_env_get_list (G_approx_env _ H) _ _ Heqvs2) as Happrox_xs.
 
              eapply set_lists_approx_top; eauto.
-             destruct (θ_escape_ok c1) as [_ Hesc_ok].
+             destruct (Hescθ c1) as [_ Hesc_ok].
              eapply Hesc_ok; eauto.
 
         * (* the result of a foreign call is unknown to the caller: `AVtop ∈ Rs` *)
-          destruct (H10 Htop) as [_ [HRs _]].
+          destruct (H8 Htop) as [_ [HRs _]].
           econstructor; [exact HRs | constructor].
 
         * assert (Hltop : (l_top_intro, l) \in (ai_int (θ c))) by fcrush.
@@ -2616,7 +2619,7 @@ Section LR.
              ++ intros _ _; exact Hltop.
           -- (* the interactions collected by the callee, as seen by our unit *)
             eapply cbstep_fuel_approx_int_handover; eauto.
-            destruct (wf_cenv_callee (G_wf_cenv_r H1) Heqfv2 Heqvs2 Heqρ4) as [HΘ1 Henv4]; eauto.
+            destruct (wf_cenv_callee (G_wf_cenv_r _ H) Heqfv2 Heqvs2 Heqρ4) as [HΘ1 Henv4]; eauto.
 
         * (* the result crosses the boundary if `Rs` escapes *)
           destruct bdr; [| exact I].
@@ -2628,11 +2631,10 @@ Section LR.
   Qed.
 
   Lemma fundamental_property {A c Γ e}:
-    θ c = A ->
     well_scoped Γ e ->
     well_annotated A c Γ e.
   Proof.
-    intros HU H.
+    intros H.
     induction H; intros.
     - eapply ret_compat; eauto.
     - eapply fun_compat; eauto.
@@ -2646,7 +2648,7 @@ Section LR.
     - admit.
   Admitted.
 
-End LR.
+End Compat.
 
 (* Top Level *)
 (* The top-level consists of two phases: coloring and running. *)
@@ -3259,9 +3261,10 @@ End LRTop.
 
   Definition trans_correct_top e ce :=
     (occurs_free_top ce) \subset (occurs_free e) /\
-      forall cce c1 c2 θ,
+      forall θ cce c1 c2,
         coloring c1 ce c2 cce ->
         analysis_context_of θ cce ->
+        analysis_context_escape_ok θ ->
         forall i ρ1 ρ2,
           G_top θ i (occurs_free e) ρ1 ρ2 ->
           E_top θ i ρ1 e ρ2 cce.
@@ -3278,12 +3281,10 @@ End LRTop.
     apply occurs_free_top_cexp; eauto.
     inv H.
 
-    assert (Hwa : well_annotated θ A c1 (occurs_free e) e).
+    assert (Hwa : well_annotated A c1 (occurs_free e) e).
     {
       eapply fundamental_property; eauto.
       unfold analysis_context_escape_ok.
-      admit.
-      unfold analysis_context_of in H0; fcrush.
       eapply well_scoped_intro; eauto.
       fcrush.
     }
@@ -3291,5 +3292,6 @@ End LRTop.
     eapply E_E_top; eauto.
     unfold well_annotated in Hwa.
     eapply Hwa; eauto.
+    admit.
 
   Admitted.
