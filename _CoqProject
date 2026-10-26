@@ -65,7 +65,7 @@ theories/SemAnnotate/Checking.v
 theories/SemAnnotate/Reify.v
 theories/SemAnnotate/Comp.v
 theories/SemAnnotate/CompAttempt.v
-theories/SemAnnotate/ColoredChecking.v
+theories/SemAnnotate/ValueSetAnalysis.v
 
 -Q theories/Comp Comp
 theories/Comp/TrivialComp.v

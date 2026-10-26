@@ -666,6 +666,57 @@ Definition link f x e1 e2 : exp :=
   Efun f l0 [] e1
     (Eletapp x f l0 [] e2).
 
+(* Free variables of the components of `link` *)
+Lemma link_free_e1 f x e1 e2 :
+  ~ (f \in occurs_free e1) ->
+  occurs_free e1 \subset occurs_free (link f x e1 e2).
+Proof.
+  intros Hf y Hy.
+  unfold Ensembles.In, link.
+  apply Free_fun2.
+  - intros Heq; subst y; contradiction.
+  - intros Hin; destruct Hin.
+  - exact Hy.
+Qed.
+
+Lemma link_free_e2 f x e1 e2 :
+  ~ (f \in occurs_free e2) ->
+  forall y,
+    y \in occurs_free e2 ->
+          x <> y ->
+          y \in occurs_free (link f x e1 e2).
+Proof.
+  intros Hf y Hy Hxy.
+  unfold Ensembles.In, link.
+  apply Free_fun1.
+  - intros Heq; subst y; contradiction.
+  - apply Free_letapp1; [exact Hxy | exact Hy].
+Qed.
+
+(* Source semantics of `link`: either out of time, or `e1` returns and `e2`
+   runs with its result bound to `x`. *)
+Lemma bstep_link_inv {ρ1 f x e1 e2 c r} :
+  bstep_fuel ρ1 (link f x e1 e2) c r ->
+  r = OOT \/
+    exists c1 c2 v,
+      c = S (S (c1 + c2)) /\
+        bstep_fuel (M.set f (Tag l0 (Vfun f ρ1 [] e1)) ρ1) e1 c1 (Res v) /\
+        bstep_fuel (M.set x v (M.set f (Tag l0 (Vfun f ρ1 [] e1)) ρ1)) e2 c2 r.
+Proof.
+  intros Hstep.
+  unfold link in Hstep.
+  inv Hstep; [left; reflexivity |].
+  match goal with [Hb : bstep _ (Efun _ _ _ _ _) _ _ |- _] => inv Hb end.
+  match goal with [Hb : bstep_fuel _ (Eletapp _ _ _ _ _) _ _ |- _] => inv Hb end;
+  [left; reflexivity |].
+  match goal with [Hb : bstep _ (Eletapp _ _ _ _ _) _ _ |- _] => inv Hb end;
+  [| left; reflexivity].
+  rewrite M.gss in *.
+  repeat (simpl in *; match goal with [Heq : Some _ = Some _ |- _] => inv Heq end).
+  right.
+  do 3 eexists; split; [reflexivity | split; eassumption].
+Qed.
+
 (* Labels *)
 Inductive has_label : exp -> labels :=
 | Lab_fun1 :
@@ -1125,6 +1176,20 @@ Proof.
   intros.
   inv H1; eauto.
   eapply bstep_wf_res; eauto.
+Qed.
+
+Lemma link_wf_env_fun {ρ1 f x e1 e2} :
+  wf_env (occurs_free (link f x e1 e2)) ρ1 ->
+  ~ (f \in occurs_free e1) ->
+  wf_env (f |: occurs_free (link f x e1 e2)) (M.set f (Tag l0 (Vfun f ρ1 [] e1)) ρ1).
+Proof.
+  intros Hwf Hf.
+  apply wf_env_set; [exact Hwf |].
+  constructor.
+  econstructor; [exact Hwf |].
+  intros y Hy.
+  apply Union_intror; apply Union_intror.
+  apply link_free_e1; assumption.
 Qed.
 
 (* Structural Equivalence of Value and Environment *)
