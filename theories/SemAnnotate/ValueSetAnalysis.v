@@ -313,7 +313,7 @@ Proof.
              (forall p, p \in J -> p \in J') ->
              forall cl cl', cl' \in reachable J cl -> cl' \in reachable J' cl).
   { intros J J' HJ cl cl' Hr.
-    induction Hr as [x | x y Hin | x y Hin | x y z H1 IH1 H2 IH2];
+    induction Hr as [x | x y Hin | x y Hin | x y z H1 IH1 H2];
       [ apply Reachable_refl
       | apply Reachable_interact_l; apply HJ; exact Hin
       | apply Reachable_interact_r; apply HJ; exact Hin
@@ -1547,7 +1547,7 @@ Lemma cbstep_fuel_approx_int_handover Θ A c bdr ρ e i Rs r I :
   forall c', approx_int c' (ai_int (Θ c')) I.
 Proof.
   intros HΘ Henv Hstep c'.
-  destruct Hstep as [e' Rs' | e' i' Rs' r' I' Hcb Hres Hint].
+  destruct Hstep as [e' Rs' | e' i' Rs' r' I' Hcb _ Hint].
   - apply approx_int_empty.
   - destruct (Nat.eq_dec c' c) as [Heq | Hneq].
     + fcrush.
@@ -2973,9 +2973,9 @@ Lemma cbstep_top_wf_cres Θ :
 Proof.
   intros ρ cce i r I Hstep.
   induction Hstep as
-    [ ρ x cce1 cce2 i1 i2 A c l v r I1 I2 Hfuel1 IH1 Hforeign Hfuel2 IH2
+    [ ρ x cce1 cce2 i1 i2 A c l v r I1 I2 Hfuel1 IH1 Hforeign Hfuel2
     | ρ x cce1 cce2 i I1 Hfuel1 IH1
-    | ρ A c e i Rs r I Hfuel Hres
+    | ρ A c e i Rs r I Hfuel
     | ρ x cce1 cce2
     | ρ x cce1 cce2 i r I Htop IHtop ]
     using cbstep_top_ind'
@@ -3044,9 +3044,9 @@ Lemma cbstep_top_approx_int Θ :
 Proof.
   intros ρ cce i r I Hstep.
   induction Hstep as
-    [ ρ x cce1 cce2 i1 i2 A c l v r I1 I2 Hfuel1 IH1 Hforeign Hfuel2 IH2
+    [ ρ x cce1 cce2 i1 i2 A c l v r I1 I2 Hfuel1 IH1 Hforeign Hfuel2
     | ρ x cce1 cce2 i I1 Hfuel1 IH1
-    | ρ A c e i Rs r I Hfuel Hres
+    | ρ A c e i Rs r I Hfuel
     | ρ x cce1 cce2
     | ρ x cce1 cce2 i r I Htop IHtop ]
     using cbstep_top_ind'
