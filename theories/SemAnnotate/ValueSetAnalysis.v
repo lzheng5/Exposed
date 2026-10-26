@@ -2107,9 +2107,8 @@ Section Compat.
   Qed.
 
   (* `Rs` is quantified inside as function bodies are checked against other return sets. *)
-  (* TODO: swap Rs and bdr *)
   Definition well_annotated A c Γ e : Prop :=
-    forall θ Rs (bdr : bool),
+    forall θ (bdr : bool) Rs,
       θ c = A ->
       analysis_context_escape_ok θ ->
       acheck A e Rs ->
@@ -2123,7 +2122,7 @@ Section Compat.
     well_annotated A c Γ (Eret x).
   Proof.
     unfold well_annotated, E, E', R, R', Ensembles.Included, Ensembles.In.
-    intros Hx θ Rs bdr Heqθ Hescθ Hack Hesc; intros.
+    intros Hx θ bdr Rs Heqθ Hescθ Hack Hesc; intros.
 
     inv H1.
     - fcrush.
@@ -2216,7 +2215,7 @@ Section Compat.
     well_annotated A c Γ (Efun f l xs e k).
   Proof.
     unfold well_annotated, E, E'.
-    intros HS He Hk θ Rs bdr Heqθ Hescθ Hack Hbdr; intros.
+    intros HS He Hk θ bdr Rs Heqθ Hescθ Hack Hbdr; intros.
 
     inv H1.
     - fcrush.
@@ -2231,7 +2230,7 @@ Section Compat.
         eexists; split; sfirstorder.
       }
 
-      edestruct (Hk _ Rs bdr eq_refl Hescθ H10 Hbdr (i - 1) (M.set f (Tag l (Vfun f ρ1 xs e)) ρ1) (M.set f (CTag (θ c) c l (CVfun f ρ2 xs e)) ρ2)) with (j1 := c0) (r1 := (Res w)) as [j2 [r2 [I2 [Hk2 Rr]]]]; eauto; try lia.
+      edestruct (Hk _  bdr Rs eq_refl Hescθ H10 Hbdr (i - 1) (M.set f (Tag l (Vfun f ρ1 xs e)) ρ1) (M.set f (CTag (θ c) c l (CVfun f ρ2 xs e)) ρ2)) with (j1 := c0) (r1 := (Res w)) as [j2 [r2 [I2 [Hk2 Rr]]]]; eauto; try lia.
       + eapply G_subset.
         eapply G_set; eauto.
         eapply G_mono with i; eauto; lia.
@@ -2403,7 +2402,7 @@ Section Compat.
     well_annotated A c Γ (Eapp f l xs).
   Proof.
     unfold well_annotated, E, E'.
-    intross Hf Hxs θ Rs bdr Heqθ Hescθ Hack Hbdr; simpl.
+    intross Hf Hxs θ bdr Rs Heqθ Hescθ Hack Hbdr; simpl.
 
     inv H1.
     - fcrush.
