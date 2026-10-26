@@ -3164,9 +3164,27 @@ Section LRTop.
     eapply cbstep_top_fuel_cboundary_res; eauto.
   Qed.
 
-  Definition G_top i Γ1 ρ1 ρ2 :=
+  Definition approx_env_top c1 c2 ρ2 :=
+    forall c,
+      c1 <= c < c2 ->
+      approx_env (ai_env (θ c)) ρ2.
+
+  Definition cescaped_env_top c1 c2 ρ2 :=
+    forall c,
+      c1 <= c < c2 ->
+      cescaped_env c ρ2.
+
+  Definition cbinding_env_top c1 c2 ρ2 :=
+    forall c,
+      c1 <= c < c2 ->
+      cbinding_env c (θ c) ρ2.
+
+  Definition G_top c1 c2 i Γ1 ρ1 ρ2 :=
     wf_env Γ1 ρ1 /\
       wf_cenv θ ρ2 /\
+      approx_env_top c1 c2 ρ2 /\
+      cescaped_env_top c1 c2 ρ2 /\
+      cbinding_env_top c1 c2 ρ2 /\
       forall x,
         (x \in Γ1) ->
         exists v1 v2,
@@ -3174,20 +3192,36 @@ Section LRTop.
             M.get x ρ2 = Some v2 /\
             V_top i v1 v2.
 
-  Lemma G_top_wf_env_l i Γ1 ρ1 ρ2 :
-    G_top i Γ1 ρ1 ρ2 ->
+  Lemma G_top_G {c1 c2 i Γ1 ρ1 ρ2} :
+    G_top c1 c2 i Γ1 ρ1 ρ2 ->
+    forall c,
+      c1 <= c < c2 ->
+      G θ c i Γ1 ρ1 ρ2.
+  Proof.
+    unfold G_top, G.
+    intros.
+    destruct H as [Hwf1 [Hwf2 [Happrox [Hesc [Hbind HG]]]]].
+    repeat (split; eauto); intros.
+    edestruct HG as [v1 [v2 [Heqv1 [Heqv2 HV]]]]; eauto.
+    eexists; eexists; repeat (split; eauto).
+    unfold V_top in *.
+    fcrush.
+  Qed.
+
+  Lemma G_top_wf_env_l c1 c2 i Γ1 ρ1 ρ2 :
+    G_top c1 c2 i Γ1 ρ1 ρ2 ->
     wf_env Γ1 ρ1.
   Proof. unfold G_top. intros; tauto. Qed.
 
-  Lemma G_top_wf_cenv_r i Γ1 ρ1 ρ2 :
-    G_top i Γ1 ρ1 ρ2 ->
+  Lemma G_top_wf_cenv_r c1 c2 i Γ1 ρ1 ρ2 :
+    G_top c1 c2 i Γ1 ρ1 ρ2 ->
     wf_cenv θ ρ2.
   Proof. unfold G_top. intros; tauto. Qed.
 
-  Lemma G_top_subset i Γ1 ρ1 Γ2 ρ2 :
-    G_top i Γ1 ρ1 ρ2 ->
+  Lemma G_top_subset c1 c2 i Γ1 ρ1 Γ2 ρ2 :
+    G_top c1 c2 i Γ1 ρ1 ρ2 ->
     Γ2 \subset Γ1 ->
-    G_top i Γ2 ρ1 ρ2.
+    G_top c1 c2 i Γ2 ρ1 ρ2.
   Proof. unfold G_top. fcrush. Qed.
 
   (* Top-level Monotonicity Lemmas *)
@@ -3241,14 +3275,14 @@ Section LRTop.
     apply R_top_mono with (i - j1); try lia; auto.
   Qed.
 
-  Lemma G_top_mono {Γ1 ρ1 ρ2} i j:
-    G_top i Γ1 ρ1 ρ2 ->
+  Lemma G_top_mono {Γ1 c1 c2 ρ1 ρ2} i j:
+    G_top c1 c2 i Γ1 ρ1 ρ2 ->
     j <= i ->
-    G_top j Γ1 ρ1 ρ2.
+    G_top c1 c2 j Γ1 ρ1 ρ2.
   Proof.
     unfold G_top.
     intros.
-    destruct H as [Hwf1 [Hwf2 HG]].
+    destruct H as [Hwf1 [Hwf2 [Happ [Hesc [Hbind HG]]]]].
     repeat (split; eauto); intros.
     edestruct HG as [v1 [v2 [Heqv1 [Heqv2 HV]]]]; eauto.
     eexists; eexists; repeat (split; eauto).
@@ -3258,39 +3292,42 @@ Section LRTop.
 
 End LRTop.
 
-  Definition trans_correct_top e ce :=
-    (occurs_free_top ce) \subset (occurs_free e) /\
-      forall θ cce c1 c2,
-        coloring c1 ce c2 cce ->
-        analysis_context_of θ cce ->
-        analysis_context_escape_ok θ ->
-        forall i ρ1 ρ2,
-          G_top θ i (occurs_free e) ρ1 ρ2 ->
-          E_top θ i ρ1 e ρ2 cce.
+Definition trans_correct_top e ce :=
+  (occurs_free_top ce) \subset (occurs_free e) /\
+    forall θ cce c1 c2,
+      coloring c1 ce c2 cce ->
+      analysis_context_of θ cce ->
+      analysis_context_escape_ok θ ->
+      forall i ρ1 ρ2,
+        G_top θ c1 c2 i (occurs_free e) ρ1 ρ2 ->
+        E_top θ i ρ1 e ρ2 cce.
 
-  Theorem top A e Rs :
-    acheck A e Rs ->
-    escapes_ok A ->
-    Rs \subset (ai_esc A) ->
-    trans_correct_top e (CEunit A Rs e).
-  Proof.
-    unfold trans_correct_top.
-    intros Hack Hesc Hsub; intros.
-    split; intros.
-    apply occurs_free_top_cexp; eauto.
-    inv H.
+Theorem top A e Rs :
+  acheck A e Rs ->
+  escapes_ok A ->
+  Rs \subset (ai_esc A) ->
+  trans_correct_top e (CEunit A Rs e).
+Proof.
+  unfold trans_correct_top.
+  intros Hack Hesc Hsub; intros.
+  split; intros.
+  apply occurs_free_top_cexp; eauto.
+  inv H.
 
-    assert (Hwa : well_annotated A c1 (occurs_free e) e).
-    {
-      eapply fundamental_property; eauto.
-      unfold analysis_context_escape_ok.
-      eapply well_scoped_intro; eauto.
-      fcrush.
-    }
+  assert (Hwa : well_annotated A c1 (occurs_free e) e).
+  {
+    eapply fundamental_property; eauto.
+    unfold analysis_context_escape_ok.
+    eapply well_scoped_intro; eauto.
+    fcrush.
+  }
 
-    eapply E_E_top; eauto.
-    unfold well_annotated in Hwa.
-    eapply Hwa; eauto.
-    admit.
+  eapply E_E_top; eauto.
+  unfold well_annotated in Hwa.
+  eapply Hwa; eauto.
 
-  Admitted.
+  - unfold analysis_context_of in *.
+    symmetry.
+    eapply H0; eauto.
+  - eapply G_top_G; eauto.
+Qed.
