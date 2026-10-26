@@ -2663,6 +2663,24 @@ Hint Constructors cexp : core.
 (* Linking *)
 Definition clink x e1 e2 : cexp := CElink x e1 e2.
 
+(* `A` is the analysis result of one of the units of `ce`. *)
+Inductive has_cunit : cexp -> analysis_result -> Prop :=
+| Has_cunit_unit :
+  forall A Rs e,
+    has_cunit (CEunit A Rs e) A
+
+| Has_cunit_link1 :
+  forall x ce1 ce2 A,
+    has_cunit ce1 A ->
+    has_cunit (CElink x ce1 ce2) A
+
+| Has_cunit_link2 :
+  forall x ce1 ce2 A,
+    has_cunit ce2 A ->
+    has_cunit (CElink x ce1 ce2) A.
+
+Hint Constructors has_cunit : core.
+
 Inductive occurs_free_top : cexp -> vars :=
 | Free_cexp :
   forall e A Rs x,
@@ -3292,42 +3310,310 @@ Section LRTop.
 
 End LRTop.
 
-Definition trans_correct_top e ce :=
-  (occurs_free_top ce) \subset (occurs_free e) /\
-    forall θ cce c1 c2,
-      coloring c1 ce c2 cce ->
-      analysis_context_of θ cce ->
-      analysis_context_escape_ok θ ->
-      forall i ρ1 ρ2,
-        G_top θ c1 c2 i (occurs_free e) ρ1 ρ2 ->
-        E_top θ i ρ1 e ρ2 cce.
+Section Top.
+  (* Top Level Relation and Theorem *)
 
-Theorem top A e Rs :
-  acheck A e Rs ->
-  escapes_ok A ->
-  Rs \subset (ai_esc A) ->
-  trans_correct_top e (CEunit A Rs e).
-Proof.
-  unfold trans_correct_top.
-  intros Hack Hesc Hsub; intros.
-  split; intros.
-  apply occurs_free_top_cexp; eauto.
-  inv H.
+  Definition trans_correct_top e ce :=
+    (occurs_free_top ce) \subset (occurs_free e) /\
+      forall θ cce c1 c2,
+        coloring c1 ce c2 cce ->
+        analysis_context_of θ cce ->
+        analysis_context_escape_ok θ ->
+        forall i ρ1 ρ2,
+          G_top θ c1 c2 i (occurs_free e) ρ1 ρ2 ->
+          E_top θ i ρ1 e ρ2 cce.
 
-  assert (Hwa : well_annotated A c1 (occurs_free e) e).
-  {
-    eapply fundamental_property; eauto.
-    unfold analysis_context_escape_ok.
-    eapply well_scoped_intro; eauto.
-    fcrush.
-  }
+  Theorem top A e Rs :
+    acheck A e Rs ->
+    escapes_ok A ->
+    Rs \subset (ai_esc A) ->
+    trans_correct_top e (CEunit A Rs e).
+  Proof.
+    unfold trans_correct_top.
+    intros Hack Hesc Hsub; intros.
+    split; intros.
+    apply occurs_free_top_cexp; eauto.
+    inv H.
 
-  eapply E_E_top; eauto.
-  unfold well_annotated in Hwa.
-  eapply Hwa; eauto.
+    assert (Hwa : well_annotated A c1 (occurs_free e) e).
+    {
+      eapply fundamental_property; eauto.
+      unfold analysis_context_escape_ok.
+      eapply well_scoped_intro; eauto.
+      fcrush.
+    }
 
-  - unfold analysis_context_of in *.
-    symmetry.
-    eapply H0; eauto.
-  - eapply G_top_G; eauto.
-Qed.
+    eapply E_E_top; eauto.
+    unfold well_annotated in Hwa.
+    eapply Hwa; eauto.
+
+    - unfold analysis_context_of in *.
+      symmetry.
+      eapply H0; eauto.
+    - eapply G_top_G; eauto.
+  Qed.
+
+End Top.
+
+Section Linking.
+  (* Linking Preservation *)
+
+  (* Every unit of `ce` treats the top-level variable `x` as unknown: whatever
+   the context binds it to is approximated by `AVtop`. *)
+  Definition import_unknown (x : var) (ce : cexp) : Prop :=
+    forall A, has_cunit ce A -> AVtop \in ai_env A x.
+
+  Lemma coloring_link_inv {c1 x e1 e2 c3 cce} :
+    coloring c1 (CElink x e1 e2) c3 cce ->
+    exists c2 cce1 cce2,
+      cce = CClink x cce1 cce2 /\
+        coloring c1 e1 c2 cce1 /\
+        coloring c2 e2 c3 cce2.
+  Proof.
+    intros Hcol.
+    inv Hcol.
+    do 3 eexists; split; [reflexivity | split; eassumption].
+  Qed.
+
+  Lemma coloring_has_cunit {c1 ce c2 cce} :
+    coloring c1 ce c2 cce ->
+    forall c A, has_unit cce c A -> has_cunit ce A.
+  Proof.
+    intros Hcol.
+    induction Hcol as [c A Rs e | c1 c2 c3 x e1 e2 cce1 cce2 Hc1 IH1 Hc2 IH2];
+      intros c0 A0 Hu.
+    - inv Hu.
+      apply Has_cunit_unit.
+    - inv Hu.
+      + apply Has_cunit_link1; eapply IH1; eassumption.
+      + apply Has_cunit_link2; eapply IH2; eassumption.
+  Qed.
+
+  (* Every color handed out by the coloring names a unit. *)
+  Lemma coloring_surj {c1 ce c2 cce} :
+    coloring c1 ce c2 cce ->
+    forall c, c1 <= c < c2 -> exists A, has_unit cce c A.
+  Proof.
+    intros Hcol.
+    induction Hcol as [c A Rs e | c1 c2 c3 x e1 e2 cce1 cce2 Hc1 IH1 Hc2 IH2];
+      intros c0 Hc0.
+    - exists A.
+      assert (Heq : c0 = c) by lia.
+      subst c0.
+      apply Has_unit_unit.
+    - destruct (Nat.lt_ge_cases c0 c2) as [Hlt | Hge].
+      + assert (Hc0' : c1 <= c0 < c2) by lia.
+        destruct (IH1 c0 Hc0') as [A HA].
+        exists A; apply Has_unit_link1; exact HA.
+      + assert (Hc0' : c2 <= c0 < c3) by lia.
+        destruct (IH2 c0 Hc0') as [A HA].
+        exists A; apply Has_unit_link2; exact HA.
+  Qed.
+
+  Lemma coloring_import_unknown {θ c1 ce c2 cce x} :
+    coloring c1 ce c2 cce ->
+    analysis_context_of θ cce ->
+    import_unknown x ce ->
+    forall c, c1 <= c < c2 -> AVtop \in ai_env (θ c) x.
+  Proof.
+    intros Hcol Hθ Hx c Hc.
+    destruct (coloring_surj Hcol c Hc) as [A HA].
+    rewrite <- (Hθ c A HA).
+    apply Hx.
+    eapply coloring_has_cunit; eassumption.
+  Qed.
+
+  (* TODO: Refactoring *)
+  (* Free variables of the components of `link` *)
+  Lemma link_free_e1 f x e1 e2 :
+    ~ (f \in occurs_free e1) ->
+    occurs_free e1 \subset occurs_free (link f x e1 e2).
+  Proof.
+    intros Hf y Hy.
+    unfold Ensembles.In, link.
+    apply Free_fun2.
+    - intros Heq; subst y; contradiction.
+    - intros Hin; destruct Hin.
+    - exact Hy.
+  Qed.
+
+  Lemma link_free_e2 f x e1 e2 :
+    ~ (f \in occurs_free e2) ->
+    forall y,
+      y \in occurs_free e2 ->
+            x <> y ->
+            y \in occurs_free (link f x e1 e2).
+  Proof.
+    intros Hf y Hy Hxy.
+    unfold Ensembles.In, link.
+    apply Free_fun1.
+    - intros Heq; subst y; contradiction.
+    - apply Free_letapp1; [exact Hxy | exact Hy].
+  Qed.
+
+  (* Source semantics of `link`: either out of time, or `e1` returns and `e2`
+   runs with its result bound to `x`. *)
+  Lemma bstep_link_inv {ρ1 f x e1 e2 c r} :
+    bstep_fuel ρ1 (link f x e1 e2) c r ->
+    r = OOT \/
+      exists c1 c2 v,
+        c = S (S (c1 + c2)) /\
+          bstep_fuel (M.set f (Tag l0 (Vfun f ρ1 [] e1)) ρ1) e1 c1 (Res v) /\
+          bstep_fuel (M.set x v (M.set f (Tag l0 (Vfun f ρ1 [] e1)) ρ1)) e2 c2 r.
+  Proof.
+    intros Hstep.
+    unfold link in Hstep.
+    inv Hstep; [left; reflexivity |].
+    match goal with [Hb : bstep _ (Efun _ _ _ _ _) _ _ |- _] => inv Hb end.
+    match goal with [Hb : bstep_fuel _ (Eletapp _ _ _ _ _) _ _ |- _] => inv Hb end;
+    [left; reflexivity |].
+    match goal with [Hb : bstep _ (Eletapp _ _ _ _ _) _ _ |- _] => inv Hb end;
+    [| left; reflexivity].
+    rewrite M.gss in *.
+    repeat (simpl in *; match goal with [Heq : Some _ = Some _ |- _] => inv Heq end).
+    right.
+    do 3 eexists; split; [reflexivity | split; eassumption].
+  Qed.
+
+  Lemma link_wf_env_fun {ρ1 f x e1 e2} :
+    wf_env (occurs_free (link f x e1 e2)) ρ1 ->
+    ~ (f \in occurs_free e1) ->
+    wf_env (f |: occurs_free (link f x e1 e2)) (M.set f (Tag l0 (Vfun f ρ1 [] e1)) ρ1).
+  Proof.
+    intros Hwf Hf.
+    apply wf_env_set; [exact Hwf |].
+    constructor.
+    econstructor; [exact Hwf |].
+    intros y Hy.
+    apply Union_intror; apply Union_intror.
+    apply link_free_e1; assumption.
+  Qed.
+
+  (* The environment relation for the first component: the closure `f` is
+   unused, and only the units `[c1, c2)` run. *)
+  Lemma G_top_link1 θ c1 c2 c3 i f x e1 e2 ρ1 ρ2 :
+    c2 <= c3 ->
+    ~ (f \in occurs_free e1) ->
+    G_top θ c1 c3 i (occurs_free (link f x e1 e2)) ρ1 ρ2 ->
+    G_top θ c1 c2 i (occurs_free e1) (M.set f (Tag l0 (Vfun f ρ1 [] e1)) ρ1) ρ2.
+  Proof.
+    intros Hle Hf [Hwf1 [Hwf2 [Happ [Hesc [Hbind HG]]]]].
+    refine (conj _ (conj Hwf2 (conj _ (conj _ (conj _ _))))).
+    - eapply wf_env_subset; [exact (link_wf_env_fun Hwf1 Hf) |].
+      intros y Hy.
+      apply Union_intror.
+      apply link_free_e1; assumption.
+    - intros c Hc; apply Happ; lia.
+    - intros c Hc; apply Hesc; lia.
+    - intros c Hc; apply Hbind; lia.
+    - intros y Hy.
+      destruct (HG y (link_free_e1 f x e1 e2 Hf y Hy)) as [w1 [w2 [Hget1 [Hget2 HVw]]]].
+      exists w1, w2.
+      split; [| split; [exact Hget2 | exact HVw]].
+      rewrite M.gso by (intros Heq; subst y; contradiction).
+      exact Hget1.
+  Qed.
+
+  (* The environment relation for the second component: the result of the
+   first component is bound to `x`, and only the units `[c2, c3)` run. *)
+  Lemma G_top_link2 θ c1 c2 c3 i j f x e1 e2 ρ1 ρ2 v1 v2 :
+    c1 <= c2 ->
+    j <= i ->
+    ~ (f \in occurs_free e1) ->
+    ~ (f \in occurs_free e2) ->
+    (forall c, c2 <= c < c3 -> AVtop \in ai_env (θ c) x) ->
+    G_top θ c1 c3 i (occurs_free (link f x e1 e2)) ρ1 ρ2 ->
+    V_top θ j v1 v2 ->
+    G_top θ c2 c3 j (occurs_free e2)
+      (M.set x v1 (M.set f (Tag l0 (Vfun f ρ1 [] e1)) ρ1))
+      (M.set x v2 ρ2).
+  Proof.
+    intros Hle Hj Hf1 Hf Htop [Hwf1 [Hwf2 [Happ [Hesc [Hbind HG]]]]] [HV HB].
+    assert (Hwfv1 : wf_val v1) by (eapply V_wf_val_l; eauto).
+    assert (Hwfv2 : wf_cval θ v2) by (eapply V_wf_cval_r; eauto).
+    refine (conj _ (conj _ (conj _ (conj _ (conj _ _))))).
+    - eapply wf_env_subset.
+      + eapply wf_env_set; [exact (link_wf_env_fun Hwf1 Hf1) | exact Hwfv1].
+      + intros y Hy.
+        destruct (M.elt_eq x y) as [Hxy | Hxy].
+        * subst y; apply Union_introl; apply In_singleton.
+        * apply Union_intror; apply Union_intror.
+          apply link_free_e2; assumption.
+    - apply wf_cenv_set; [exact Hwf2 | exact Hwfv2].
+    - intros c Hc.
+      apply approx_env_set; [apply Happ; lia |].
+      exists AVtop; split; [apply Htop; exact Hc | constructor].
+    - intros c Hc.
+      apply cescaped_env_set; [apply Hesc; lia |].
+      apply cboundary_cescaped; exact HB.
+    - intros c Hc.
+      apply cbinding_env_set; [apply Hbind; lia |].
+      apply cboundary_cbinding; [exact Hwfv2 | exact HB | apply Htop; exact Hc].
+    - intros y Hy.
+      destruct (M.elt_eq x y) as [Hxy | Hxy].
+      + subst y.
+        exists v1, v2.
+        rewrite !M.gss.
+        exact (conj eq_refl (conj eq_refl (conj HV HB))).
+      + destruct (HG y (link_free_e2 f x e1 e2 Hf y Hy Hxy)) as [w1 [w2 [Hget1 [Hget2 HVw]]]].
+        exists w1, w2.
+        split; [| split].
+        * rewrite M.gso by (intros Heq; subst y; contradiction).
+          rewrite M.gso by (intros Heq; subst y; contradiction).
+          exact Hget1.
+        * rewrite M.gso by (intros Heq; subst y; contradiction).
+          exact Hget2.
+        * eapply V_top_mono; [exact HVw | exact Hj].
+  Qed.
+
+  Theorem preserves_linking f x e1 e1' e2 e2' :
+    f <> x ->
+    ~ (f \in occurs_free e1) ->
+    ~ (f \in occurs_free e2) ->
+    import_unknown x e2' ->
+    trans_correct_top e1 e1' ->
+    trans_correct_top e2 e2' ->
+    trans_correct_top (link f x e1 e2) (clink x e1' e2').
+  Proof.
+    intros Hfx Hf1 Hf2 Hx [Hfree1 He1] [Hfree2 He2].
+    split.
+    - intros y Hy.
+      unfold Ensembles.In, clink in Hy.
+      inv Hy.
+      + apply link_free_e1; [exact Hf1 | apply Hfree1; assumption].
+      + apply link_free_e2; [exact Hf2 | apply Hfree2; assumption | assumption].
+    - intros θ cce c1 c3 Hcol Hθ Hesc_ok i ρ1 ρ2 HG.
+      destruct (coloring_link_inv Hcol) as [c2 [cce1 [cce2 [Heq [Hcol1 Hcol2]]]]].
+      subst cce.
+      pose proof (coloring_mono Hcol1) as Hle12.
+      pose proof (coloring_mono Hcol2) as Hle23.
+      pose proof (analysis_context_of_link1 Hθ) as Hθ1.
+      pose proof (analysis_context_of_link2 Hθ) as Hθ2.
+      pose proof (coloring_import_unknown Hcol2 Hθ2 Hx) as Htop.
+      unfold E_top, E_top'.
+      intros j1 r1 Hj1 Hstep.
+      destruct (bstep_link_inv Hstep) as [HOOT | [ca [cb [v [Heqj [Hs1 Hs2]]]]]].
+      + (* out of time: so is the linked program, right away *)
+        subst r1.
+        exists 0, COOT, (Empty_set _).
+        split; [apply CbstepTF_link_OOT | exact I].
+      + subst j1.
+        (* run the first component *)
+        pose proof (He1 θ cce1 c1 c2 Hcol1 Hθ1 Hesc_ok i _ ρ2
+                      (G_top_link1 θ c1 c2 c3 i f x e1 e2 ρ1 ρ2 Hle23 Hf1 HG)) as HE1.
+        destruct (HE1 ca (Res v) ltac:(lia) Hs1) as [j2 [r2 [I2 [Hc1 HR1]]]].
+        destruct r2 as [| v2]; [destruct HR1 |].
+        (* run the second component with its result bound to `x` *)
+        pose proof (G_top_link2 θ c1 c2 c3 i (i - ca) f x e1 e2 ρ1 ρ2 v v2
+                      Hle12 ltac:(lia) Hf1 Hf2 Htop HG HR1) as HG2.
+        pose proof (He2 θ cce2 c2 c3 Hcol2 Hθ2 Hesc_ok (i - ca) _ _ HG2) as HE2.
+        destruct (HE2 cb r1 ltac:(lia) Hs2) as [j3 [r3 [I3 [Hc2 HR2]]]].
+        destruct v2 as [A [c l] w].
+        exists (S (S (j2 + j3))), r3, (I2 :|: I3).
+        split.
+        * apply CbstepTF_link_Step.
+          eapply CbstepT_link_Res; [exact Hc1 | exact Hc2].
+        * apply (R_top_mono θ (i - ca - cb)); [exact HR2 | lia].
+  Qed.
+
+End Linking.
