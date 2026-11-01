@@ -1192,6 +1192,109 @@ Proof.
   apply link_free_e1; assumption.
 Qed.
 
+(* Well Scoped *)
+(* This essentially says `occurs_free e` ⊆ Γ *)
+Inductive well_scoped (Γ : vars) : exp -> Prop :=
+| Well_Scoped_ret :
+  forall x,
+    (x \in Γ) ->
+    well_scoped Γ (Eret x)
+
+| Well_Scoped_fun :
+  forall {f l xs e k},
+    well_scoped (FromList xs :|: (f |: Γ)) e ->
+    well_scoped (f |: Γ) k ->
+    well_scoped Γ (Efun f l xs e k)
+
+| Well_Scoped_app :
+  forall {f l xs},
+    (f \in Γ) ->
+    (FromList xs \subset Γ) ->
+    well_scoped Γ (Eapp f l xs)
+
+| Well_Scoped_letapp :
+  forall {x f l xs k},
+    (f \in Γ) ->
+    (FromList xs \subset Γ) ->
+    well_scoped (x |: Γ) k ->
+    well_scoped Γ (Eletapp x f l xs k)
+
+| Well_Scoped_constr :
+  forall {x l t xs k},
+    (FromList xs \subset Γ) ->
+    well_scoped (x |: Γ) k ->
+    well_scoped Γ (Econstr x l t xs k)
+
+| Well_Scoped_proj :
+  forall {l x y k n},
+    (y \in Γ) ->
+    well_scoped (x |: Γ) k ->
+    well_scoped Γ (Eproj x l n y k)
+
+| Well_Scoped_case_nil :
+  forall {l x},
+    (x \in Γ) ->
+    well_scoped Γ (Ecase x l [])
+
+| Well_Scoped_case_cons :
+  forall {x l e t cl},
+    (x \in Γ) ->
+    well_scoped Γ e ->
+    well_scoped Γ (Ecase x l cl) ->
+    well_scoped Γ (Ecase x l ((t, e) :: cl)).
+
+Hint Constructors well_scoped : core.
+
+Lemma well_scoped_inv e Γ :
+  well_scoped Γ e ->
+  occurs_free e \subset Γ.
+Proof.
+  intros.
+  induction H; unfold Ensembles.Included, Ensembles.In in *; intros; fcrush.
+Qed.
+
+Lemma well_scoped_intro e Γ :
+  occurs_free e \subset Γ ->
+  well_scoped Γ e.
+Proof.
+  revert Γ.
+  induction e
+    as [ x
+       | x w xs
+       | f w xs e k IHe IHk
+       | x f w xs e IHe
+       | x w c xs e IHe
+       | x w
+       | x w cl c e IHe IHcl
+       | x w n v0 e IHe ]
+         using exp_ind';
+    intros Γ Hfree; unfold Ensembles.Included, Ensembles.In in *.
+  - constructor.
+    apply Hfree; constructor.
+  - constructor.
+    + apply Hfree; constructor.
+    + eapply free_app_xs_inv; eauto.
+  - constructor.
+    + apply IHe; eapply free_fun_e_inv; eauto.
+    + apply IHk; eapply free_fun_k_inv; eauto.
+  - constructor.
+    + apply Hfree; eapply Free_letapp2.
+    + eapply free_letapp_xs_inv; eauto.
+    + apply IHe; eapply free_letapp_k_inv; eauto.
+  - constructor.
+    + eapply free_constr_xs_inv; eauto.
+    + apply IHe; eapply free_constr_k_inv; eauto.
+  - constructor.
+    apply Hfree; constructor.
+  - constructor.
+    + apply Hfree; constructor.
+    + apply IHe; eapply free_case_hd_inv; eauto.
+    + apply IHcl; eapply free_case_tl_inv; eauto.
+  - constructor.
+    + apply Hfree; constructor.
+    + apply IHe; eapply free_proj_k_inv; eauto.
+Qed.
+
 (* Structural Equivalence of Value and Environment *)
 Inductive val_eqv : wval -> wval -> Prop :=
 | Eqv_wval :
