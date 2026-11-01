@@ -18,32 +18,81 @@ Module An := ValueSetAnalysis.
 
 Definition web_map := M.t web.
 
+Parameter w_int : web.
+Parameter w_int_internal : ~ (w_int \in Exposed).
+
 Parameter w_ext : web.
 Parameter w_ext_exposed : forall w, w \in Exposed <-> w = w_ext.
-Parameter w_int : web. (* not exposed *)
 
 Definition web_map_assign (W : web_map) :=
   forall l w,
     M.get l W = Some w ->
     w = w_int \/ w = w_ext.
 
-(* Internal webs are consistent with `ainteractions` *)
-Definition web_map_internals (W : web_map) (AInt : An.internals) : Prop :=
+(* Exposed Labels *)
+(* `aexposed A` over-approximates the labels that LambdaWeb forces to be exposed:
+   - the unknown sides, and everything that escapes to the context;
+   - closed under interactions in both directions, since an introduction and
+     its elimination must share a web;
+   - closed under flow through exposed closures, since the arguments and the
+     results of an exposed closure must be exposed. *)
+Inductive aexposed (A : An.analysis_result) : labels :=
+| AExp_top_intro :
+  aexposed A An.l_top_intro
+
+| AExp_top_elim :
+  aexposed A An.l_top_elim
+
+| AExp_esc :
+  forall av,
+    (av \in An.ai_esc A) ->
+    aexposed A (An.label_of av)
+
+| AExp_int_l :
+  forall l1 l2,
+    ((l1, l2) \in An.ai_int A) ->
+    aexposed A l1 ->
+    aexposed A l2
+
+| AExp_int_r :
+  forall l1 l2,
+    ((l1, l2) \in An.ai_int A) ->
+    aexposed A l2 ->
+    aexposed A l1
+
+| AExp_param :
+  forall l f xs e x av,
+    (An.AVfun l f xs e \in An.ai_env A f) ->
+    aexposed A l ->
+    List.In x xs ->
+    (av \in An.ai_env A x) ->
+    aexposed A (An.label_of av)
+
+| AExp_ret :
+  forall l av,
+    aexposed A l ->
+    (av \in An.ai_ret A l) ->
+    aexposed A (An.label_of av).
+
+Hint Constructors aexposed : core.
+
+(* Exposed webs are consistent with `aexposed` *)
+Definition web_map_exposed (W : web_map) (A : An.analysis_result) : Prop :=
   forall l w,
     M.get l W = Some w ->
-    (w = w_int <-> l \in AInt).
+    (w = w_ext <-> l \in aexposed A).
 
 (* *Static* Web Map Invariants *)
 Definition valid_web_map (W : web_map) (A : An.analysis_result) e : Prop :=
   web_map_assign W /\
-  (Dom_map W \subset has_label e) /\
-  web_map_internals W (An.ainternals_of (An.ai_int A)).
+  (has_label e \subset Dom_map W) /\
+  web_map_exposed W A.
 
 (* Tagged Value *)
 Inductive ctag A : Type :=
 | CTAG : label -> web_map -> A -> ctag A.
 
-Hint Constructors tag : core.
+Hint Constructors ctag : core.
 
 (* Value *)
 Inductive cval : Type :=
@@ -571,7 +620,11 @@ Section LRBase.
   Variable θ : analysis_context.
   Hypothesis θ_escape_ok : analysis_context_escape_ok θ.
 
-  Definition R' (P : nat -> An.clval -> clval -> Prop) (i : nat) (r1 : An.cres) (r2 : cres) :=
+  (* Web map of each unit, consistent with its analysis result *)
+  Variable ω : An.color -> web_map.
+  Hypothesis ω_valid : forall c, web_map_assign (ω c) /\ web_map_exposed (ω c) (θ c).
+
+  Definition R'(P : nat -> An.clval -> clval -> Prop) (i : nat) (r1 : An.cres) (r2 : cres) :=
     match r1, r2 with
     | An.COOT, COOT => True
     | An.CRes v1, CRes v2 => P i v1 v2
@@ -592,8 +645,9 @@ Section LRBase.
     match cv1, cv2 with
     | An.CTAG _ A1 (c1, l1) v1, CTAG _ l2 W2 v2 =>
         l1 = l2 /\
+        (* the web map is the one of the defining unit *)
+        W2 = ω c1 /\
         exists w2, W2 ! l2 = Some w2 /\
-        (w2 \in Exposed -> to_exposed cv2) /\
         match v1, v2 with
           (*
         | Vconstr c1 vs1, CVconstr c2 vs2 =>
@@ -607,16 +661,39 @@ Section LRBase.
 
         | An.CVfun f1 ρ1 xs1 e1, CVfun f2 ρ2 xs2 e2 =>
             f1 = f2 /\ xs1 = xs2 /\ e1 = e2 /\
+
+              (* every label of the body is assigned a web *)
+              (has_label e1 \subset Dom_map W2) /\
+
+              (* We need to carry over the following invariants to show `aexposed` *)
+              (* the closure is recorded at its defining unit *)
+              (An.AVfun l1 f1 xs1 e1 \in An.ai_env A1 f1) /\
+              (* the source closure environment invariants *)
+              An.cescaped_env c1 ρ1 /\
+              An.cbinding_env c1 A1 ρ1 /\
+
               match i with
               | 0 => True
               | S i0 =>
-                  forall (bdr : bool) j vs1 vs2 ρ3 ρ4,
+                  forall (bdr : bool) j c vs1 vs2 ρ3 ρ4,
                     j <= i0 ->
-                    (w2 \in Exposed -> Forall to_exposed vs2) ->
                     Forall2 (V (i0 - (i0 - j))) vs1 vs2 ->
                     set_lists xs1 vs1 (M.set f1 (An.CTag A1 c1 l1 (An.CVfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
                     set_lists xs2 vs2 (M.set f2 (CTag l2 W2 (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
-                    (if bdr then w2 \in Exposed else True) ->
+
+                    (* invariants for escaped values and variable bindings *)
+                    Forall (An.cescaped c1) vs1 ->
+                    Forall2 (An.cbinding c1 A1) xs1 vs1 ->
+
+                    (* foreign call: the closure has escaped its unit *)
+                    (c1 <> c -> AVfun l2 f2 xs2 e2 \in ai_esc A1) ->
+
+                    (* exposed closure: the arguments are exposed *)
+                    (w2 \in Exposed -> Forall to_exposed vs2) ->
+
+                    (* closures that may cross the program boundary *)
+                    (if bdr then An.AVfun l1 f1 xs1 e1 \in An.ai_esc A1 else True) ->
+
                     E' V A1 c1 bdr (An.ai_ret A1 l1) W2 (exposedb w2) (i0 - (i0 - j)) ρ3 ρ4 e1
               end
 
@@ -624,6 +701,320 @@ Section LRBase.
         end
     end.
 
-Definition R := (R' V).
+  Definition R := (R' V).
 
-Definition E := (E' V).
+  Definition E := (E' V).
+
+  (* Lemmas about [wf_cval], [wf_cres], and [wf_cenv] *)
+  Lemma V_wf_cval_l {i v1 v2}:
+    V i v1 v2 ->
+    An.wf_cval θ v1.
+  Proof. intros; destruct i; simpl in *; fcrush. Qed.
+
+  Lemma V_wf_cval_Forall_l {i vs1 vs2} :
+    Forall2 (V i) vs1 vs2 ->
+    Forall (An.wf_cval θ) vs1.
+  Proof. intros H. induction H; eauto using V_wf_cval_l. Qed.
+
+  Lemma V_wf_cres_l {i v1 v2}:
+    V i v1 v2 ->
+    An.wf_cres θ (An.CRes v1).
+  Proof. intros; eauto using V_wf_cval_l; eauto. Qed.
+
+  Lemma R_wf_cres_l {i r1 r2} :
+    R i r1 r2 ->
+    An.wf_cres θ r1.
+  Proof.
+    unfold R.
+    intros.
+    destruct r1; destruct r2; try contradiction;
+      eauto using V_wf_cval_l.
+  Qed.
+
+  Lemma V_wf_cval_r {i v1 v2}:
+    V i v1 v2 ->
+    wf_cval v2.
+  Proof. intros; destruct i; simpl in *; fcrush. Qed.
+
+  Lemma V_wf_cval_Forall_r {i vs1 vs2} :
+    Forall2 (V i) vs1 vs2 ->
+    Forall wf_cval vs2.
+  Proof. intros H. induction H; eauto using V_wf_cval_r. Qed.
+
+  Lemma V_wf_cres_r {i v1 v2}:
+    V i v1 v2 ->
+    wf_cres (CRes v2).
+  Proof. intros; eauto using V_wf_cval_r; eauto. Qed.
+
+  Lemma R_wf_cres_r {i r1 r2} :
+    R i r1 r2 ->
+    wf_cres r2.
+  Proof.
+    unfold R.
+    intros.
+    destruct r1; destruct r2; try contradiction;
+      eauto using V_wf_cval_r.
+  Qed.
+
+  (* Inversion Lemmas *)
+  Lemma R_res_inv_l i v1 r2 :
+    R i (An.CRes v1) r2 ->
+    exists v2, r2 = CRes v2 /\ V i v1 v2.
+  Proof. intros. fcrush. Qed.
+
+  Lemma R_res_inv_l_V v1 r2 :
+    (forall k, R k (An.CRes v1) r2) ->
+    exists v2, r2 = CRes v2 /\ (forall k, V k v1 v2).
+  Proof. intros. hauto. Qed.
+
+  (* Environment Relation *)
+  Definition G c i Γ1 ρ1 ρ2 :=
+    An.wf_cenv θ ρ1 /\
+      wf_cenv ρ2 /\
+      An.cescaped_env c ρ1 /\
+      An.cbinding_env c (θ c) ρ1 /\
+      forall x,
+        (x \in Γ1) ->
+        exists v1 v2,
+          M.get x ρ1 = Some v1 /\
+            M.get x ρ2 = Some v2 /\
+            V i v1 v2.
+
+  (* Environment Lemmas *)
+  Lemma G_subset Γ1 Γ2 {c i ρ1 ρ2}:
+    G c i Γ1 ρ1 ρ2 ->
+    Γ2 \subset Γ1 ->
+    G c i Γ2 ρ1 ρ2.
+  Proof. unfold G. fcrush. Qed.
+
+  Lemma G_wf_cenv_l {c i Γ1 ρ1 ρ2}:
+    G c i Γ1 ρ1 ρ2 ->
+    An.wf_cenv θ ρ1.
+  Proof. unfold G. fcrush. Qed.
+
+  Lemma G_wf_cenv_r {c i Γ1 ρ1 ρ2}:
+    G c i Γ1 ρ1 ρ2 ->
+    wf_cenv ρ2.
+  Proof. unfold G. fcrush. Qed.
+
+  Lemma G_cescaped_env {c i Γ1 ρ1 ρ2}:
+    G c i Γ1 ρ1 ρ2 ->
+    cescaped_env c ρ1.
+  Proof. unfold G. fcrush. Qed.
+
+  Lemma G_cbinding_env {c i Γ1 ρ1 ρ2}:
+    G c i Γ1 ρ1 ρ2 ->
+    cbinding_env c (θ c) ρ1.
+  Proof. unfold G. fcrush. Qed.
+
+  Lemma G_get {c Γ1 i ρ1 ρ2}:
+    G c i Γ1 ρ1 ρ2 ->
+    forall x v1,
+      (x \in Γ1) ->
+      M.get x ρ1 = Some v1 ->
+      exists v2,
+        M.get x ρ2 = Some v2 /\
+          V i v1 v2.
+  Proof.
+    unfold G.
+    intros.
+    destruct H as [Hwf [Href [Hesc [Hex HG]]]].
+    edestruct HG as [v1' [v2 [Heqv1 [Heqv2 HV]]]]; eauto; invc.
+    fcrush.
+  Qed.
+
+  Lemma G_get_list {c i Γ1 ρ1 ρ2} :
+    G c i Γ1 ρ1 ρ2 ->
+    forall xs vs1,
+      (FromList xs) \subset Γ1 ->
+      get_list xs ρ1 = Some vs1 ->
+      exists vs2,
+        get_list xs ρ2 = Some vs2 /\
+          Forall2 (V i) vs1 vs2.
+  Proof.
+    intros HG xs.
+    induction xs; simpl; intros.
+    - fcrush.
+    - destruct (ρ1 ! a) eqn:Heq1; try discriminate.
+      destruct (get_list xs ρ1) eqn:Heq3; try discriminate.
+      inv H0.
+      unfold Ensembles.Included, Ensembles.In in *.
+      edestruct (G_get HG) as [v2 [Heqv2 HV]]; eauto.
+      eapply (H a); fcrush.
+      edestruct IHxs as [vs2 [Heqvs2 Vvs]]; eauto; fcrush.
+  Qed.
+
+  Lemma G_set {c i Γ1 ρ1 ρ2}:
+    G c i Γ1 ρ1 ρ2 ->
+    forall {x v1 v2},
+      V i v1 v2 ->
+      An.cescaped c v1 ->
+      An.cbinding c (θ c) x v1 ->
+      G c i (x |: Γ1) (M.set x v1 ρ1) (M.set x v2 ρ2).
+  Proof.
+    unfold G.
+    intro HG.
+    pose proof HG as HG'.
+    intros.
+
+    destruct HG as [Hwf [Href [Hesc [Hex HG]]]].
+    split.
+    eapply An.wf_cenv_set; eauto.
+    eapply V_wf_cval_l; eauto.
+
+    split.
+    eapply wf_cenv_set; eauto.
+    eapply V_wf_cval_r; eauto.
+
+    split.
+    eapply An.cescaped_env_set; eauto.
+
+    split.
+    eapply An.cbinding_env_set; eauto.
+
+    intros.
+    destruct (M.elt_eq x0 x); subst.
+    - repeat rewrite M.gss in *.
+      fcrush.
+    - repeat (rewrite M.gso in *; auto).
+      fcrush.
+  Qed.
+
+  Lemma G_set_lists {c i Γ1 ρ1 ρ2}:
+    G c i Γ1 ρ1 ρ2 ->
+    forall {xs vs1 vs2 ρ3 ρ4},
+      Forall2 (V i) vs1 vs2 ->
+      Forall (An.cescaped c) vs1 ->
+      Forall2 (An.cbinding c (θ c)) xs vs1 ->
+      set_lists xs vs1 ρ1 = Some ρ3 ->
+      set_lists xs vs2 ρ2 = Some ρ4 ->
+      G c i (FromList xs :|: Γ1) ρ3 ρ4.
+  Proof.
+    intros HG xs.
+    induction xs; simpl; intros.
+    - destruct vs1; try discriminate.
+      destruct vs2; try discriminate.
+      invc.
+      eapply G_subset; eauto; normalize_sets;
+        rewrite Union_Empty_set_neut_l; eauto;
+        apply Included_refl.
+    - destruct vs1; try discriminate.
+      destruct vs2; try discriminate.
+      destruct (set_lists xs vs1 ρ1) eqn:Heq1; try discriminate.
+      destruct (set_lists xs vs2 ρ2) eqn:Heq2; try discriminate.
+      invc.
+      inv H; inv H0; inv H1.
+      eapply G_subset with (Γ1 := (a |: (FromList xs :|: Γ1))); eauto;
+        try (normalize_sets;
+             rewrite Union_assoc;
+             apply Included_refl).
+      eapply G_set; eauto.
+  Qed.
+
+  (* Monotonicity Lemmas *)
+  Lemma V_mono_Forall_aux :
+    forall i j (V : nat -> An.clval -> clval -> Prop) vs1 vs2,
+      (forall k : nat,
+          k < S i ->
+          forall (j : nat) v1 v2, V k v1 v2 -> j <= k -> V j v1 v2) ->
+      Forall2 (V i) vs1 vs2 ->
+      j <= i ->
+      Forall2 (V j) vs1 vs2.
+  Proof.
+    intros.
+    revert vs2 H0.
+    induction vs1; intros; inv H0; auto.
+    rename l' into vs2.
+    constructor; auto.
+    eapply H; eauto; lia.
+  Qed.
+
+  Lemma V_mono i :
+    forall {j v1 v2},
+      V i v1 v2 ->
+      j <= i ->
+      V j v1 v2.
+  Proof.
+    induction i using lt_wf_rec; intros.
+    destruct v1; destruct v2.
+    destruct i; simpl in H0;
+      destruct j; simpl; intros;
+      destruct H0 as [Hwf1 [Hwf2 HV]];
+      rename w into W;
+      destruct c; destruct HV as [Heql [HwqW [w2 [Heqw2 HV]]]]; subst.
+    - destruct c0; destruct c1; try contradiction.
+      sfirstorder.
+    - fcrush.
+(*    - repeat (split; auto).
+      destruct v; destruct c0; try contradiction.
+      + fcrush.
+      + fcrush. *)
+    - repeat (split; auto).
+      eexists; split; eauto.
+      destruct c0; destruct c1; try contradiction.
+      sfirstorder.
+    - repeat (split; auto).
+      eexists; split; eauto.
+      destruct c0; destruct c1; try contradiction.
+      destruct HV as [Heqv [Heql [Heqe [Hsub [Hsite [Hesc [Hloc HV]]]]]]]; subst.
+      repeat (split; eauto); intros.
+      specialize (HV bdr j0 c0 vs1 vs2 ρ3 ρ4).
+      rewrite normalize_step in *; try lia.
+      eapply HV; eauto; try lia.
+      (* + destruct HV as [Heqc [Hlen HV]]; subst.
+        eexists; repeat (split; eauto).
+        eapply V_mono_Forall_aux; eauto; lia. *)
+  Qed.
+
+  Lemma V_mono_Forall {vs1 vs2} i j :
+    Forall2 (V i) vs1 vs2 ->
+    j <= i ->
+    Forall2 (V j) vs1 vs2.
+  Proof.
+    intros H.
+    revert j.
+    induction H; simpl; intros; auto.
+    constructor; eauto.
+    eapply V_mono; eauto.
+  Qed.
+
+  Lemma R_mono {r1 r2} i j :
+    R i r1 r2 ->
+    j <= i ->
+    R j r1 r2.
+  Proof.
+    unfold R.
+    intros.
+    destruct r1; auto.
+    destruct r2; auto.
+    eapply V_mono; eauto.
+  Qed.
+
+  Lemma E_mono {A Rs c bdr W ex ρ1 ρ2 e} i j:
+    E A c bdr Rs W ex i ρ1 ρ2 e ->
+    j <= i ->
+    E A c bdr Rs W ex j ρ1 ρ2 e.
+  Proof.
+    unfold E, R, E', R'.
+    intros.
+    destruct (H j1 r1 I1) as [j2 [r2 [Hr2 HR]]]; auto; try lia.
+    exists j2, r2; split; eauto.
+    apply R_mono with (i - j1); try lia; auto.
+  Qed.
+
+
+  Lemma G_mono {c Γ1 ρ1 ρ2} i j:
+    G c i Γ1 ρ1 ρ2 ->
+    j <= i ->
+    G c j Γ1 ρ1 ρ2.
+  Proof.
+    unfold G.
+    intros.
+    destruct H as [Hwf1 [Hwf2 [Hesc [Hex HG]]]].
+    repeat (split; auto); intros.
+    edestruct HG as [v1 [v2 [Heqv1 [Heqv2 HV]]]]; eauto; invc.
+    eexists; repeat (split; eauto).
+    eauto using V_mono.
+  Qed.
+
+End LRBase.
