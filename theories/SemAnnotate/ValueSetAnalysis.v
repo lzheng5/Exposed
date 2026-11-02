@@ -1055,7 +1055,7 @@ Inductive cbstep (A : analysis_result) (c : color) (bdr : bool) (ρ : cenv) : ex
 | Cbstep_fun :
   forall {f l xs e k i Rs r I},
     cbstep_fuel A c bdr (M.set f (CTag A c l (CVfun f ρ xs e)) ρ) k i Rs r I ->
-    approx_vals (ai_env A f) (CTag A c l (CVfun f ρ xs e)) ->
+    (AVfun l f xs e \in ai_env A f) ->
     cbstep A c bdr ρ (Efun f l xs e k) i Rs r I
 
 (* Foreign call: dynamic counterpart of the unknown-callee branch of `Acheck_app`,
