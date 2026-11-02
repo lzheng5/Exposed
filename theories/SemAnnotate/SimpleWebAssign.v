@@ -107,6 +107,7 @@ Hint Constructors cval : core.
 
 Definition clval := ctag cval.
 
+(* TODO: swap l and W *)
 Definition CTag l W cv := CTAG cval l W cv.
 
 (* Environment *)
@@ -1328,4 +1329,104 @@ Section Compat.
           unfold An.cresult in *.
           eapply V_exposed; fcrush.
       + eapply V_mono; eauto; lia.
+  Qed.
+
+  Lemma fun_compat A c W Γ e k f l xs :
+    has_label (Efun f l xs e k) \subset Dom_map W ->
+    occurs_free e \subset FromList xs :|: (f |: Γ) ->
+    well_annotated A c W (FromList xs :|: (f |: Γ)) e ->
+    well_annotated A c W (f |: Γ) k ->
+    well_annotated A c W Γ (Efun f l xs e k).
+  Proof.
+    unfold well_annotated, E, E'.
+    intros HL HS He Hk θ bdr Rs ω ex Heqθ Hescθ Hbdr Hω HW Hex; intros.
+
+    inv H1.
+    - fcrush.
+    - destruct r1.
+      fcrush.
+      assert (Hwfρ1 : An.wf_cenv θ ρ1) by eauto using G_wf_cenv_l.
+      assert (Hwfρ2 : wf_cenv ρ2) by eauto using G_wf_cenv_r.
+      inv H2.
+      rename c0 into v1.
+      edestruct (Hk _  bdr Rs _ _ eq_refl Hescθ Hbdr Hω eq_refl Hex (i - 1) (M.set f (An.CTag (θ c) c l (An.CVfun f ρ1 xs e)) ρ1) (M.set f (CTag l (ω c) (CVfun f ρ2 xs e)) ρ2)) with (j1 := i0) (r1 := (An.CRes v1)) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+      + eapply G_subset.
+        eapply G_set; eauto.
+        eapply G_mono with i; eauto; lia.
+        * (* eapply Vfun_V; eauto.
+             apply G_mono with i; eauto; lia. *)
+          admit.
+        * eauto using cescaped_defining.
+        * unfold cbinding; simpl.
+          split; intros.
+          2 : { fcrush. }
+          unfold An.approx_vals in H16.
+          (*
+          destruct H16 as [av [Hav Happrox]].
+          inv Happrox.
+          -- right.
+             split; auto.
+             unfold An.analysis_context_escape_ok, An.escapes_ok in *.
+             destruct (Hescθ c) as [_ Hesc].
+
+
+          unfold An.cresult in *.
+          destruct H5 as [Hces Hflows].
+           *)
+          admit.
+
+        * apply Included_refl.
+      + edestruct R_res_inv_l as [w2 [Heqw2 HV]]; eauto; subst.
+        unfold Ensembles.Included, Ensembles.In, Dom_map in HL.
+        edestruct (HL l) as [w Heqw]; eauto.
+        exists (S j2), (CRes w2); split; eauto.
+        * econstructor; eauto.
+          destruct ex; auto.
+          constructor; auto.
+          eapply V_exposed; fcrush.
+        * eapply R_mono; eauto; lia.
+  Admitted.
+
+  Lemma Vfun_V θ ω W Γ f l A c xs e  :
+    occurs_free e \subset FromList xs :|: (f |: Γ) ->
+    θ c = A ->
+    analysis_context_escape_ok θ ->
+    ω c = W ->
+    valid_web_map_context ω θ ->
+    well_annotated A c W (FromList xs :|: (f |: Γ)) e ->
+    forall {i ρ1 ρ2},
+      An.wf_cval θ (An.CTag A c l (An.CVfun f ρ1 xs e)) ->
+      wf_cval (CTag l W (CVfun f ρ2 xs e)) ->
+      (An.AVfun l f xs e) \in (ai_env A f) ->
+      G θ ω c i Γ ρ1 ρ2 ->
+      V θ ω i (An.CTag A c l (An.CVfun f ρ1 xs e)) (CTag l W (CVfun f ρ2 xs e)).
+  Proof.
+    unfold well_annotated.
+    intros HS Hθ Hesc Hω Hweb He i.
+    induction i; simpl; subst; intros; auto;
+      assert (Hesc_env : An.cescaped_env c ρ1) by eauto using G_cescaped_env;
+      assert (Hloc_env : An.cbinding_env c (θ c) ρ1) by eauto using G_cbinding_env;
+      repeat (split; auto).
+    eexists; repeat (split; eauto).
+      intros; (repeat split; auto).
+
+    eapply (He _ _ _ eq_refl Hesc Hack) with (i := (i - (i - j))) (ρ1 :=  ρ3) (ρ2 := ρ4); eauto.
+    - destruct bdr; auto.
+      destruct (Hesc c) as [_ Hres].
+      fcrush.
+    - eapply G_subset; eauto.
+      eapply G_set_lists; eauto.
+      eapply G_set; eauto.
+      + apply G_mono with (S i); eauto; lia.
+      + apply V_mono with i; try lia.
+        eapply IHi; eauto.
+        apply G_mono with (S i); eauto; lia.
+      + eauto using cescaped_defining.
+      + unfold cbinding; simpl.
+        split; intros; fcrush.
+      + destruct (Nat.eq_dec c0 c); try auto.
+        eapply set_lists_approx_top; eauto.
+        edestruct Hesc as [_ Hesc_fun]; eauto.
+        eapply Hesc_fun; eauto.
+      + eapply Included_refl; eauto.
   Qed.
