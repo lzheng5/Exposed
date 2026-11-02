@@ -82,11 +82,15 @@ Definition web_map_exposed (W : web_map) (A : An.analysis_result) : Prop :=
     M.get l W = Some w ->
     (w = w_ext <-> l \in aexposed A).
 
+(* every label in `avs` is exposed *)
+Definition aexposed_avals A avs := forall av, (av \in avs) -> (An.label_of av \in aexposed A).
+
+(* Web Map Context *)
+Definition web_map_context := An.color -> web_map.
+
 (* *Static* Web Map Invariants *)
-Definition valid_web_map (W : web_map) (A : An.analysis_result) e : Prop :=
-  web_map_assign W /\
-  (has_label e \subset Dom_map W) /\
-  web_map_exposed W A.
+Definition valid_web_map_context (ω : web_map_context) (θ : An.analysis_context) : Prop :=
+  forall (c : An.color) , web_map_assign (ω c) /\ web_map_exposed (ω c) (θ c).
 
 (* Tagged Value *)
 Inductive ctag A : Type :=
@@ -354,7 +358,6 @@ Theorem cbstep_fuel_deterministic v v' {W ex ρ e c c'}:
   (v = v' /\ c = c').
 Proof. srun eauto using cbstep_fuel_deterministic_aux. Qed.
 
-
 Lemma cbstep_lt_Res_not_OOT_aux W ex ρ e c r v :
   cbstep W ex ρ e c r ->
   r = CRes v ->
@@ -621,8 +624,8 @@ Section LRBase.
   Hypothesis θ_escape_ok : analysis_context_escape_ok θ.
 
   (* Web map of each unit, consistent with its analysis result *)
-  Variable ω : An.color -> web_map.
-  Hypothesis ω_valid : forall c, web_map_assign (ω c) /\ web_map_exposed (ω c) (θ c).
+  Variable ω : web_map_context.
+  Hypothesis ω_valid : valid_web_map_context ω θ.
 
   Definition R'(P : nat -> An.clval -> clval -> Prop) (i : nat) (r1 : An.cres) (r2 : cres) :=
     match r1, r2 with
@@ -1002,7 +1005,6 @@ Section LRBase.
     apply R_mono with (i - j1); try lia; auto.
   Qed.
 
-
   Lemma G_mono {c Γ1 ρ1 ρ2} i j:
     G c i Γ1 ρ1 ρ2 ->
     j <= i ->
@@ -1017,4 +1019,313 @@ Section LRBase.
     eauto using V_mono.
   Qed.
 
+  (* Exposed Lemmas *)
+
+  (* A related value whose label is exposed in its own unit is exposed. *)
+  Lemma V_exposed_label {i A1 c1 l1 cv1 v2} :
+    V i (An.CTAG _ A1 (c1, l1) cv1) v2 ->
+    (l1 \in aexposed A1) ->
+    to_exposed v2.
+  Proof.
+    intros HV Hl.
+    pose proof (An.wf_cval_CTag_inv (V_wf_cval_l HV)) as [Hθ _].
+    destruct (ω_valid c1) as [_ Hexp].
+    unfold web_map_exposed in *.
+    destruct v2 as [l2 W2 cv2].
+    destruct i; cbn in HV;
+      destruct HV as (_ & _ & Heql & HeqW & w2 & Hw2 & Hcase);
+      subst l2 W2;
+      destruct cv1, cv2; try contradiction;
+      (eapply ToExp_cfun; [exact Hw2 |]);
+      apply w_ext_exposed;
+      apply (Hexp _ _ Hw2);
+      rewrite Hθ; exact Hl.
+  Qed.
+
+  (* A value held by the unit wearing `c` that flows into `avs` is exposed,
+     provided every label in `avs` is exposed:
+     - a foreign value has escaped from its own unit;
+     - an own closure is either recorded in `avs`, or has escaped. *)
+  Lemma V_exposed {c avs i v1 v2} :
+    V i v1 v2 ->
+    An.cescaped c v1 ->
+    An.cflows c (θ c) avs v1 ->
+    aexposed_avals (θ c) avs ->
+    to_exposed v2.
+  Proof.
+    intros HV Hesc Hfl Havs.
+    destruct v1 as [A1 [c1 l1] cv1].
+    pose proof (An.wf_cval_CTag_inv (V_wf_cval_l HV)) as [Hθ _].
+    destruct cv1 as [f ρ xs e | t vs].
+    - eapply V_exposed_label; [exact HV |].
+      cbn in Hesc, Hfl.
+      destruct (Nat.eq_dec c1 c) as [-> | Hneq].
+      + destruct (proj1 Hfl eq_refl) as [Hin | [Hin _]];
+          rewrite <- Hθ.
+        * exact (Havs _ Hin).
+        * exact (AExp_esc _ _ Hin).
+      + exact (AExp_esc _ _ (Hesc Hneq)).
+    - exfalso.
+      destruct v2 as [l2 W2 cv2].
+      destruct i, cv2; cbn in HV;
+        destruct HV as (_ & _ & _ & _ & ? & _ & []).
+  Qed.
+
+  (* A value escaping from the unit wearing `c` to the one wearing `c'` is exposed. *)
+  Lemma V_exposed_escaped {c c' i v1 v2} :
+    c <> c' ->
+    V i v1 v2 ->
+    An.cescaped c v1 ->
+    An.cescaped c' v1 ->
+    to_exposed v2.
+  Proof.
+    intros Hcc' HV Hesc Hesc'.
+    destruct v1 as [A1 [c1 l1] cv1].
+    destruct cv1 as [f ρ xs e | t vs].
+    - eapply V_exposed_label; [exact HV |].
+      cbn in Hesc, Hesc'.
+      destruct (Nat.eq_dec c1 c) as [-> | Hneq].
+      + exact (AExp_esc _ _ (Hesc' Hcc')).
+      + exact (AExp_esc _ _ (Hesc Hneq)).
+    - exfalso.
+      destruct v2 as [l2 W2 cv2].
+      destruct i, cv2; cbn in HV;
+        destruct HV as (_ & _ & _ & _ & ? & _ & []).
+  Qed.
+
+  (* Results returned into an exposed return set are exposed. *)
+  Lemma R_exposed {c Rs i r1 r2} :
+    R i r1 r2 ->
+    An.cresult c (θ c) Rs r1 ->
+    aexposed_avals (θ c) Rs ->
+    to_exposed_cres r2.
+  Proof.
+    unfold R, R'.
+    intros HR Hres HRs.
+    destruct r1 as [| v1], r2 as [| v2]; cbn in HR; try contradiction; constructor.
+    destruct Hres as [Hesc Hfl].
+    exact (V_exposed HR Hesc Hfl HRs).
+  Qed.
+
+  (* Arguments bound to exposed parameters are exposed (e.g. internal calls to
+     exposed closures, where the hypothesis on `xs` follows from `AExp_param`). *)
+  Lemma V_exposed_Forall_cbinding {c i xs vs1 vs2} :
+    Forall2 (V i) vs1 vs2 ->
+    Forall (An.cescaped c) vs1 ->
+    Forall2 (An.cbinding c (θ c)) xs vs1 ->
+    (forall x, List.In x xs -> aexposed_avals (θ c) (An.ai_env (θ c) x)) ->
+    Forall to_exposed vs2.
+  Proof.
+    intros HV.
+    revert xs.
+    induction HV as [| v1 v2 vs1 vs2 Hv HV IH]; intros xs Hesc Hb Hxs.
+    - constructor.
+    - inv Hesc; inv Hb.
+      constructor.
+      + eapply V_exposed;
+          [exact Hv | eassumption | eapply An.cbinding_cflows; eassumption |].
+        unfold aexposed_avals.
+        intros av Hav.
+        eapply Hxs; [left; reflexivity | exact Hav].
+      + eapply IH; [eassumption | eassumption |].
+        unfold aexposed_avals.
+        intros x' Hin av Hav.
+        eapply Hxs; [right; exact Hin | exact Hav].
+  Qed.
+
+  (* Arguments of a foreign call are exposed. *)
+  Lemma V_exposed_Forall_escaped {c c' i vs1 vs2} :
+    c <> c' ->
+    Forall2 (V i) vs1 vs2 ->
+    Forall (An.cescaped c) vs1 ->
+    Forall (An.cescaped c') vs1 ->
+    Forall to_exposed vs2.
+  Proof.
+    intros Hcc' HV.
+    induction HV as [| v1 v2 vs1 vs2 Hv HV IH]; intros Hesc Hesc'.
+    - constructor.
+    - inv Hesc; inv Hesc'.
+      constructor; eauto using V_exposed_escaped.
+  Qed.
+
 End LRBase.
+
+(* Scoped web_map *)
+(* This essentially says `has_label e ⊆ Dom_map W`, which is used to aid induction *)
+Inductive web_map_spec (W : web_map) (Γ : vars) : exp -> Prop :=
+| Web_Map_Spec_ret :
+  forall x,
+    (x \in Γ) ->
+    web_map_spec W Γ (Eret x)
+
+| Web_Map_Spec_fun :
+  forall {f l w xs e k},
+    W ! l = Some w ->
+    web_map_spec W (FromList xs :|: (f |: Γ)) e ->
+    web_map_spec W (f |: Γ) k ->
+    web_map_spec W Γ (Efun f l xs e k)
+
+| Web_Map_Spec_app :
+  forall {f l w xs},
+    W ! l = Some w ->
+    (f \in Γ) ->
+    (FromList xs \subset Γ) ->
+    web_map_spec W Γ (Eapp f l xs)
+
+| Web_Map_Spec_letapp :
+  forall {x f l w xs k},
+    W ! l = Some w ->
+    (f \in Γ) ->
+    (FromList xs \subset Γ) ->
+    web_map_spec W (x |: Γ) k ->
+    web_map_spec W Γ (Eletapp x f l xs k)
+
+| Web_Map_Spec_constr :
+  forall {x l w t xs k},
+    W ! l = Some w ->
+    (FromList xs \subset Γ) ->
+    web_map_spec W (x |: Γ) k ->
+    web_map_spec W Γ (Econstr x l t xs k)
+
+| Web_Map_Spec_proj :
+  forall {l w x y k n},
+    W ! l = Some w ->
+    (y \in Γ) ->
+    web_map_spec W (x |: Γ) k ->
+    web_map_spec W Γ (Eproj x l n y k)
+
+| Web_Map_Spec_case_nil :
+  forall {l w x},
+    W ! l = Some w ->
+    (x \in Γ) ->
+    web_map_spec W Γ (Ecase x l [])
+
+| Web_Map_Spec_case_cons :
+  forall {x l w e t cl},
+    W ! l = Some w ->
+    (x \in Γ) ->
+    web_map_spec W Γ e ->
+    web_map_spec W Γ (Ecase x l cl) ->
+    web_map_spec W Γ (Ecase x l ((t, e) :: cl)).
+
+Hint Constructors web_map_spec : core.
+
+Lemma web_map_total W e :
+  (has_label e \subset Dom_map W) ->
+  web_map_spec W (occurs_free e) e.
+Proof.
+  enough (Hstrong : forall Γ,
+             has_label e \subset Dom_map W ->
+             occurs_free e \subset Γ ->
+             web_map_spec W Γ e).
+  { intros; apply Hstrong; auto; apply Included_refl. }
+  induction e using exp_ind'; intros Γ Hlabel Hfree.
+  - (* Eret x *)
+    constructor. apply Hfree. constructor.
+  - (* Eapp x w xs *)
+    assert (Hl : w \in Dom_map W) by (apply Hlabel; auto).
+    destruct Hl as [web Hw].
+    econstructor; eauto.
+    eapply free_app_xs_inv; eauto.
+  - (* Efun f w xs e k *)
+    assert (Hl : w \in Dom_map W) by (apply Hlabel; auto).
+    destruct Hl as [web Hw].
+    econstructor; eauto.
+    + apply IHe1.
+      * eauto using Included_trans, has_label_fun_body.
+      * eapply free_fun_e_inv; eauto.
+    + apply IHe2.
+      * eauto using Included_trans, has_label_fun_cont.
+      * eapply free_fun_k_inv; eauto.
+  - (* Eletapp x f w xs k *)
+    assert (Hl : w \in Dom_map W) by (apply Hlabel; auto).
+    destruct Hl as [web Hw].
+    econstructor; eauto.
+    + eapply free_letapp_xs_inv; eauto.
+    + apply IHe.
+      * eauto using Included_trans, has_label_letapp_cont.
+      * eapply free_letapp_k_inv; eauto.
+  - (* Econstr x w c xs k *)
+    assert (Hl : w \in Dom_map W) by (apply Hlabel; auto).
+    destruct Hl as [web Hw].
+    econstructor; eauto.
+    + eapply Included_trans; eauto.
+      eapply free_constr_xs_subset; eauto.
+    + apply IHe.
+      * eauto using Included_trans, has_label_constr_cont.
+      * eapply free_constr_k_inv; eauto.
+  - (* Ecase x w [] *)
+    assert (Hl : w \in Dom_map W) by (apply Hlabel; auto).
+    destruct Hl as [web Hw].
+    econstructor; eauto.
+  - (* Ecase x w ((c,e)::cl) *)
+    assert (Hl : w \in Dom_map W) by (apply Hlabel; auto).
+    destruct Hl as [web Hw].
+    econstructor; eauto.
+    + apply IHe.
+      * eauto using Included_trans, has_label_case_hd.
+      * eapply Included_trans; eauto.
+        eapply free_case_hd_subset.
+    + apply IHe0.
+      * eauto using Included_trans, has_label_case_tl.
+      * eapply Included_trans; eauto.
+        apply free_case_tl_subset.
+  - (* Eproj x w n v0 e *)
+    assert (Hl : w \in Dom_map W) by (apply Hlabel; auto).
+    destruct Hl as [web Hw].
+    econstructor; eauto.
+    + apply IHe.
+      * eauto using Included_trans, has_label_proj_body.
+      * eapply free_proj_k_inv; eauto.
+Qed.
+
+Section Compat.
+
+  (* Compatibility Lemmas *)
+
+  (* `Rs` is quantified inside as function bodies are checked against other return sets. *)
+  Definition well_annotated A c W Γ e : Prop :=
+    forall θ (bdr : bool) Rs ω (ex : bool),
+      θ c = A ->
+      An.analysis_context_escape_ok θ ->
+      (if bdr then (Rs \subset (An.ai_esc A)) else True) ->
+
+      valid_web_map_context ω θ ->
+      ω c = W ->
+
+      (* an exposed body returns only exposed values *)
+      (if ex then aexposed_avals A Rs else True) ->
+
+      forall i ρ1 ρ2,
+        G θ ω c i Γ ρ1 ρ2 -> (* note θ is constrained by the environment as well *)
+        E θ ω A c bdr Rs W ex i ρ1 ρ2 e.
+
+  Lemma ret_compat A c W Γ x :
+    (x \in Γ) ->
+    well_annotated A c W Γ (Eret x).
+  Proof.
+    unfold well_annotated, E, E', R, R', Ensembles.Included, Ensembles.In.
+    intros Hx θ bdr Rs ω ex Heqθ Hescθ Hesc HW Hex; intros.
+
+    inv H2.
+    - fcrush.
+    - destruct r1.
+      fcrush.
+      inv H3.
+      edestruct (G_get _ _ H0) as [v2 [Heqv2 HV]]; eauto.
+      assert (Hwf : wf_cval v2).
+      {
+        eapply wf_cenv_get; eauto.
+        eapply G_wf_cenv_r; eauto.
+      }
+      rename c0 into v1.
+
+      exists 1, (CRes v2); split; eauto; simpl.
+      + econstructor; eauto.
+
+        * destruct ex; auto.
+          constructor; auto.
+          unfold An.cresult in *.
+          eapply V_exposed; fcrush.
+      + eapply V_mono; eauto; lia.
+  Qed.
