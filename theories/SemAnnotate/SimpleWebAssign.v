@@ -1153,131 +1153,100 @@ End LRBase.
 
 (* Scoped web_map *)
 (* This essentially combines `well_scoped e` and `has_label e ⊆ Dom_map W`, to aid induction *)
-Inductive web_map_spec (W : web_map) (Γ : vars) : exp -> Prop :=
-| Web_Map_Spec_ret :
+Inductive web_map_well_scoped (W : web_map) (Γ : vars) : exp -> Prop :=
+| Web_Map_Well_Scoped_ret :
   forall x,
     (x \in Γ) ->
-    web_map_spec W Γ (Eret x)
+    web_map_well_scoped W Γ (Eret x)
 
-| Web_Map_Spec_fun :
+| Web_Map_Well_Scoped_fun :
   forall {f l w xs e k},
     W ! l = Some w ->
-    web_map_spec W (FromList xs :|: (f |: Γ)) e ->
-    web_map_spec W (f |: Γ) k ->
-    web_map_spec W Γ (Efun f l xs e k)
+    web_map_well_scoped W (FromList xs :|: (f |: Γ)) e ->
+    web_map_well_scoped W (f |: Γ) k ->
+    web_map_well_scoped W Γ (Efun f l xs e k)
 
-| Web_Map_Spec_app :
+| Web_Map_Well_Scoped_app :
   forall {f l w xs},
     W ! l = Some w ->
     (f \in Γ) ->
     (FromList xs \subset Γ) ->
-    web_map_spec W Γ (Eapp f l xs)
+    web_map_well_scoped W Γ (Eapp f l xs)
 
-| Web_Map_Spec_letapp :
+| Web_Map_Well_Scoped_letapp :
   forall {x f l w xs k},
     W ! l = Some w ->
     (f \in Γ) ->
     (FromList xs \subset Γ) ->
-    web_map_spec W (x |: Γ) k ->
-    web_map_spec W Γ (Eletapp x f l xs k)
+    web_map_well_scoped W (x |: Γ) k ->
+    web_map_well_scoped W Γ (Eletapp x f l xs k)
 
-| Web_Map_Spec_constr :
+| Web_Map_Well_Scoped_constr :
   forall {x l w t xs k},
     W ! l = Some w ->
     (FromList xs \subset Γ) ->
-    web_map_spec W (x |: Γ) k ->
-    web_map_spec W Γ (Econstr x l t xs k)
+    web_map_well_scoped W (x |: Γ) k ->
+    web_map_well_scoped W Γ (Econstr x l t xs k)
 
-| Web_Map_Spec_proj :
+| Web_Map_Well_Scoped_proj :
   forall {l w x y k n},
     W ! l = Some w ->
     (y \in Γ) ->
-    web_map_spec W (x |: Γ) k ->
-    web_map_spec W Γ (Eproj x l n y k)
+    web_map_well_scoped W (x |: Γ) k ->
+    web_map_well_scoped W Γ (Eproj x l n y k)
 
-| Web_Map_Spec_case_nil :
+| Web_Map_Well_Scoped_case_nil :
   forall {l w x},
     W ! l = Some w ->
     (x \in Γ) ->
-    web_map_spec W Γ (Ecase x l [])
+    web_map_well_scoped W Γ (Ecase x l [])
 
-| Web_Map_Spec_case_cons :
+| Web_Map_Well_Scoped_case_cons :
   forall {x l w e t cl},
     W ! l = Some w ->
     (x \in Γ) ->
-    web_map_spec W Γ e ->
-    web_map_spec W Γ (Ecase x l cl) ->
-    web_map_spec W Γ (Ecase x l ((t, e) :: cl)).
+    web_map_well_scoped W Γ e ->
+    web_map_well_scoped W Γ (Ecase x l cl) ->
+    web_map_well_scoped W Γ (Ecase x l ((t, e) :: cl)).
 
-Hint Constructors web_map_spec : core.
+Hint Constructors web_map_well_scoped : core.
 
-Lemma web_map_total W e :
-  (has_label e \subset Dom_map W) ->
-  web_map_spec W (occurs_free e) e.
+Lemma web_map_well_scoped_inv W Γ e:
+  web_map_well_scoped W Γ e <->
+  (has_label e \subset Dom_map W) /\ well_scoped Γ e.
 Proof.
-  enough (Hstrong : forall Γ,
-             has_label e \subset Dom_map W ->
-             occurs_free e \subset Γ ->
-             web_map_spec W Γ e).
-  { intros; apply Hstrong; auto; apply Included_refl. }
-  induction e using exp_ind'; intros Γ Hlabel Hfree.
-  - (* Eret x *)
-    constructor. apply Hfree. constructor.
-  - (* Eapp x w xs *)
-    assert (Hl : w \in Dom_map W) by (apply Hlabel; auto).
-    destruct Hl as [web Hw].
-    econstructor; eauto.
-    eapply free_app_xs_inv; eauto.
-  - (* Efun f w xs e k *)
-    assert (Hl : w \in Dom_map W) by (apply Hlabel; auto).
-    destruct Hl as [web Hw].
-    econstructor; eauto.
-    + apply IHe1.
-      * eauto using Included_trans, has_label_fun_body.
-      * eapply free_fun_e_inv; eauto.
-    + apply IHe2.
-      * eauto using Included_trans, has_label_fun_cont.
-      * eapply free_fun_k_inv; eauto.
-  - (* Eletapp x f w xs k *)
-    assert (Hl : w \in Dom_map W) by (apply Hlabel; auto).
-    destruct Hl as [web Hw].
-    econstructor; eauto.
-    + eapply free_letapp_xs_inv; eauto.
-    + apply IHe.
-      * eauto using Included_trans, has_label_letapp_cont.
-      * eapply free_letapp_k_inv; eauto.
-  - (* Econstr x w c xs k *)
-    assert (Hl : w \in Dom_map W) by (apply Hlabel; auto).
-    destruct Hl as [web Hw].
-    econstructor; eauto.
-    + eapply Included_trans; eauto.
-      eapply free_constr_xs_subset; eauto.
-    + apply IHe.
-      * eauto using Included_trans, has_label_constr_cont.
-      * eapply free_constr_k_inv; eauto.
-  - (* Ecase x w [] *)
-    assert (Hl : w \in Dom_map W) by (apply Hlabel; auto).
-    destruct Hl as [web Hw].
-    econstructor; eauto.
-  - (* Ecase x w ((c,e)::cl) *)
-    assert (Hl : w \in Dom_map W) by (apply Hlabel; auto).
-    destruct Hl as [web Hw].
-    econstructor; eauto.
-    + apply IHe.
-      * eauto using Included_trans, has_label_case_hd.
-      * eapply Included_trans; eauto.
-        eapply free_case_hd_subset.
-    + apply IHe0.
-      * eauto using Included_trans, has_label_case_tl.
-      * eapply Included_trans; eauto.
-        apply free_case_tl_subset.
-  - (* Eproj x w n v0 e *)
-    assert (Hl : w \in Dom_map W) by (apply Hlabel; auto).
-    destruct Hl as [web Hw].
-    econstructor; eauto.
-    + apply IHe.
-      * eauto using Included_trans, has_label_proj_body.
-      * eapply free_proj_k_inv; eauto.
+  split.
+  - intros H; split.
+    + induction H; intros l' Hl; inv Hl;
+        try (eexists; eassumption);
+        first [ eapply IHweb_map_well_scoped; eassumption
+              | eapply IHweb_map_well_scoped1; eassumption
+              | eapply IHweb_map_well_scoped2; eassumption ].
+    + induction H; constructor; auto.
+  - intros [Hl Hs].
+    revert Hl.
+    induction Hs; intros Hl.
+    + constructor; auto.
+    + destruct (Hl l (Lab_fun1 _ _ _ _ _)) as [w Hw].
+      econstructor; [exact Hw | apply IHHs1 | apply IHHs2];
+        intros l' Hl'; apply Hl; eauto.
+    + destruct (Hl l (Lab_app1 _ _ _)) as [w Hw].
+      econstructor; eauto.
+    + destruct (Hl l (Lab_letapp1 _ _ _ _ _)) as [w Hw].
+      econstructor; eauto.
+      apply IHHs; intros l' Hl'; apply Hl; eauto.
+    + destruct (Hl l (Lab_constr1 _ _ _ _ _)) as [w Hw].
+      econstructor; eauto.
+      apply IHHs; intros l' Hl'; apply Hl; eauto.
+    + destruct (Hl l (Lab_proj1 _ _ _ _ _)) as [w Hw].
+      econstructor; eauto.
+      apply IHHs; intros l' Hl'; apply Hl; eauto.
+    + destruct (Hl l (Lab_case1 _ _ _)) as [w Hw].
+      econstructor; eauto.
+    + destruct (Hl l (Lab_case1 _ _ _)) as [w Hw].
+      econstructor; eauto.
+      * apply IHHs1; intros l' Hl'; apply Hl; eauto.
+      * apply IHHs2; intros l' Hl'; apply Hl; eauto.
 Qed.
 
 Section Compat.
@@ -1418,14 +1387,16 @@ Section Compat.
   Qed.
 
   Lemma fundamental_property {A c W Γ e}:
-    web_map_spec W Γ e ->
+    web_map_well_scoped W Γ e ->
     well_annotated A c W Γ e.
   Proof.
     intros H.
     induction H; intros.
     - eapply ret_compat; eauto.
-    - eapply fun_compat; eauto.
-      admit.
+    - eapply fun_compat; eauto;
+        destruct (proj1 (web_map_well_scoped_inv _ _ _) H0) as [Hlab Hscope].
+      + eapply well_scoped_inv; eauto.
+      + exact Hlab.
     - (* eapply app_compat; eauto. *)
       admit.
     - admit.
