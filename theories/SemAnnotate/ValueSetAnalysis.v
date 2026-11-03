@@ -2189,27 +2189,42 @@ Section Compat.
         * apply Hesc; exact Hneqc.
   Qed.
 
-  Lemma cescaped_handover_list {θ c c1 i Γ ρ1 ρ2 xs vs} :
+  Lemma cescaped_handover_list {θ c c1 ρ xs vs} :
+    wf_cenv θ ρ ->
+    cescaped_env c ρ ->
+    cbinding_env c (θ c) ρ ->
+    approx_env (ai_env (θ c)) ρ ->
+    Forall (fun x => ai_env (θ c) x \subset ai_esc (θ c)) xs ->
+    get_list xs ρ = Some vs ->
+    Forall (cescaped c1) vs.
+  Proof.
+    intros Hwf Hesc Hbind Happrox Hsub.
+    revert vs.
+    induction Hsub as [| x xs Hxsub Hsub IH]; simpl; intros vs Hget.
+    - inv Hget; constructor.
+    - destruct (M.get x ρ) as [v |] eqn:Hx; [| discriminate Hget].
+      destruct (get_list xs ρ) as [vs' |] eqn:Hxs; [| discriminate Hget].
+      inv Hget.
+      constructor.
+      + eapply (@cescaped_handover _ c).
+        * eapply wf_cenv_get; [exact Hwf | exact Hx].
+        * eapply cescaped_env_get; [exact Hesc | exact Hx].
+        * eapply cbinding_env_get; [exact Hbind | exact Hx].
+        * eapply approx_env_get; [exact Happrox | exact Hx].
+        * exact Hxsub.
+      + eapply IH; eauto.
+  Qed.
+
+  Lemma G_cescaped_handover_list {θ c c1 i Γ ρ1 ρ2 xs vs} :
     G θ c i Γ ρ1 ρ2 ->
     Forall (fun x => ai_env (θ c) x \subset ai_esc (θ c)) xs ->
     get_list xs ρ2 = Some vs ->
     Forall (cescaped c1) vs.
   Proof.
-    intros HG Hsub.
-    revert vs.
-    induction Hsub as [| x xs Hxsub Hsub IH]; simpl; intros vs Hget.
-    - inv Hget; constructor.
-    - destruct (M.get x ρ2) as [v |] eqn:Hx; [| discriminate Hget].
-      destruct (get_list xs ρ2) as [vs' |] eqn:Hxs; [| discriminate Hget].
-      inv Hget.
-      constructor.
-      + eapply (@cescaped_handover _ c).
-        * eapply wf_cenv_get; [eapply G_wf_cenv_r; eauto | exact Hx].
-        * eapply cescaped_env_get; [eapply G_cescaped_env; eauto | exact Hx].
-        * eapply cbinding_env_get; [eapply G_cbinding_env; eauto | exact Hx].
-        * eapply approx_env_get; [eapply G_approx_env; eauto | exact Hx].
-        * exact Hxsub.
-      + eapply IH; eauto.
+    intros HG.
+    eapply cescaped_handover_list;
+      [ eapply G_wf_cenv_r | eapply G_cescaped_env
+      | eapply G_cbinding_env | eapply G_approx_env ]; eauto.
   Qed.
 
   (* `cbinding_handover` over an arbitrary value set `avs` holding `AVtop`. *)
@@ -2337,7 +2352,7 @@ Section Compat.
               destruct Hloc_f as [_ Hforeign].
               exact (Hforeign Hneqc). }
             destruct (H8 Htop) as [Hargs _].
-            eapply cescaped_handover_list; eauto.
+            eapply G_cescaped_handover_list; eauto.
 
         - destruct (Nat.eq_dec c1 c) as [Heqc | Hneqc]; subst.
           + inv Hwf2.
@@ -2494,7 +2509,7 @@ Section Compat.
           -- sfirstorder.
 
           -- destruct (H8 Htop) as [Hargs _].
-             eapply cescaped_handover_list; eauto.
+             eapply G_cescaped_handover_list; eauto.
 
           -- assert (Happrox : approx_env (ai_env (θ c1)) (M.set v0 (CTag (θ c1) c1 l0 (CVfun v0 t l1 e0)) t)) by eauto using approx_env_set.
              eapply (approx_env_set_lists Happrox l1 vs2); eauto.

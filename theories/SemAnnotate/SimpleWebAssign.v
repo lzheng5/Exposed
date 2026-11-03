@@ -803,12 +803,12 @@ Section LRBase.
 
   Lemma G_cescaped_env {c i Γ1 ρ1 ρ2}:
     G c i Γ1 ρ1 ρ2 ->
-    cescaped_env c ρ1.
+    An.cescaped_env c ρ1.
   Proof. unfold G. fcrush. Qed.
 
   Lemma G_cbinding_env {c i Γ1 ρ1 ρ2}:
     G c i Γ1 ρ1 ρ2 ->
-    cbinding_env c (θ c) ρ1.
+    An.cbinding_env c (θ c) ρ1.
   Proof. unfold G. fcrush. Qed.
 
   Lemma G_get {c Γ1 i ρ1 ρ2}:
@@ -1292,7 +1292,6 @@ Section Compat.
 
       exists 1, (CRes v2); split; eauto; simpl.
       + econstructor; eauto.
-
         * destruct ex; auto.
           constructor; auto.
           unfold An.cresult in *.
@@ -1385,6 +1384,173 @@ Section Compat.
           eapply V_exposed; fcrush.
         * eapply R_mono; eauto; lia.
   Qed.
+
+  Lemma app_compat A Γ W w xs f l c :
+    W ! l = Some w ->
+    (f \in Γ) ->
+    (FromList xs \subset Γ) ->
+    well_annotated A c W Γ (Eapp f l xs).
+  Proof.
+    unfold well_annotated, E, E'.
+    intross Hw Hf Hxs θ bdr Rs ω ex Heqθ Hescθ Hbdr Hω HW Hex; simpl.
+
+    pose proof (G_wf_cenv_l _ _ H) as Hwfρ1.
+    pose proof (G_wf_cenv_r _ _ H) as Hwfρ2.
+    pose proof (G_cescaped_env _ _ H) as Hescρ.
+    pose proof (G_cbinding_env _ _ H) as Hbindρ.
+
+    inv H1.
+    - fcrush.
+    - destruct r1.
+      fcrush.
+      inv H2.
+      + (* escape => exposed *)
+        edestruct (G_get _ _ H f) as [fv2 [Heqfv2 HV]]; eauto.
+        destruct i.
+        inv H0.
+        rename c0 into v.
+        destruct fv2; destruct c0; simpl in HV; invc.
+        2 : { fcrush. }
+        rename w0 into W0.
+        destruct HV as [Hwf1 [Hwf2 [Heql [HW [w2 [Hw2 [Heqf [Heqxs [Heqe [Hsub [Hsite [Hesc_t [Hloc_t HV]]]]]]]]]]]]]; subst; invc.
+        edestruct (G_get_list _ _ H xs vs) as [vs2 [Heqvs2 Vvs]]; eauto; invc.
+
+        rename v0 into f0.
+        destruct (set_lists_length3 (M.set f0 (CTag l0 (ω c') (CVfun f0 t l1 e0)) t) l1 vs2) as [ρ4 Heqρ4].
+        unfold clval in *.
+        rewrite (set_lists_length_eq _ _ _ _ H15); auto.
+        eapply Forall2_length; eauto.
+
+        assert (HE : E θ ω A' c' true (An.ai_ret A' l0) (ω c') (exposedb w2) (i - (i - i)) ρ'' ρ4 e0).
+        {
+          eapply (HV _ i c vs vs2); eauto.
+          - eapply V_mono_Forall; eauto; lia.
+          - inv Hwf1; subst.
+            eapply @An.cbinding_handover_list with (c := c); eauto.
+            + eapply An.wf_cenv_get_list; eauto.
+            + eapply An.cescaped_env_get_list; eauto.
+            + unfold An.analysis_context_escape_ok, An.escapes_ok in *.
+              destruct (Hescθ c') as [_ Hesc]; fcrush.
+          - intros.
+            eapply V_exposed_Forall_escaped; eauto.
+            eapply An.cescaped_env_get_list; eauto.
+        }
+
+        rewrite_math (i - (i - i) = i).
+
+        unfold E, E' in HE.
+        destruct (HE i0 (An.CRes v) I) as [j2 [r2 [He0 Rr]]]; try lia; auto.
+        edestruct R_res_inv_l as [v2 [Heqv2 HVv]]; eauto; subst.
+
+        unfold valid_web_map_context in *.
+        destruct (Hω c) as [_ Hexpo].
+        destruct (Hω c') as [_ Hexpo'].
+        unfold web_map_exposed in *.
+        edestruct Hexpo as [_ Haexpo]; eauto.
+        edestruct Hexpo' as [_ Haexpo']; eauto.
+
+        assert (Hw2expo : w2 = w_ext).
+        {
+
+          assert (Hl0 : (An.label_of (An.AVfun l0 f0 l1 e0)) \in (aexposed (θ c'))).
+          {
+            inv Hwf1.
+            eapply AExp_esc; eauto.
+          }
+          simpl in Hl0.
+          specialize (Haexpo' Hl0); subst; eauto.
+        }
+
+        assert (Hwexpo : w = w_ext).
+        {
+          assert (Hint : (An.l_top_intro, l) \in An.ai_int (θ c)).
+          {
+            destruct (H4 c' l0 c l) as [_ [_ Hec]].
+            - fcrush.
+            - eauto.
+          }
+
+          assert (Hl : l \in aexposed (θ c)).
+          { eapply AExp_int_l; [exact Hint | apply AExp_top_intro]. }
+
+          eapply (Hexpo _ _ Hw); eauto.
+        }
+
+        subst.
+
+        exists (S j2), (CRes v2); split; eauto.
+        econstructor; eauto.
+        eapply @Cbstep_app; eauto.
+
+        intros; split.
+        * eapply V_exposed_Forall_escaped; eauto.
+          eapply An.cescaped_env_get_list; eauto.
+        * destruct (exposed_reflect w_ext); try contradiction.
+          eapply cbstep_fuel_exposed_inv; eauto.
+        * destruct ex; auto.
+          destruct (exposed_reflect w_ext).
+          eapply cbstep_fuel_exposed_inv; eauto.
+          exfalso.
+          eapply n; eauto.
+          eapply w_ext_exposed; eauto.
+
+      + edestruct (G_get _ _ H f) as [fv2 [Heqfv2 HV]]; eauto.
+        destruct i.
+        inv H0.
+        rename c0 into v.
+        destruct fv2; destruct c0; simpl in HV; invc.
+        2 : { fcrush. }
+        rename w0 into W0.
+        destruct HV as [Hwf1 [Hwf2 [Heql [HW [w2 [Hw2 [Heqf [Heqxs [Heqe [Hsub [Hsite [Hesc_t [Hloc_t HV]]]]]]]]]]]]]; subst; invc.
+        edestruct (G_get_list _ _ H xs vs) as [vs2 [Heqvs2 Vvs]]; eauto; invc.
+
+        rename v0 into f0.
+        destruct (set_lists_length3 (M.set f0 (CTag l0 (ω c) (CVfun f0 t l1 e0)) t) l1 vs2) as [ρ4 Heqρ4].
+        unfold clval in *.
+        rewrite (set_lists_length_eq _ _ _ _ H15); auto.
+        eapply Forall2_length; eauto.
+
+        assert (HE : E θ ω (θ c) c false (An.ai_ret (θ c) l0) (ω c) (exposedb w2) (i - (i - i)) ρ'' ρ4 e0).
+        {
+          eapply (HV _ i c vs vs2); eauto.
+          - eapply V_mono_Forall; eauto; lia.
+          - eapply (An.cescaped_env_get_list Hescρ xs); eauto.
+          - eapply An.cbinding_subset_list; eauto.
+            eapply (An.cbinding_env_get_list Hbindρ xs); eauto.
+            admit.
+          - fcrush.
+          - intros.
+            admit.
+        }
+
+        rewrite_math (i - (i - i) = i).
+
+        unfold E, E' in HE.
+        destruct (HE i0 (An.CRes v) I) as [j2 [r2 [He0 Rr]]]; try lia; auto.
+        edestruct R_res_inv_l as [v2 [Heqv2 HVv]]; eauto; subst.
+
+        assert (Heqw : w = w2).
+        {
+          admit.
+        }
+        subst.
+
+        exists (S j2), (CRes v2); split; eauto.
+        econstructor; eauto.
+        eapply @Cbstep_app; eauto.
+        * intros; split.
+          -- eapply V_exposed_Forall_cbinding; eauto.
+             eapply (An.cescaped_env_get_list Hescρ xs); eauto.
+             eapply (An.cbinding_env_get_list Hbindρ xs); eauto.
+
+             unfold aexposed_avals.
+             intros.
+             admit.
+          -- destruct (exposed_reflect w2); try contradiction.
+             eapply cbstep_fuel_exposed_inv; eauto.
+        * destruct ex; auto.
+          admit.
+  Admitted.
 
   Lemma fundamental_property {A c W Γ e}:
     web_map_well_scoped W Γ e ->
