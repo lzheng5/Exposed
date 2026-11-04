@@ -1095,6 +1095,7 @@ Inductive cbstep (A : analysis_result) (c : color) (bdr : bool) (ρ : cenv) : ex
 
     (* the arguments flow to the parameters *)
     get_list xs ρ = Some vs ->
+    Forall2 (cbinding c A) xs' vs ->
     set_lists xs' vs (M.set f' (CTag A c l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
 
     (* the body returns into `ai_ret A l'` *)
@@ -1153,7 +1154,7 @@ Proof.
     edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto; subst;
       hauto lq: on use: Extensionality_Ensembles unfold: Same_set, Included, interactions.
     fcrush.
-  - inv H3; invc.
+  - match goal with [Hc : cbstep _ _ _ _ (Eapp _ _ _) _ _ _ _ |- _] => inv Hc end; invc.
     fcrush.
     edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto; subst;
       hauto lq: on use: Extensionality_Ensembles unfold: Same_set, Included, interactions.
@@ -2445,6 +2446,17 @@ Section Compat.
           destruct Hloc_f as [Hint _].
           apply (Hint eq_refl).
         }
+
+        (* the arguments are bound at the parameters *)
+        assert (Hbind_params : Forall2 (cbinding c (θ c)) l1 vs2).
+        { assert (Hcbinding_xs : Forall2 (cbinding c (θ c)) xs vs2)
+            by (eapply cbinding_env_get_list; [eapply G_cbinding_env; eauto | exact Heqvs2]).
+          destruct Hint as [Hin | [Hesc Htop]].
+          - edestruct (H7 _ _ _ _ Hin) as [_ [_ [Hsub _]]]; eauto.
+            eapply cbinding_subset_list; eauto.
+          - destruct (H8 Htop) as [_ [_ Hesc_fun]].
+            destruct (Hesc_fun _ _ _ _ Hesc) as [_ [_ [_ [Hsub _]]]].
+            eapply cbinding_subset_list; eauto. }
 
         (* what the callee may return can be returned from this call site *)
         assert (Hret : ai_ret (θ c) l0 \subset Rs).

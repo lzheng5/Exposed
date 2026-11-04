@@ -92,6 +92,30 @@ Definition web_map_context := An.color -> web_map.
 Definition valid_web_map_context (ω : web_map_context) (θ : An.analysis_context) : Prop :=
   forall (c : An.color) , web_map_assign (ω c) /\ web_map_exposed (ω c) (θ c).
 
+(* The two ends of a predicted interaction share a web:
+   `aexposed` is closed under interactions in both directions, and there are only two webs. *)
+Lemma web_map_interact_eq {W A l1 l2 w1 w2} :
+  web_map_assign W ->
+  web_map_exposed W A ->
+  ((l1, l2) \in An.ai_int A) ->
+  W ! l1 = Some w1 ->
+  W ! l2 = Some w2 ->
+  w1 = w2.
+Proof.
+  intros Hassign Hexp Hint Hw1 Hw2.
+  destruct (Hassign _ _ Hw1) as [-> | ->];
+    destruct (Hassign _ _ Hw2) as [-> | ->]; auto; exfalso;
+    apply w_int_internal; apply w_ext_exposed.
+  - (* l2 is exposed, hence so is l1 *)
+    apply (Hexp _ _ Hw1).
+    eapply AExp_int_r; [exact Hint |].
+    apply (Hexp _ _ Hw2); reflexivity.
+  - (* l1 is exposed, hence so is l2 *)
+    apply (Hexp _ _ Hw2).
+    eapply AExp_int_l; [exact Hint |].
+    apply (Hexp _ _ Hw1); reflexivity.
+Qed.
+
 (* Tagged Value *)
 Inductive ctag A : Type :=
 | CTAG : label -> web_map -> A -> ctag A.
@@ -1494,7 +1518,8 @@ Section Compat.
           eapply n; eauto.
           eapply w_ext_exposed; eauto.
 
-      + edestruct (G_get _ _ H f) as [fv2 [Heqfv2 HV]]; eauto.
+      + rename H11 into Hbind_params.
+        edestruct (G_get _ _ H f) as [fv2 [Heqfv2 HV]]; eauto.
         destruct i.
         inv H0.
         rename c0 into v.
@@ -1507,20 +1532,33 @@ Section Compat.
         rename v0 into f0.
         destruct (set_lists_length3 (M.set f0 (CTag l0 (ω c) (CVfun f0 t l1 e0)) t) l1 vs2) as [ρ4 Heqρ4].
         unfold clval in *.
-        rewrite (set_lists_length_eq _ _ _ _ H15); auto.
+        match goal with
+        | [Hs : set_lists _ _ _ = Some ρ'' |- _] => rewrite (set_lists_length_eq _ _ _ _ Hs); auto
+        end.
         eapply Forall2_length; eauto.
+
+        assert (Hexvs2 : Ensembles.In web Exposed w2 -> Forall to_exposed vs2).
+        {
+          (* the callee is exposed, hence so are its parameters *)
+          intros Hw2x.
+          destruct (Hω c) as [_ Hexp].
+          eapply (V_exposed_Forall_cbinding θ ω Hω (xs := l1));
+            [ eapply V_mono_Forall; eauto; lia
+            | eapply (An.cescaped_env_get_list Hescρ xs); eauto
+            | exact Hbind_params
+              | ].
+          intros x Hin av Hav.
+          eapply AExp_param; [exact Hsite | | exact Hin | exact Hav].
+          unfold web_map_exposed in Hexp.
+          apply (Hexp _ _ Hw2), w_ext_exposed; exact Hw2x.
+        }
 
         assert (HE : E θ ω (θ c) c false (An.ai_ret (θ c) l0) (ω c) (exposedb w2) (i - (i - i)) ρ'' ρ4 e0).
         {
           eapply (HV _ i c vs vs2); eauto.
           - eapply V_mono_Forall; eauto; lia.
           - eapply (An.cescaped_env_get_list Hescρ xs); eauto.
-          - eapply An.cbinding_subset_list; eauto.
-            eapply (An.cbinding_env_get_list Hbindρ xs); eauto.
-            admit.
           - fcrush.
-          - intros.
-            admit.
         }
 
         rewrite_math (i - (i - i) = i).
@@ -1531,26 +1569,28 @@ Section Compat.
 
         assert (Heqw : w = w2).
         {
-          admit.
+          destruct (H4 c l0 c l) as [Hcc _];
+            [apply Union_introl; constructor |].
+          destruct (Hω c) as [Hassign Hexp].
+          symmetry.
+          exact (web_map_interact_eq Hassign Hexp (Hcc eq_refl eq_refl) Hw2 Hw).
         }
         subst.
 
         exists (S j2), (CRes v2); split; eauto.
         econstructor; eauto.
         eapply @Cbstep_app; eauto.
-        * intros; split.
-          -- eapply V_exposed_Forall_cbinding; eauto.
-             eapply (An.cescaped_env_get_list Hescρ xs); eauto.
-             eapply (An.cbinding_env_get_list Hbindρ xs); eauto.
-
-             unfold aexposed_avals.
-             intros.
-             admit.
-          -- destruct (exposed_reflect w2); try contradiction.
-             eapply cbstep_fuel_exposed_inv; eauto.
+        * intros; split; eauto.
+          destruct (exposed_reflect w2); try contradiction.
+          eapply cbstep_fuel_exposed_inv; eauto.
         * destruct ex; auto.
-          admit.
-  Admitted.
+          destruct (exposed_reflect w2).
+          -- eapply cbstep_fuel_exposed_inv; eauto.
+          -- (* the result flows into `Rs`, whose labels are all exposed *)
+             constructor.
+             destruct H5 as [Hesc_v Hfl_v].
+             exact (V_exposed θ ω Hω HVv Hesc_v Hfl_v Hex).
+  Qed.
 
   Lemma fundamental_property {A c W Γ e}:
     web_map_well_scoped W Γ e ->
