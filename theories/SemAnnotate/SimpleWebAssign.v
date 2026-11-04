@@ -464,7 +464,7 @@ Proof.
   eapply cbstep_lt_Res_not_OOT with (c0 := c); eauto; lia.
 Qed.
 
-Lemma cbstep_fuel_exposed_inv W ρ e k r :
+Lemma cbstep_fuel_to_exposed_cres W ρ e k r :
   cbstep_fuel W true ρ e k r ->
   to_exposed_cres r.
 Proof.
@@ -1273,6 +1273,16 @@ Proof.
       * apply IHHs2; intros l' Hl'; apply Hl; eauto.
 Qed.
 
+Lemma web_map_well_scoped_intro W Γ e :
+  has_label e \subset Dom_map W ->
+  occurs_free e \subset Γ ->
+  web_map_well_scoped W Γ e.
+Proof.
+  intros Hlabel Hfree.
+  apply web_map_well_scoped_inv.
+  split; [exact Hlabel | apply well_scoped_intro; exact Hfree].
+Qed.
+
 Section Compat.
 
   (* Compatibility Lemmas *)
@@ -1510,10 +1520,10 @@ Section Compat.
         * eapply V_exposed_Forall_escaped; eauto.
           eapply An.cescaped_env_get_list; eauto.
         * destruct (exposed_reflect w_ext); try contradiction.
-          eapply cbstep_fuel_exposed_inv; eauto.
+          eapply cbstep_fuel_to_exposed_cres; eauto.
         * destruct ex; auto.
           destruct (exposed_reflect w_ext).
-          eapply cbstep_fuel_exposed_inv; eauto.
+          eapply cbstep_fuel_to_exposed_cres; eauto.
           exfalso.
           eapply n; eauto.
           eapply w_ext_exposed; eauto.
@@ -1582,10 +1592,10 @@ Section Compat.
         eapply @Cbstep_app; eauto.
         * intros; split; eauto.
           destruct (exposed_reflect w2); try contradiction.
-          eapply cbstep_fuel_exposed_inv; eauto.
+          eapply cbstep_fuel_to_exposed_cres; eauto.
         * destruct ex; auto.
           destruct (exposed_reflect w2).
-          -- eapply cbstep_fuel_exposed_inv; eauto.
+          -- eapply cbstep_fuel_to_exposed_cres; eauto.
           -- (* the result flows into `Rs`, whose labels are all exposed *)
              constructor.
              destruct H5 as [Hesc_v Hfl_v].
@@ -1612,3 +1622,385 @@ Section Compat.
       admit.
     - admit.
   Admitted.
+
+End Compat.
+
+(* Top Level *)
+
+(* Top-level Compilation Unit & Linking *)
+(* This is what an analysis should annotate the compilation unit with *)
+Inductive cexp : Type :=
+| CEunit : web_map -> exp -> cexp
+| CElink : var -> cexp -> cexp -> cexp.
+
+Hint Constructors cexp : core.
+
+(* Linking *)
+Definition clink x e1 e2 : cexp := CElink x e1 e2.
+
+(* TODO: renaming *)
+(* `A` is the analysis result of one of the units of `ce`. *)
+Inductive has_cunit : cexp -> web_map -> Prop :=
+| Has_cunit_unit :
+  forall W e,
+    has_cunit (CEunit W e) W
+
+| Has_cunit_link1 :
+  forall x ce1 ce2 W,
+    has_cunit ce1 W ->
+    has_cunit (CElink x ce1 ce2) W
+
+| Has_cunit_link2 :
+  forall x ce1 ce2 W,
+    has_cunit ce2 W ->
+    has_cunit (CElink x ce1 ce2) W.
+
+Hint Constructors has_cunit : core.
+
+Inductive occurs_free_top : cexp -> vars :=
+| Free_cexp :
+  forall e W x,
+    occurs_free e x ->
+    occurs_free_top (CEunit W e) x
+
+| Free_clink1 :
+  forall v x e1 e2,
+    occurs_free_top e1 x ->
+    occurs_free_top (CElink v e1 e2) x
+
+| Free_clink2 :
+  forall v x e1 e2,
+    v <> x ->
+    occurs_free_top e2 x ->
+    occurs_free_top (CElink v e1 e2) x.
+
+Hint Constructors occurs_free_top : core.
+
+Lemma occurs_free_top_cexp W e :
+  (occurs_free_top (CEunit W e)) <--> (occurs_free e).
+Proof. split; unfold Ensembles.Included, Ensembles.In; fcrush. Qed.
+
+(* Top-level Checking Semantics for the *Colored* Top-level Expression *)
+(* The colors are already in the tree, so the top-level semantics does not
+   mention `Θ` at all: it just runs each unit at the color preprocessing gave
+   it, and unions the interactions the units record.
+   `Θ` reappears only in the theorems, through `analysis_context_of`. *)
+Inductive cbstep_top (ρ : cenv) : cexp -> fuel -> cres -> Prop :=
+| CbstepT_link_Res :
+  forall {x ce1 ce2 i1 i2 W l v r},
+    cbstep_top_fuel ρ ce1 i1 (CRes (CTag l W v)) ->
+    cbstep_top_fuel (M.set x (CTag l W v) ρ) ce2 i2 r ->
+    cbstep_top ρ (CElink x ce1 ce2) (S (i1 + i2)) r
+
+| CbstepT_link_OOT :
+  forall {x ce1 ce2 i},
+    cbstep_top_fuel ρ ce1 i COOT ->
+    cbstep_top ρ (CElink x ce1 ce2) (S i) COOT
+
+with cbstep_top_fuel (ρ : cenv) : cexp -> fuel -> cres -> Prop :=
+| CbstepTF_unit :
+  forall {W e i r},
+    cbstep_fuel W true ρ e i r ->
+    cbstep_top_fuel ρ (CEunit W e) i r
+
+| CbstepTF_link_OOT :
+  forall {x ce1 ce2},
+    cbstep_top_fuel ρ (CElink x ce1 ce2) 0 COOT
+
+| CbstepTF_link_Step :
+  forall {x ce1 ce2 i r},
+    cbstep_top ρ (CElink x ce1 ce2) i r ->
+    cbstep_top_fuel ρ (CElink x ce1 ce2) (S i) r.
+
+Hint Constructors cbstep_top : core.
+Hint Constructors cbstep_top_fuel : core.
+
+Scheme cbstep_top_ind' := Minimality for cbstep_top Sort Prop
+with cbstep_top_fuel_ind' := Minimality for cbstep_top_fuel Sort Prop.
+
+(* The step-index is aligned between the two semantics. *)
+Lemma cbstep_fuel_cbstep_top_fuel W ρ e j r:
+  cbstep_fuel W true ρ e j r ->
+  cbstep_top_fuel ρ (CEunit W e) j r.
+Proof. intros; eauto. Qed.
+
+Lemma cbstep_top_fuel_cbstep_fuel W ρ e j r:
+  cbstep_top_fuel ρ (CEunit W e) j r ->
+  cbstep_fuel W true ρ e j r.
+Proof. intros H. fcrush. Qed.
+
+(* Every compilation unit is run exposed, so the result of any (possibly
+   linked) top-level expression is always exposed. *)
+Lemma cbstep_top_fuel_to_exposed_cres ρ ce j r :
+  cbstep_top_fuel ρ ce j r ->
+  to_exposed_cres r.
+Proof.
+  intros H.
+  induction H using cbstep_top_fuel_ind' with
+    (P := fun ρ ce i r => to_exposed_cres r)
+    (P0 := fun ρ ce i r => to_exposed_cres r);
+    eauto using cbstep_fuel_to_exposed_cres.
+Qed.
+
+(* `ω` agrees with the coloring of `cce`: `we` has the same shape as `cce`,
+   and the unit wearing color `c` is annotated with the web map `ω c`. *)
+Inductive web_map_context_of (ω : web_map_context) : An.ccexp -> cexp -> Prop :=
+| Web_map_context_of_unit :
+  forall c A Rs e,
+    web_map_context_of ω (An.CCunit c A Rs e) (CEunit (ω c) e)
+
+| Web_map_context_of_link :
+  forall x cce1 cce2 we1 we2,
+    web_map_context_of ω cce1 we1 ->
+    web_map_context_of ω cce2 we2 ->
+    web_map_context_of ω (An.CClink x cce1 cce2) (CElink x we1 we2).
+
+Hint Constructors web_map_context_of : core.
+
+Lemma web_map_context_of_unit_inv {ω c A Rs e we} :
+  web_map_context_of ω (An.CCunit c A Rs e) we ->
+  we = CEunit (ω c) e.
+Proof. intros H; inv H; reflexivity. Qed.
+
+Lemma web_map_context_of_link_inv {ω x cce1 cce2 we} :
+  web_map_context_of ω (An.CClink x cce1 cce2) we ->
+  exists we1 we2,
+    we = CElink x we1 we2 /\
+    web_map_context_of ω cce1 we1 /\
+    web_map_context_of ω cce2 we2.
+Proof. intros H; inv H; eauto. Qed.
+
+Section LRTop.
+
+  (* Cross-language Logical Relations *)
+
+  Variable θ : analysis_context.
+  Hypothesis θ_escape_ok : analysis_context_escape_ok θ.
+
+  Variable ω : web_map_context.
+  Hypothesis ω_valid : valid_web_map_context ω θ.
+
+  Definition E_top' (P : nat -> An.clval -> clval -> Prop) (i : nat) (ρ1 : An.cenv) (e1 : An.ccexp) (ρ2 : cenv) (e2 : cexp) : Prop :=
+    forall j1 r1 I1,
+      j1 <= i ->
+      An.cbstep_top_fuel ρ1 e1 j1 r1 I1 ->
+      exists j2 r2,
+        cbstep_top_fuel ρ2 e2 j2 r2 /\
+        R' P (i - j1) r1 r2.
+
+  (* Related values that cross the program boundary are exposed. *)
+  Definition V_top i v1 v2 := V θ ω i v1 v2 /\ to_exposed v2.
+
+  Definition R_top := R' V_top.
+  Definition E_top := E_top' V_top.
+
+  Lemma V_V_top i v1 v2 :
+    to_exposed v2 ->
+    (V θ ω i v1 v2 <-> V_top i v1 v2).
+  Proof. unfold V_top; tauto. Qed.
+
+  Lemma R_R_top :
+    forall i r1 r2,
+      to_exposed_cres r2 ->
+      (R θ ω i r1 r2 <-> R_top i r1 r2).
+  Proof.
+    unfold R, R_top, R', cboundary_res.
+    intros.
+    split; destruct r1; destruct r2; try contradiction;
+      intros; eauto; inv H;
+      eapply V_V_top; eauto.
+  Qed.
+
+  Lemma E_E_top A c Rs W i ρ1 ρ2 e :
+    E θ ω A c true Rs W true i ρ1 ρ2 e ->
+    E_top i ρ1 (An.CCunit c A Rs e) ρ2 (CEunit W e).
+  Proof.
+    unfold E, E_top, E', E_top'.
+    intros.
+    inv H1.
+    edestruct H as [j2 [r2 [Hcbstep HR]]]; eauto.
+    exists j2, r2; split; eauto.
+    eapply R_R_top; eauto.
+    eapply cbstep_fuel_to_exposed_cres; eauto.
+  Qed.
+
+  Lemma E_top_E A c Rs W i ρ1 ρ2 e :
+    E_top i ρ1 (An.CCunit c A Rs e) ρ2 (CEunit W e) ->
+    E θ ω A c true Rs W true i ρ1 ρ2 e.
+  Proof.
+    unfold E, E_top, E', E_top'.
+    intros.
+    edestruct H as [j2 [r2 [Hcbstep HR]]]; eauto.
+    exists j2, r2; split; eauto.
+    eapply cbstep_top_fuel_cbstep_fuel; eauto.
+    eapply R_R_top; eauto.
+    eapply cbstep_top_fuel_to_exposed_cres; eauto.
+  Qed.
+
+  Definition G_top c1 c2 i Γ1 ρ1 ρ2 :=
+    An.wf_cenv θ ρ1 /\
+      wf_cenv ρ2 /\
+      An.cescaped_env_top c1 c2 ρ1 /\
+      An.cbinding_env_top θ c1 c2 ρ1 /\
+      forall x,
+        (x \in Γ1) ->
+        exists v1 v2,
+          M.get x ρ1 = Some v1 /\
+            M.get x ρ2 = Some v2 /\
+            V_top i v1 v2.
+
+  Lemma G_top_G {c1 c2 i Γ1 ρ1 ρ2} :
+    G_top c1 c2 i Γ1 ρ1 ρ2 ->
+    forall c,
+      c1 <= c < c2 ->
+      G θ ω c i Γ1 ρ1 ρ2.
+  Proof.
+    unfold G_top, G.
+    intros.
+    destruct H as [Hwf1 [Hwf2 [Hesc [Hbind HG]]]].
+    repeat (split; eauto); intros.
+    edestruct HG as [v1 [v2 [Heqv1 [Heqv2 HV]]]]; eauto.
+    eexists; eexists; repeat (split; eauto).
+    unfold V_top in *.
+    fcrush.
+  Qed.
+
+  Lemma G_top_wf_env_l c1 c2 i Γ1 ρ1 ρ2 :
+    G_top c1 c2 i Γ1 ρ1 ρ2 ->
+    An.wf_cenv θ ρ1.
+  Proof. unfold G_top. intros; tauto. Qed.
+
+  Lemma G_top_wf_cenv_r c1 c2 i Γ1 ρ1 ρ2 :
+    G_top c1 c2 i Γ1 ρ1 ρ2 ->
+    wf_cenv ρ2.
+  Proof. unfold G_top. intros; tauto. Qed.
+
+  Lemma G_top_subset c1 c2 i Γ1 ρ1 Γ2 ρ2 :
+    G_top c1 c2 i Γ1 ρ1 ρ2 ->
+    Γ2 \subset Γ1 ->
+    G_top c1 c2 i Γ2 ρ1 ρ2.
+  Proof. unfold G_top. fcrush. Qed.
+
+  (* Top-level Monotonicity Lemmas *)
+  Lemma V_top_mono i :
+    forall {j v1 v2},
+      V_top i v1 v2 ->
+      j <= i ->
+      V_top j v1 v2.
+  Proof.
+    intros.
+    eapply V_V_top; eauto.
+    fcrush.
+    eapply V_mono; eauto.
+    eapply V_V_top; eauto.
+    fcrush.
+  Qed.
+
+  Lemma V_top_mono_Forall {vs1 vs2} i j :
+    Forall2 (V_top i) vs1 vs2 ->
+    j <= i ->
+    Forall2 (V_top j) vs1 vs2.
+  Proof.
+    intros H.
+    revert j.
+    induction H; simpl; intros; auto.
+    constructor; eauto.
+    eapply V_top_mono; eauto.
+  Qed.
+
+  Lemma R_top_mono {r1 r2} i j :
+    R_top i r1 r2 ->
+    j <= i ->
+    R_top j r1 r2.
+  Proof.
+    unfold R.
+    intros.
+    destruct r1; auto.
+    destruct r2; auto.
+    eapply V_top_mono; eauto.
+  Qed.
+
+  Lemma E_top_mono {ρ1 ρ2 e1 e2} i j:
+    E_top i ρ1 e1 ρ2 e2 ->
+    j <= i ->
+    E_top j ρ1 e1 ρ2 e2.
+  Proof.
+    unfold E_top, E_top'.
+    intros.
+    destruct (H j1 r1 I1) as [j2 [r2 [Hr2 HR]]]; auto; try lia.
+    exists j2, r2; split; eauto.
+    apply R_top_mono with (i - j1); try lia; auto.
+  Qed.
+
+  Lemma G_top_mono {Γ1 c1 c2 ρ1 ρ2} i j:
+    G_top c1 c2 i Γ1 ρ1 ρ2 ->
+    j <= i ->
+    G_top c1 c2 j Γ1 ρ1 ρ2.
+  Proof.
+    unfold G_top.
+    intros.
+    destruct H as [Hwf1 [Hwf2 [Hesc [Hbind HG]]]].
+    repeat (split; eauto); intros.
+    edestruct HG as [v1 [v2 [Heqv1 [Heqv2 HV]]]]; eauto.
+    eexists; eexists; repeat (split; eauto).
+    apply V_top_mono with i; eauto.
+    fcrush.
+  Qed.
+
+End LRTop.
+
+Section Top.
+  (* Top Level Relation and Theorem *)
+
+  Definition trans_correct_top ce we :=
+    (occurs_free_top we) \subset (An.occurs_free_top ce) /\
+      forall θ ω cce c1 c2,
+        coloring c1 ce c2 cce ->
+        analysis_context_of θ cce ->
+        analysis_context_escape_ok θ ->
+        web_map_context_of ω cce we ->
+        valid_web_map_context ω θ ->
+        forall i ρ1 ρ2,
+          G_top θ ω c1 c2 i (An.occurs_free_top ce) ρ1 ρ2 ->
+          E_top θ ω i ρ1 cce ρ2 we.
+
+  Theorem top A e Rs W:
+    web_map_exposed W A ->
+    has_label e \subset Dom_map W ->
+    Rs \subset An.ai_esc A ->
+    trans_correct_top (An.CEunit A Rs e) (CEunit W e).
+  Proof.
+    unfold trans_correct_top.
+    intros Hexp Hsub Hesc; intros.
+    split; intros.
+
+    eapply Included_trans.
+    eapply occurs_free_top_cexp; eauto.
+    eapply An.occurs_free_top_cexp; eauto.
+
+    inv H.
+    assert (Hwa : well_annotated A c1 W (occurs_free e) e).
+    {
+      eapply fundamental_property; eauto.
+      unfold analysis_context_escape_ok.
+      eapply web_map_well_scoped_intro; [exact Hsub | apply Included_refl].
+    }
+
+    eapply E_E_top; eauto.
+    unfold well_annotated in Hwa.
+    eapply Hwa; eauto.
+
+    - unfold analysis_context_of in *.
+      symmetry.
+      eapply H0; eauto.
+    - pose proof (web_map_context_of_unit_inv H2) as Hinv.
+      fcrush.
+    - unfold aexposed_avals.
+      intros.
+      eapply AExp_esc; eauto.
+    - eapply G_top_G; eauto.
+      eapply G_top_subset; eauto.
+      eapply An.occurs_free_top_cexp; eauto.
+  Qed.
+
+End Top.
