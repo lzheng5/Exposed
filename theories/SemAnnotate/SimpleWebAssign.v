@@ -1754,6 +1754,60 @@ Proof.
     eauto using cbstep_fuel_to_exposed_cres.
 Qed.
 
+(* A value returned by a (possibly linked) top-level expression is well-formed. *)
+Lemma cbstep_top_wf_cres :
+  forall ρ ce i r,
+    cbstep_top ρ ce i r ->
+    wf_cenv ρ ->
+    wf_cres r.
+Proof.
+  intros ρ ce i r Hstep.
+  induction Hstep as
+    [ ρ x ce1 ce2 i1 i2 W l v r Hfuel1 IH1 Hfuel2 IH2
+    | ρ x ce1 ce2 i Hfuel1 IH1
+    | ρ W e i r Hfuel
+    | ρ x ce1 ce2
+    | ρ x ce1 ce2 i r Htop IHtop ]
+    using cbstep_top_ind'
+    with (P := fun ρ ce i r => wf_cenv ρ -> wf_cres r)
+         (P0 := fun ρ ce i r => wf_cenv ρ -> wf_cres r).
+
+  - (* CbstepT_link_Res: the linked value is well-formed, so the second unit
+       still runs in a well-formed environment *)
+    intros Hρ.
+    assert (Hv : wf_cval (CTag l W v)) by (specialize (IH1 Hρ); inv IH1; assumption).
+    exact (IH2 (wf_cenv_set ρ x (CTag l W v) Hρ Hv)).
+
+  - (* CbstepT_link_OOT: no value is returned *)
+    intros _; apply WF_COOT.
+
+  - (* CbstepTF_unit *)
+    intros Hρ.
+    eapply cbstep_fuel_wf_res; eauto.
+
+  - (* CbstepTF_link_OOT: no value is returned *)
+    intros _; apply WF_COOT.
+
+  - (* CbstepTF_link_Step *)
+    intros Hρ.
+    exact (IHtop Hρ).
+Qed.
+
+Lemma cbstep_top_fuel_wf_cres ρ ce i r :
+  wf_cenv ρ ->
+  cbstep_top_fuel ρ ce i r ->
+  wf_cres r.
+Proof.
+  intros Hρ Hstep.
+  inv Hstep.
+  - eapply cbstep_fuel_wf_res; eauto.
+  - apply WF_COOT.
+  - match goal with
+    | [Hs : cbstep_top _ _ _ _ |- _] =>
+        exact (cbstep_top_wf_cres _ _ _ _ Hs Hρ)
+    end.
+Qed.
+
 (* `ω` agrees with the coloring of `cce`: `we` has the same shape as `cce`,
    and the unit wearing color `c` is annotated with the web map `ω c`. *)
 Inductive web_map_context_of (ω : web_map_context) : An.ccexp -> cexp -> Prop :=

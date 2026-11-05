@@ -7,10 +7,11 @@ Require Import Lia.
 From Hammer Require Import Hammer Tactics Reflect.
 
 From Common Require Import Util.
-From SemAnnotate Require Import LabeledANF Checking.
+From SemAnnotate Require Import LabeledANF SimpleWebAssign.
 From LambdaWeb Require Import ANF.
 
 Module AS := LabeledANF.
+Module Aw := SimpleWebAssign.
 Module AT := LambdaWeb.ANF.
 
 (* Checking Semantics -> Web Semantics *)
@@ -654,9 +655,7 @@ Admitted.
 
 (* Top Level *)
 
-Module AC := Checking.
-
-Definition E_top' (P : nat -> clval -> AT.wval -> Prop) (i : nat) (ρ1 : cenv) (e1 : AC.cexp) (ρ2 : AT.env) (e2 : AT.exp) : Prop :=
+Definition E_top' (P : nat -> clval -> AT.wval -> Prop) (i : nat) (ρ1 : cenv) (e1 : cexp) (ρ2 : AT.env) (e2 : AT.exp) : Prop :=
   forall j1 r1,
     j1 <= i ->
     cbstep_top_fuel ρ1 e1 j1 r1 ->
@@ -691,7 +690,7 @@ Fixpoint V_top (i : nat) (cv : clval) (wv : AT.wval) {struct i} : Prop :=
                       Forall2 (V_top (i0 - (i0 - j))) vs1 vs2 ->
                       set_lists xs1 vs1 (M.set f1 (CTag l1 W (CVfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
                       set_lists xs2 vs2 (M.set f2 (AT.Tag w (AT.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
-                      E_top' V_top (i0 - (i0 - j)) ρ3 (CEexp W e1) ρ4 e2
+                      E_top' V_top (i0 - (i0 - j)) ρ3 (CEunit W e1) ρ4 e2
                 end
 
           | _, _ => False
@@ -745,7 +744,7 @@ Proof.
         inv H0; invc.
         destruct (exposed_reflect w0); try contradiction.
         edestruct HEV as [j2 [r2 [Hstep HR]]]; eauto.
-        eapply AC.cbstep_top_fuel_cbstep_fuel; eauto.
+        eapply cbstep_top_fuel_cbstep_fuel; eauto.
 
         eexists; eexists; split; eauto.
         unfold R' in *.
@@ -765,7 +764,7 @@ Proof.
         repeat (split; eauto); intros.
 
         inv H0; invc.
-        assert (HEV : E_top' V_top (i - (i - j)) ρ3 (CEexp W e0) ρ4 e).
+        assert (HEV : E_top' V_top (i - (i - j)) ρ3 (CEunit W e0) ρ4 e).
         {
           eapply (HV _ vs1 vs2); eauto.
           eapply V_V_top_Forall; eauto; try lia.
@@ -773,7 +772,6 @@ Proof.
         unfold E_top', E' in *; intros.
         destruct (exposed_reflect w0); try contradiction.
         edestruct HEV as [j2 [r2 [Hstep HR]]]; eauto.
-        eapply AC.cbstep_fuel_cbstep_top_fuel; eauto.
 
         eexists; eexists; split; eauto.
         unfold R' in *.
@@ -802,12 +800,12 @@ Definition E_top := (E_top' V_top).
 
 Lemma E_E_top W i ρ1 ρ2 e1 e2 :
   E W true i ρ1 e1 ρ2 e2 ->
-  E_top i ρ1 (CEexp W e1) ρ2 e2.
+  E_top i ρ1 (CEunit W e1) ρ2 e2.
 Proof.
   unfold E, E_top, E', E_top'.
   intros.
   edestruct H as [j2 [r2 [Hcbstep HR]]]; eauto.
-  eapply AC.cbstep_top_fuel_cbstep_fuel; eauto.
+  eapply Aw.cbstep_top_fuel_cbstep_fuel; eauto.
   eexists; eexists; split; eauto.
   eapply R_R_top; eauto.
   eapply AT.bstep_fuel_exposed_inv; eauto.
@@ -1178,37 +1176,37 @@ Proof.
 Qed.
 
 Definition trans_correct_top etop etop' :=
-  AT.occurs_free etop' \subset AC.occurs_free_top etop /\
+  AT.occurs_free etop' \subset Aw.occurs_free_top etop /\
   forall i ρ1 ρ2,
-    G_top i (AC.occurs_free_top etop) ρ1 ρ2 ->
+    G_top i (Aw.occurs_free_top etop) ρ1 ρ2 ->
     E_top i ρ1 etop ρ2 etop'.
 
 Lemma trans_correct_top_subset e1 e2 :
   trans_correct_top e1 e2 ->
-  AT.occurs_free e2 \subset AC.occurs_free_top e1.
+  AT.occurs_free e2 \subset Aw.occurs_free_top e1.
 Proof. unfold trans_correct_top. fcrush. Qed.
 
 Lemma trans_correct_trans_correct_top W e1 e2 :
   AT.occurs_free e2 \subset AS.occurs_free e1 ->
   trans_correct W (AS.occurs_free e1) e1 e2 ->
-  trans_correct_top (AC.CEexp W e1) e2.
+  trans_correct_top (Aw.CEunit W e1) e2.
 Proof.
   unfold trans_correct, trans_correct_top.
   intros.
   split.
   - eapply Included_trans; eauto.
-    eapply AC.occurs_free_top_cexp; eauto.
+    eapply Aw.occurs_free_top_cexp; eauto.
   - intros.
     eapply E_E_top; eauto.
     eapply H0; eauto.
     eapply G_top_G; eauto.
     eapply G_top_subset; eauto.
-    eapply AC.occurs_free_top_cexp; eauto.
+    eapply Aw.occurs_free_top_cexp; eauto.
 Qed.
 
 Theorem top W etop etop':
   trans W (AS.occurs_free etop) etop etop' ->
-  trans_correct_top (AC.CEexp W etop) etop'.
+  trans_correct_top (Aw.CEunit W etop) etop'.
 Proof.
   intros H; intros.
   eauto using fundamental_property, trans_correct_trans_correct_top, trans_exp_inv.
@@ -1219,13 +1217,13 @@ Qed.
 Lemma preserves_linking f w x e1 e2 e1' e2' :
   (w \in Exposed) ->
   f <> x ->
-  ~ (f \in AC.occurs_free_top e1) ->
-  ~ (f \in AC.occurs_free_top e2) ->
+  ~ (f \in Aw.occurs_free_top e1) ->
+  ~ (f \in Aw.occurs_free_top e2) ->
   trans_correct_top e1 e1' ->
   trans_correct_top e2 e2' ->
-  trans_correct_top (AC.clink x e1 e2) (AT.link f w x e1' e2').
+  trans_correct_top (Aw.clink x e1 e2) (AT.link f w x e1' e2').
 Proof.
-  unfold AC.clink, AT.link.
+  unfold Aw.clink, AT.link.
   intros Hw Hfx Hf1 Hf2 Htr1 Htr2.
   unfold trans_correct_top in *.
   destruct Htr1 as [HFV1 HE1].
@@ -1238,13 +1236,12 @@ Proof.
   inv H1.
   fcrush.
 
-  inv H2.
-  fcrush.
+  inv H7.
   2 : { fcrush. }
 
   rename H into HG.
-  rename H8 into Hstep_e1.
-  rename H9 into Hstep_e2.
+  rename H6 into Hstep_e1.
+  rename H8 into Hstep_e2.
   pose proof HG as HG'.
   destruct HG' as [Hwfρ1 [Hwfρ2 HGfn]].
 
@@ -1253,7 +1250,7 @@ Proof.
   { subst clos. constructor; auto. }
   assert (Hwfρ2' : wf_env (M.set f clos ρ2)) by (apply wf_env_set; auto).
 
-  assert (HG1 : G_top i (AC.occurs_free_top e1) ρ1
+  assert (HG1 : G_top i (Aw.occurs_free_top e1) ρ1
                         (M.set f clos ρ2)).
   { unfold G_top; repeat (split; auto).
     - intros y Hy.
@@ -1262,17 +1259,17 @@ Proof.
       exists v1y, v2y; repeat (split; auto).
       rewrite M.gso; auto. intro Heq; subst y; contradiction. }
 
-  edestruct (HE1 i ρ1 (M.set f clos ρ2) HG1 c0 (CRes v))
+  edestruct (HE1 i ρ1 (M.set f clos ρ2) HG1 i1 (CRes (CTag l W v)))
     as [j_e1 [r1' [Hb_e1 HR_e1]]]; [lia|auto|].
   destruct r1' as [|v']; simpl in HR_e1; [contradiction|].
 
-  assert (Hwfv : wf_cval v).
-  { assert (Hwfres : wf_cres (CRes v))
-      by (eapply cbstep_top_fuel_wf_res; eauto).
+  assert (Hwfv : wf_cval (CTag l W v)).
+  { assert (Hwfres : wf_cres (CRes (CTag l W v)))
+      by (eapply Aw.cbstep_top_fuel_wf_cres; eauto).
     inv Hwfres; auto. }
 
   (* G_top for stepping e2 *)
-  assert (HG2 : G_top (i - S c0) (AC.occurs_free_top e2) (M.set x v ρ1)
+  assert (HG2 : G_top (i - S i1) (Aw.occurs_free_top e2) (M.set x (CTag l W v) ρ1)
                      (M.set x v' (M.set f clos ρ2))).
   { unfold G_top.
     split.
@@ -1284,7 +1281,7 @@ Proof.
 
     intros y Hy.
     destruct (M.elt_eq y x); subst.
-    + exists v, v'.
+    + exists (CTag l W v), v'.
         rewrite !M.gss; repeat (split; auto).
         * eapply V_top_exposed_r; eauto.
         * eapply V_top_mono; eauto; lia.
@@ -1296,18 +1293,17 @@ Proof.
         * rewrite M.gso; auto. rewrite M.gso; auto.
         * eapply V_top_mono; eauto; lia. }
 
-  edestruct (HE2 (i - S c0) (M.set x v ρ1)
-                 (M.set x v' (M.set f clos ρ2)) HG2 c' r1)
+  edestruct (HE2 (i - S i1) (M.set x (CTag l W v) ρ1)
+                 (M.set x v' (M.set f clos ρ2)) HG2 i2 r1)
     as [j_e2 [r2 [Hb_e2 HR_e2]]]; [lia|auto|].
 
   assert (Hexbw : exposedb w = true)
     by (destruct (exposed_reflect w); auto; contradiction).
 
   assert (Hexr2 : exposed_res r2).
-  { unfold R' in HR_e2. inv H3.
-    - destruct r2; try contradiction; constructor.
-    - destruct r2; try contradiction.
-      constructor. eapply V_top_exposed_r; eauto. }
+  { unfold R' in HR_e2.
+     destruct r1; destruct r2; try contradiction; constructor.
+     eapply V_top_exposed_r; eauto.  }
 
   exists (S (S (j_e1 + j_e2))), r2.
   split.
