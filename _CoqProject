@@ -65,7 +65,7 @@ theories/SemAnnotate/ValueSetAnalysis.v
 theories/SemAnnotate/SimpleWebAssign.v
 theories/SemAnnotate/Reify.v
 theories/SemAnnotate/Comp.v
-theories/SemAnnotate/CompAttempt.v
+#theories/SemAnnotate/CompAttempt.v
 
 -Q theories/Comp Comp
 theories/Comp/TrivialComp.v
