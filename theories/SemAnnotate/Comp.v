@@ -26,41 +26,7 @@ Definition trans_correct_top := Cross L.trans_correct_top
                                      (Cross Aw.trans_correct_top
                                         R.trans_correct_top)).
 
-
-(* Linking Preservation *)
-Lemma preserves_linking f w x e1 e2 e1' e2' :
-  (w \in Exposed) ->
-  f <> x ->
-  ~ (f \in AS.occurs_free e1) ->
-  ~ (f \in AS.occurs_free e2) ->
-  trans_correct_top e1 e1' ->
-  trans_correct_top e2 e2' ->
-  trans_correct_top (AS.link f x e1 e2) (AT.link f w x e1' e2').
-Proof.
-  unfold trans_correct_top, Cross.
-  intros Hw Hfx Hf1 Hf2.
-  intros HT1 HT2.
-  destruct HT1 as [e3 [HL1 [e4 [Ha1 [e5 [Hw1 HR1]]]]]].
-  destruct HT2 as [e3' [HL2 [e4' [Ha2 [e5' [Hw2 HR2]]]]]].
-
-  pose proof (L.preserves_linking_top f x _ _ _ _ HL1 HL2) as HL.
-  eexists; split; eauto.
-
-  assert (Hf3 : ~ Ensembles.In var (AL.occurs_free e3) f) by (inv HL1; fcrush).
-  assert (Hf3' : ~ Ensembles.In var (AL.occurs_free e3') f) by (inv HL2; fcrush).
-  pose proof Ha1 as Ha1'.
-  eapply (An.preserves_linking f x e3 e4 e3' e4') in Ha1'; eauto.
-  eexists; split; eauto.
-
-  pose proof Hw1 as Hw1'.
-  eapply (Aw.preserves_linking x e4 e5 e4' e5') in Hw1'; eauto.
-  eexists; split; eauto.
-
-  assert (Hf4 : ~ Ensembles.In var (R.Aw.occurs_free_top e5) f) by (inv Ha1; fcrush).
-  assert (Hf4' : ~ Ensembles.In var (R.Aw.occurs_free_top e5') f) by (inv Ha2; fcrush).
-  eapply R.preserves_linking; eauto.
-Qed.
-
+(*
 Definition V := Cross (fun v1 v2 => forall k, L.V k v1 v2)
                   (Cross (fun v1 v2 => exists θ, forall k, An.V_top θ k v1 v2)
                      (Cross (fun v1 v2 => exists θ ω, forall k, Aw.V_top θ ω k v1 v2)
@@ -119,4 +85,40 @@ Proof.
   exists ρ3; split.
   - sfirstorder.
   - exists ρ4; split; eauto using C.G_top_subset, R.G_top_subset.
+Qed.
+*)
+
+
+(* Linking Preservation *)
+Lemma preserves_linking f w x e1 e2 e1' e2' :
+  (w \in Exposed) ->
+  f <> x ->
+  ~ (f \in AS.occurs_free e1) ->
+  ~ (f \in AS.occurs_free e2) ->
+  trans_correct_top e1 e1' ->
+  trans_correct_top e2 e2' ->
+  trans_correct_top (AS.link f x e1 e2) (AT.link f w x e1' e2').
+Proof.
+  unfold trans_correct_top, Cross.
+  intros Hw Hfx Hf1 Hf2.
+  intros HT1 HT2.
+  destruct HT1 as [e3 [HL1 [e4 [Ha1 [e5 [Hw1 HR1]]]]]].
+  destruct HT2 as [e3' [HL2 [e4' [Ha2 [e5' [Hw2 HR2]]]]]].
+
+  pose proof (L.preserves_linking_top f x _ _ _ _ HL1 HL2) as HL.
+  eexists; split; eauto.
+
+  assert (Hf3 : ~ Ensembles.In var (AL.occurs_free e3) f) by (inv HL1; fcrush).
+  assert (Hf3' : ~ Ensembles.In var (AL.occurs_free e3') f) by (inv HL2; fcrush).
+  pose proof Ha1 as Ha1'.
+  eapply (An.preserves_linking f x e3 e4 e3' e4') in Ha1'; eauto.
+  eexists; split; eauto.
+
+  pose proof Hw1 as Hw1'.
+  eapply (Aw.preserves_linking x e4 e5 e4' e5') in Hw1'; eauto.
+  eexists; split; eauto.
+
+  assert (Hf4 : ~ Ensembles.In var (R.Aw.occurs_free_top e5) f) by (inv Ha1; fcrush).
+  assert (Hf4' : ~ Ensembles.In var (R.Aw.occurs_free_top e5') f) by (inv Ha2; fcrush).
+  eapply R.preserves_linking; eauto.
 Qed.

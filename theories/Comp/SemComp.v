@@ -33,6 +33,7 @@ Section Comp_n.
 
   Definition Top_n n m := Cross (Cross (C0.Top_n n) C.trans_correct_top) (C1.Top_n m).
 
+  (*
   Definition V_n n m := Cross (Cross (C0.V_n n) C.V) (C1.V_n m).
 
   Definition R_n n m := Cross (Cross (C0.R_n n) C.R) (C1.R_n m).
@@ -125,7 +126,7 @@ Section Comp_n.
     intros.
     eapply C.G_subset; eauto.
   Qed.
-
+*)
 End Comp_n.
 
 (*

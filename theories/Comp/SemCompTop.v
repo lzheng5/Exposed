@@ -39,6 +39,7 @@ Section Comp_n.
 
   Definition Top_n n m p := Cross (Cross (C.Top_n n m) Erase.trans_correct_top) (C0.Top_n p).
 
+  (*
   Definition V_n n m p := Cross (Cross (C.V_n n m) (fun v1 v2 => forall k, Erase.V k v1 v2)) (C0.V_n p).
 
   Definition R_n n m p := Cross (Cross (C.R_n n m) (fun v1 v2 => forall k, Erase.R k v1 v2)) (C0.R_n p).
@@ -88,6 +89,7 @@ Section Comp_n.
     eapply Included_trans; eauto.
     eapply Included_trans; eauto.
   Qed.
+   *)
 
 End Comp_n.
 
