@@ -1212,6 +1212,37 @@ Proof.
   eauto using fundamental_property, trans_correct_trans_correct_top, trans_exp_inv.
 Qed.
 
+(* Adequacy *)
+Theorem adequacy e1 e2 :
+  trans_correct_top e1 e2 ->
+  forall ρ1 ρ2,
+    (forall k, G_top k (Aw.occurs_free_top e1) ρ1 ρ2) ->
+    forall j1 r1,
+      cbstep_top_fuel ρ1 e1 j1 r1 ->
+      exists j2 r2,
+        AT.bstep_fuel true ρ2 e2 j2 r2 /\
+          (forall k, R_top k r1 r2).
+Proof.
+  intros [HS HT] ρ1 ρ2 HG j1 r1 Hstep.
+
+  (* the run of the target, from the relation at index `j1` *)
+  assert (HE : E_top j1 ρ1 e1 ρ2 e2) by (eapply HT; eauto).
+  destruct (HE j1 r1 ltac:(lia) Hstep) as [j2 [r2 [Hstep2 HR]]].
+  exists j2, r2; split; [exact Hstep2 |].
+
+  (* the results are related at every index `k`, from the relation at
+     index `j1 + k` and the determinism of the target *)
+  intros k.
+  assert (HE' : E_top (j1 + k) ρ1 e1 ρ2 e2) by (eapply HT; eauto).
+  destruct (HE' j1 r1 ltac:(lia) Hstep) as [j2' [r2' [Hstep2' HR']]].
+  unfold R_top.
+  destruct r1 as [| v1], r2 as [| v2], r2' as [| v2'];
+    cbn in HR, HR' |- *; try contradiction; auto.
+  replace (j1 + k - j1) with k in HR' by lia.
+  destruct (AT.bstep_fuel_deterministic v2 v2' Hstep2 Hstep2' eq_refl eq_refl) as [-> _].
+  exact HR'.
+Qed.
+
 (* Linking Preservation *)
 
 Lemma preserves_linking f w x e1 e2 e1' e2' :

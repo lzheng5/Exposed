@@ -1808,6 +1808,70 @@ Proof.
     end.
 Qed.
 
+(* The top-level semantics returns at most one value. *)
+Lemma cbstep_top_fuel_deterministic_aux :
+  forall ρ ce i r,
+    cbstep_top_fuel ρ ce i r ->
+    forall i' r' v v',
+      cbstep_top_fuel ρ ce i' r' ->
+      r = CRes v ->
+      r' = CRes v' ->
+      (v = v' /\ i = i').
+Proof.
+  intros ρ ce i r Hstep.
+  induction Hstep as
+    [ ρ x ce1 ce2 i1 i2 W l v r Hs1 IH1 Hs2 IH2
+    | ρ x ce1 ce2 i Hs1 IH1
+    | ρ W e i r Hs
+    | ρ x ce1 ce2
+    | ρ x ce1 ce2 i r Htop IHtop ]
+    using cbstep_top_fuel_ind'
+    with (P := fun ρ ce i r =>
+                 forall i' r' v v',
+                   cbstep_top ρ ce i' r' ->
+                   r = CRes v -> r' = CRes v' ->
+                   (v = v' /\ i = i'))
+         (P0 := fun ρ ce i r =>
+                  forall i' r' v v',
+                    cbstep_top_fuel ρ ce i' r' ->
+                    r = CRes v -> r' = CRes v' ->
+                    (v = v' /\ i = i'));
+    intros i' r' v1 v1' Hs' Hr Hr'; subst.
+
+  - (* CbstepT_link_Res: both runs bind the same value, then run the second
+       component in the same environment *)
+    inversion Hs' as [ x' a b j1 j2 W' l' v' r'' Hs1' Hs2'
+                     | x' a b j Hf ]; subst.
+    destruct (IH1 _ _ _ _ Hs1' eq_refl eq_refl) as [Heq1 Hi1].
+    unfold CTag in Heq1; inversion Heq1; subst.
+    destruct (IH2 _ _ _ _ Hs2' eq_refl eq_refl) as [Hv Hi2].
+    split; [exact Hv | subst; reflexivity].
+
+  - (* CbstepT_link_OOT: no value is returned *)
+    discriminate.
+
+  - (* CbstepTF_unit *)
+    inversion Hs' as [ W' e' j' r'' Hx | x' a b | x' a b j' r'' Hnew ]; subst.
+    exact (cbstep_fuel_deterministic v1 v1' Hs Hx).
+
+  - (* CbstepTF_link_OOT: no value is returned *)
+    discriminate.
+
+  - (* CbstepTF_link_Step *)
+    inversion Hs' as [ W' e' j' r'' Hx | x' a b | x' a b j' r'' Hnew ]; subst.
+    destruct (IHtop _ _ _ _ Hnew eq_refl eq_refl) as [Hv Hi].
+    split; [exact Hv | f_equal; exact Hi].
+Qed.
+
+Theorem cbstep_top_fuel_deterministic v v' {ρ ce i i'} :
+  cbstep_top_fuel ρ ce i (CRes v) ->
+  cbstep_top_fuel ρ ce i' (CRes v') ->
+  (v = v' /\ i = i').
+Proof.
+  intros H H'.
+  exact (cbstep_top_fuel_deterministic_aux ρ ce i (CRes v) H i' (CRes v') v v' H' eq_refl eq_refl).
+Qed.
+
 (* `ω` agrees with the coloring of `cce`: `we` has the same shape as `cce`,
    and the unit wearing color `c` is annotated with the web map `ω c`. *)
 Inductive web_map_context_of (ω : web_map_context) : An.ccexp -> cexp -> Prop :=
@@ -2088,6 +2152,76 @@ Section Top.
   Qed.
 
 End Top.
+
+Section Adequacy.
+
+  (* Note that adequacy applies for the colored semantics and objects. *)
+
+  Theorem adequacy ce we :
+    trans_correct_top ce we ->
+    forall θ ω cce c1 c2,
+      coloring c1 ce c2 cce ->
+      analysis_context_of θ cce ->
+      analysis_context_escape_ok θ ->
+      web_map_context_of ω cce we ->
+      valid_web_map_context ω θ ->
+      forall ρ1 ρ2,
+        (forall k, G_top θ ω k (An.occurs_free_top ce) ρ1 ρ2) ->
+        forall j1 r1 I1,
+          An.cbstep_top_fuel ρ1 cce j1 r1 I1 ->
+          exists j2 r2,
+            cbstep_top_fuel ρ2 we j2 r2 /\
+              (forall k, R_top θ ω k r1 r2).
+  Proof.
+    intros [HS HT] θ ω cce c1 c2 Hcol Hθ Hesc Hωof Hω ρ1 ρ2 HG j1 r1 I1 Hstep.
+
+    (* the run of the target, from the relation at index `j1` *)
+    assert (HE : E_top θ ω j1 ρ1 cce ρ2 we) by (eapply HT; eauto).
+    destruct (HE j1 r1 I1 ltac:(lia) Hstep) as [j2 [r2 [Hstep2 HR]]].
+    exists j2, r2; split; [exact Hstep2 |].
+
+    (* the results are related at every index `k`, from the relation at
+       index `j1 + k` and the determinism of the target *)
+    intros k.
+    assert (HE' : E_top θ ω (j1 + k) ρ1 cce ρ2 we) by (eapply HT; eauto).
+    destruct (HE' j1 r1 I1 ltac:(lia) Hstep) as [j2' [r2' [Hstep2' HR']]].
+    unfold R_top.
+    destruct r1 as [| v1], r2 as [| v2], r2' as [| v2'];
+      cbn in HR, HR' |- *; try contradiction; auto.
+    replace (j1 + k - j1) with k in HR' by lia.
+    rewrite (proj1 (cbstep_top_fuel_deterministic v2 v2' Hstep2 Hstep2')).
+    exact HR'.
+  Qed.
+
+  Theorem adequacy_closed ce we :
+    trans_correct_top ce we ->
+    An.occurs_free_top ce \subset (Empty_set _) ->
+    forall θ ω cce c1 c2,
+      coloring c1 ce c2 cce ->
+      analysis_context_of θ cce ->
+      analysis_context_escape_ok θ ->
+      web_map_context_of ω cce we ->
+      valid_web_map_context ω θ ->
+      forall j1 r1 I1,
+        An.cbstep_top_fuel (M.empty _) cce j1 r1 I1 ->
+        exists j2 r2,
+          cbstep_top_fuel (M.empty _) we j2 r2 /\
+            (forall k, R_top θ ω k r1 r2).
+  Proof.
+    intros Htc Hclosed θ ω cce c1 c2 Hcol Hθ Hesc Hωof Hω j1 r1 I1 Hstep.
+    eapply adequacy; eauto.
+
+    (* the empty environments are related at every index *)
+    intros k.
+    split; [| split].
+    - constructor.
+      intros x v Hget; rewrite M.gempty in Hget; discriminate.
+    - constructor.
+      intros x v Hget; rewrite M.gempty in Hget; discriminate.
+    - intros x Hx; apply Hclosed in Hx; inv Hx.
+  Qed.
+
+End Adequacy.
 
 Section Linking.
 
