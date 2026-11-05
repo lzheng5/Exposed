@@ -500,6 +500,35 @@ Inductive cres : Type :=
 
 Hint Constructors cres : core.
 
+(* Free variables of a closure: those of its body, minus its parameters and
+   its own name. *)
+Definition fun_fv (f : var) (xs : list var) (e : exp) : vars :=
+  fun y => (y \in occurs_free e) /\ ~ List.In y xs /\ y <> f.
+
+(* The body of a closure only reads its parameters, its own name, and its free
+   variables. *)
+Lemma occurs_free_fun_fv f xs e :
+  occurs_free e \subset FromList xs :|: (f |: fun_fv f xs e).
+Proof.
+  intros y Hy.
+  destruct (in_dec M.elt_eq y xs) as [Hin | Hnin].
+  - apply Union_introl; exact Hin.
+  - apply Union_intror.
+    destruct (M.elt_eq y f) as [-> | Hneq].
+    + apply Union_introl; apply In_singleton.
+    + apply Union_intror; unfold fun_fv, Ensembles.In; auto.
+Qed.
+
+Lemma fun_fv_subset f xs e Γ :
+  occurs_free e \subset FromList xs :|: (f |: Γ) ->
+  fun_fv f xs e \subset Γ.
+Proof.
+  intros HS y [Hy [Hxs Hf]].
+  destruct (HS y Hy) as [y' Hy' | y' Hy'].
+  - contradiction.
+  - inv Hy'; [inv H; contradiction | assumption].
+Qed.
+
 (* Approximation *)
 (* `approx_val av v`: the abstract value `av` over-approximates the concrete
    value `v`, with respect to the analysis result carried by the tag of `v`.
@@ -518,22 +547,24 @@ Inductive approx_val : aval -> clval -> Prop :=
     approx_val av (CTag A c l v)
 
 (* A closure is approximated by its own allocation site, provided that its
-   captured environment is approximated by the abstract environment of `A`. *)
+   captured environment is approximated by the abstract environment of `A` at
+   the free variables of the closure. *)
 with approx_val' : analysis_result -> aval -> cval -> Prop :=
 | Approx_CVfun :
   forall A l f ρ xs e,
-    approx_env (ai_env A) ρ ->
+    approx_env (ai_env A) (fun_fv f xs e) ρ ->
     approx_val' A (AVfun l f xs e) (CVfun f ρ xs e)
 
-(* Every value bound in `ρ` is approximated by some abstract value in the value
-   set of its variable. *)
-with approx_env : aenv -> cenv -> Prop :=
+(* Every value bound in `ρ` at a variable of `Γ` is approximated by some
+   abstract value in the value set of its variable. *)
+with approx_env : aenv -> vars -> cenv -> Prop :=
 | Approx_env :
-  forall aenv ρ,
+  forall aenv Γ ρ,
     (forall x v,
+        (x \in Γ) ->
         ρ ! x = Some v ->
         exists av, (av \in aenv x) /\ approx_val av v) ->
-    approx_env aenv ρ.
+    approx_env aenv Γ ρ.
 
 Hint Constructors approx_val : core.
 Hint Constructors approx_val' : core.
@@ -586,58 +617,78 @@ Proof.
       intros y Hy; apply Htop; right; exact Hy.
 Qed.
 
-Lemma approx_env_get {AE ρ x v} :
-  approx_env AE ρ ->
+Lemma approx_env_get {AE Γ ρ x v} :
+  approx_env AE Γ ρ ->
+  (x \in Γ) ->
   ρ ! x = Some v ->
   approx_vals (AE x) v.
-Proof. intros Henv Hget; inv Henv; unfold approx_vals; eauto. Qed.
+Proof. intros Henv Hx Hget; inv Henv; unfold approx_vals; eauto. Qed.
 
-Lemma approx_env_set {AE ρ} x v :
-  approx_env AE ρ ->
+Lemma approx_env_subset {AE Γ Γ' ρ} :
+  approx_env AE Γ ρ ->
+  Γ' \subset Γ ->
+  approx_env AE Γ' ρ.
+Proof. intros Henv Hsub; inv Henv; constructor; eauto. Qed.
+
+Lemma approx_env_set {AE Γ ρ} x v :
+  approx_env AE Γ ρ ->
   approx_vals (AE x) v ->
-  approx_env AE (M.set x v ρ).
+  approx_env AE (x |: Γ) (M.set x v ρ).
 Proof.
   intros Henv Hv.
   inv Henv.
-  constructor; intros y w Hget.
+  constructor; intros y w Hy Hget.
   destruct (M.elt_eq x y); subst.
   - rewrite M.gss in Hget; inv Hget; exact Hv.
-  - rewrite M.gso in Hget by auto; eauto.
+  - rewrite M.gso in Hget by auto.
+    inv Hy; [inv H0; contradiction | eauto].
 Qed.
 
-Lemma approx_env_get_list {AE ρ} :
-  approx_env AE ρ ->
+Lemma approx_env_get_list {AE Γ ρ} :
+  approx_env AE Γ ρ ->
   forall xs vs,
+    FromList xs \subset Γ ->
     get_list xs ρ = Some vs ->
     Forall2 (fun x v => approx_vals (AE x) v) xs vs.
 Proof.
   intros Henv xs.
-  induction xs as [| x xs IHxs]; simpl; intros vs Hget.
+  induction xs as [| x xs IHxs]; simpl; intros vs Hxs Hget.
   - inv Hget; constructor.
   - destruct (M.get x ρ) as [v |] eqn:Hx; [| discriminate Hget].
-    destruct (get_list xs ρ) as [vs' |] eqn:Hxs; [| discriminate Hget].
+    destruct (get_list xs ρ) as [vs' |] eqn:Hxs'; [| discriminate Hget].
     inv Hget.
     constructor.
     + eapply approx_env_get; eauto.
+      apply Hxs; left; reflexivity.
     + eapply IHxs; eauto.
+      intros y Hy; apply Hxs; right; exact Hy.
 Qed.
 
-Lemma approx_env_set_lists {AE ρ} :
-  approx_env AE ρ ->
+Lemma approx_env_set_lists {AE Γ ρ} :
+  approx_env AE Γ ρ ->
   forall xs vs ρ',
     Forall2 (fun x v => approx_vals (AE x) v) xs vs ->
     set_lists xs vs ρ = Some ρ' ->
-    approx_env AE ρ'.
+    approx_env AE (FromList xs :|: Γ) ρ'.
 Proof.
   intros Henv xs.
   induction xs as [| x xs IHxs]; intros vs ρ' Hall Hset; simpl in Hset.
   - destruct vs as [| v vs]; [| discriminate Hset].
-    inv Hset; exact Henv.
+    inv Hset.
+    eapply approx_env_subset; [exact Henv |].
+    intros y Hy; inv Hy; [inv H | exact H].
   - destruct vs as [| v vs]; [discriminate Hset |].
     destruct (set_lists xs vs ρ) as [ρ'' |] eqn:Heq; [| discriminate Hset].
     inv Hset.
     inv Hall.
-    apply approx_env_set; [eapply IHxs; eauto | assumption].
+    apply (approx_env_subset (Γ := x |: (FromList xs :|: Γ))).
+    + apply approx_env_set; [eapply IHxs; eauto | eassumption].
+    + intros y Hy.
+      inv Hy.
+      * destruct H as [-> | Hin].
+        -- apply Union_introl; apply In_singleton.
+        -- apply Union_intror; apply Union_introl; exact Hin.
+      * apply Union_intror; apply Union_intror; exact H.
 Qed.
 
 (* A result is approximated by `R` if it is out of time, or returns a value
@@ -791,60 +842,80 @@ Lemma cescaped_defining A c l v :
   cescaped c (CTag A c l v).
 Proof. unfold cescaped; fcrush. Qed.
 
-Definition cescaped_env (c : color) (ρ : cenv) : Prop :=
-  forall x v, ρ ! x = Some v -> cescaped c v.
+Definition cescaped_env (c : color) (Γ : vars) (ρ : cenv) : Prop :=
+  forall x v, (x \in Γ) -> ρ ! x = Some v -> cescaped c v.
 
-Lemma cescaped_env_set {c ρ} x v :
-  cescaped_env c ρ ->
+Lemma cescaped_env_subset {c Γ Γ' ρ} :
+  cescaped_env c Γ ρ ->
+  Γ' \subset Γ ->
+  cescaped_env c Γ' ρ.
+Proof. unfold cescaped_env; eauto. Qed.
+
+Lemma cescaped_env_set {c Γ ρ} x v :
+  cescaped_env c Γ ρ ->
   cescaped c v ->
-  cescaped_env c (M.set x v ρ).
+  cescaped_env c (x |: Γ) (M.set x v ρ).
 Proof.
   unfold cescaped_env.
-  intros Hesc Hv y w Hget.
+  intros Hesc Hv y w Hy Hget.
   destruct (M.elt_eq x y); subst.
   - rewrite M.gss in Hget; inv Hget; exact Hv.
-  - rewrite M.gso in Hget by auto; eauto.
+  - rewrite M.gso in Hget by auto.
+    inv Hy; [inv H; contradiction | eauto].
 Qed.
 
-Lemma cescaped_env_get {c ρ} x v :
-  cescaped_env c ρ ->
+Lemma cescaped_env_get {c Γ ρ} x v :
+  cescaped_env c Γ ρ ->
+  (x \in Γ) ->
   ρ ! x = Some v ->
   cescaped c v.
 Proof. unfold cescaped_env; eauto. Qed.
 
-Lemma cescaped_env_get_list {c ρ} :
-  cescaped_env c ρ ->
+Lemma cescaped_env_get_list {c Γ ρ} :
+  cescaped_env c Γ ρ ->
   forall xs vs,
+    FromList xs \subset Γ ->
     get_list xs ρ = Some vs ->
     Forall (cescaped c) vs.
 Proof.
   intros Hesc xs.
-  induction xs as [| x xs IHxs]; simpl; intros vs Hget.
+  induction xs as [| x xs IHxs]; simpl; intros vs Hxs Hget.
   - inv Hget; constructor.
   - destruct (M.get x ρ) as [v |] eqn:Hx; [| discriminate Hget].
-    destruct (get_list xs ρ) as [vs' |] eqn:Hxs; [| discriminate Hget].
+    destruct (get_list xs ρ) as [vs' |] eqn:Hxs'; [| discriminate Hget].
     inv Hget.
     constructor.
     + eapply cescaped_env_get; eauto.
+      apply Hxs; left; reflexivity.
     + eapply IHxs; eauto.
+      intros y Hy; apply Hxs; right; exact Hy.
 Qed.
 
-Lemma cescaped_env_set_lists {c ρ} :
-  cescaped_env c ρ ->
+Lemma cescaped_env_set_lists {c Γ ρ} :
+  cescaped_env c Γ ρ ->
   forall xs vs ρ',
     Forall (cescaped c) vs ->
     set_lists xs vs ρ = Some ρ' ->
-    cescaped_env c ρ'.
+    cescaped_env c (FromList xs :|: Γ) ρ'.
 Proof.
   intros Hesc xs.
   induction xs as [| x xs IHxs]; intros vs ρ' Hall Hset; simpl in Hset.
   - destruct vs as [| v vs]; [| discriminate Hset].
-    inv Hset; exact Hesc.
+    inv Hset.
+    eapply cescaped_env_subset; [exact Hesc |].
+    intros y Hy; inv Hy; [inv H | exact H].
   - destruct vs as [| v vs]; [discriminate Hset |].
     destruct (set_lists xs vs ρ) as [ρ'' |] eqn:Heq; [| discriminate Hset].
     inv Hset.
     inv Hall.
-    apply cescaped_env_set; [eapply IHxs; eauto | assumption].
+    apply (cescaped_env_subset (Γ := x |: (FromList xs :|: Γ))).
+    + apply cescaped_env_set; [eapply IHxs; eauto | eassumption].
+    + intros y Hy.
+      inv Hy.
+      * destruct H as [-> | Hin].
+        -- apply Union_introl; apply In_singleton.
+        -- apply Union_intror; apply Union_introl; exact Hin.
+      * apply Union_intror; apply Union_intror; exact H.
 Qed.
 
 (* Invariants for Variable Binding *)
@@ -866,60 +937,80 @@ Definition cbinding (c : color) (A : analysis_result) (x : var) (v : clval) : Pr
   | CTAG _ _ (c', _) _ => c' <> c -> AVtop \in ai_env A x
   end.
 
-Definition cbinding_env (c : color) (A : analysis_result) (ρ : cenv) : Prop :=
-  forall x v, ρ ! x = Some v -> cbinding c A x v.
+Definition cbinding_env (c : color) (A : analysis_result) (Γ : vars) (ρ : cenv) : Prop :=
+  forall x v, (x \in Γ) -> ρ ! x = Some v -> cbinding c A x v.
 
-Lemma cbinding_env_set {c A ρ} x v :
-  cbinding_env c A ρ ->
+Lemma cbinding_env_subset {c A Γ Γ' ρ} :
+  cbinding_env c A Γ ρ ->
+  Γ' \subset Γ ->
+  cbinding_env c A Γ' ρ.
+Proof. unfold cbinding_env; eauto. Qed.
+
+Lemma cbinding_env_set {c A Γ ρ} x v :
+  cbinding_env c A Γ ρ ->
   cbinding c A x v ->
-  cbinding_env c A (M.set x v ρ).
+  cbinding_env c A (x |: Γ) (M.set x v ρ).
 Proof.
   unfold cbinding_env.
-  intros Hex Hv y w Hget.
+  intros Hex Hv y w Hy Hget.
   destruct (M.elt_eq x y); subst.
   - rewrite M.gss in Hget; inv Hget; exact Hv.
-  - rewrite M.gso in Hget by auto; eauto.
+  - rewrite M.gso in Hget by auto.
+    inv Hy; [inv H; contradiction | eauto].
 Qed.
 
-Lemma cbinding_env_get {c A ρ} x v :
-  cbinding_env c A ρ ->
+Lemma cbinding_env_get {c A Γ ρ} x v :
+  cbinding_env c A Γ ρ ->
+  (x \in Γ) ->
   ρ ! x = Some v ->
   cbinding c A x v.
 Proof. unfold cbinding_env; eauto. Qed.
 
-Lemma cbinding_env_get_list {c A ρ} :
-  cbinding_env c A ρ ->
+Lemma cbinding_env_get_list {c A Γ ρ} :
+  cbinding_env c A Γ ρ ->
   forall xs vs,
+    FromList xs \subset Γ ->
     get_list xs ρ = Some vs ->
     Forall2 (cbinding c A) xs vs.
 Proof.
   intros Hloc xs.
-  induction xs as [| x xs IHxs]; simpl; intros vs Hget.
+  induction xs as [| x xs IHxs]; simpl; intros vs Hxs Hget.
   - inv Hget; constructor.
   - destruct (M.get x ρ) as [v |] eqn:Hx; [| discriminate Hget].
-    destruct (get_list xs ρ) as [vs' |] eqn:Hxs; [| discriminate Hget].
+    destruct (get_list xs ρ) as [vs' |] eqn:Hxs'; [| discriminate Hget].
     inv Hget.
     constructor.
     + eapply cbinding_env_get; eauto.
+      apply Hxs; left; reflexivity.
     + eapply IHxs; eauto.
+      intros y Hy; apply Hxs; right; exact Hy.
 Qed.
 
-Lemma cbinding_env_set_lists {c A ρ} :
-  cbinding_env c A ρ ->
+Lemma cbinding_env_set_lists {c A Γ ρ} :
+  cbinding_env c A Γ ρ ->
   forall xs vs ρ',
     Forall2 (cbinding c A) xs vs ->
     set_lists xs vs ρ = Some ρ' ->
-    cbinding_env c A ρ'.
+    cbinding_env c A (FromList xs :|: Γ) ρ'.
 Proof.
   intros Hloc xs.
   induction xs as [| x xs IHxs]; intros vs ρ' Hall Hset; simpl in Hset.
   - destruct vs as [| v vs]; [| discriminate Hset].
-    inv Hset; exact Hloc.
+    inv Hset.
+    eapply cbinding_env_subset; [exact Hloc |].
+    intros y Hy; inv Hy; [inv H | exact H].
   - destruct vs as [| v vs]; [discriminate Hset |].
     destruct (set_lists xs vs ρ) as [ρ'' |] eqn:Heq; [| discriminate Hset].
     inv Hset.
     inv Hall.
-    apply cbinding_env_set; [eapply IHxs; eauto | assumption].
+    apply (cbinding_env_subset (Γ := x |: (FromList xs :|: Γ))).
+    + apply cbinding_env_set; [eapply IHxs; eauto | eassumption].
+    + intros y Hy.
+      inv Hy.
+      * destruct H as [-> | Hin].
+        -- apply Union_introl; apply In_singleton.
+        -- apply Union_intror; apply Union_introl; exact Hin.
+      * apply Union_intror; apply Union_intror; exact H.
 Qed.
 
 (* `cbinding` is preserved when the value flows into a variable whose value
@@ -1078,7 +1169,7 @@ Inductive cbstep (A : analysis_result) (c : color) (bdr : bool) (ρ : cenv) : ex
 
     (* callee side: the (unknown) arguments flow to the parameters *)
     set_lists xs' vs (M.set f' (CTag A' c' l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
-    approx_env (ai_env A') ρ'' ->
+    approx_env (ai_env A') (occurs_free e) ρ'' ->
 
     (* the body is validated against the callee's own analysis result and
        returns into `ai_ret A' l'` *)
@@ -1599,11 +1690,11 @@ Section LRBase.
 
                   (* the closure is recorded at its defining unit *)
                   (AVfun l2 f2 xs2 e2 \in ai_env A2 f2) /\
-                  approx_env (ai_env A2) ρ2 /\
+                  approx_env (ai_env A2) (fun_fv f2 xs2 e2) ρ2 /\
 
-                  (* the closure environment invariants *)
-                  cescaped_env c2 ρ2 /\
-                  cbinding_env c2 A2 ρ2 /\
+                  (* the closure environment invariants, at its free variables *)
+                  cescaped_env c2 (fun_fv f2 xs2 e2) ρ2 /\
+                  cbinding_env c2 A2 (fun_fv f2 xs2 e2) ρ2 /\
 
                   match i with
                   | 0 => True
@@ -1720,9 +1811,9 @@ Section LRBase.
   Definition G c i Γ1 ρ1 ρ2 :=
     wf_env Γ1 ρ1 /\
       wf_cenv θ ρ2 /\
-      approx_env (ai_env (θ c)) ρ2 /\
-      cescaped_env c ρ2 /\
-      cbinding_env c (θ c) ρ2 /\
+      approx_env (ai_env (θ c)) Γ1 ρ2 /\
+      cescaped_env c Γ1 ρ2 /\
+      cbinding_env c (θ c) Γ1 ρ2 /\
       forall x,
         (x \in Γ1) ->
         exists v1 v2,
@@ -1735,7 +1826,17 @@ Section LRBase.
     G c i Γ1 ρ1 ρ2 ->
     Γ2 \subset Γ1 ->
     G c i Γ2 ρ1 ρ2.
-  Proof. unfold G. fcrush. Qed.
+  Proof.
+    unfold G.
+    intros [Hwf1 [Hwf2 [Happ [Hesc [Hbind HG]]]]] Hsub.
+    split; [| split; [| split; [| split; [| split]]]].
+    - eapply wf_env_subset; eauto.
+    - exact Hwf2.
+    - eapply approx_env_subset; eauto.
+    - eapply cescaped_env_subset; eauto.
+    - eapply cbinding_env_subset; eauto.
+    - intros x Hx; apply HG; apply Hsub; exact Hx.
+  Qed.
 
   Lemma G_wf_env_l {c i Γ1 ρ1 ρ2}:
     G c i Γ1 ρ1 ρ2 ->
@@ -1749,17 +1850,17 @@ Section LRBase.
 
   Lemma G_approx_env {c i Γ1 ρ1 ρ2}:
     G c i Γ1 ρ1 ρ2 ->
-    approx_env (ai_env (θ c)) ρ2.
+    approx_env (ai_env (θ c)) Γ1 ρ2.
   Proof. unfold G. intros [_ [_ [Haenv _]]]. exact Haenv. Qed.
 
   Lemma G_cescaped_env {c i Γ1 ρ1 ρ2}:
     G c i Γ1 ρ1 ρ2 ->
-    cescaped_env c ρ2.
+    cescaped_env c Γ1 ρ2.
   Proof. unfold G. intros [_ [_ [_ [Hesc _]]]]. exact Hesc. Qed.
 
   Lemma G_cbinding_env {c i Γ1 ρ1 ρ2}:
     G c i Γ1 ρ1 ρ2 ->
-    cbinding_env c (θ c) ρ2.
+    cbinding_env c (θ c) Γ1 ρ2.
   Proof. unfold G. intros [_ [_ [_ [_ [Hex _]]]]]. exact Hex. Qed.
 
   Lemma G_get {c Γ1 i ρ1 ρ2}:
@@ -2038,17 +2139,17 @@ Section Compat.
       assert (Hcres : cresult c (θ c) Rs (CRes v2)).
       {
           split.
-          -- eapply cescaped_env_get; [eapply G_cescaped_env; eauto | exact Heqv2].
+          -- eapply cescaped_env_get; [eapply G_cescaped_env; eauto | exact Hx | exact Heqv2].
           -- eapply cflows_subset.
              ++ eapply cbinding_cflows; eauto.
-                eapply cbinding_env_get; [eapply G_cbinding_env; eauto | exact Heqv2].
+                eapply cbinding_env_get; [eapply G_cbinding_env; eauto | exact Hx | exact Heqv2].
              ++ assumption.
       }
 
       exists 1, (CRes v2), (Empty_set _); split; eauto; simpl.
       + econstructor; eauto.
 
-        * destruct (approx_env_get (G_approx_env _ H) Heqv2) as [av [Hav Happrox]]; eauto.
+        * destruct (approx_env_get (G_approx_env _ H) Hx Heqv2) as [av [Hav Happrox]]; eauto.
         * eapply approx_int_empty; eauto.
 
         * destruct bdr; simpl; auto.
@@ -2080,9 +2181,13 @@ Section Compat.
     unfold well_annotated.
     intros HS Hθ Hesc He Hack i.
     induction i; simpl; subst; intros; auto;
-      assert (Haenv : approx_env (ai_env (θ c)) ρ2) by eauto using G_approx_env;
-      assert (Hesc_env : cescaped_env c ρ2) by eauto using G_cescaped_env;
-      assert (Hloc_env : cbinding_env c (θ c) ρ2) by eauto using G_cbinding_env;
+      (* the closure environment invariants, at the free variables of the closure *)
+      assert (Haenv : approx_env (ai_env (θ c)) (fun_fv f xs e) ρ2)
+        by (eapply approx_env_subset; [eapply G_approx_env; eauto | eapply fun_fv_subset; eauto]);
+      assert (Hesc_env : cescaped_env c (fun_fv f xs e) ρ2)
+        by (eapply cescaped_env_subset; [eapply G_cescaped_env; eauto | eapply fun_fv_subset; eauto]);
+      assert (Hloc_env : cbinding_env c (θ c) (fun_fv f xs e) ρ2)
+        by (eapply cbinding_env_subset; [eapply G_cbinding_env; eauto | eapply fun_fv_subset; eauto]);
       repeat (split; auto);
       intros; (repeat split; auto).
 
@@ -2126,7 +2231,11 @@ Section Compat.
       assert (Happrox : approx_vals (ai_env (θ c) f) (CTag (θ c) c l (CVfun f ρ2 xs e))).
       {
         unfold approx_vals.
-        eexists; split; sfirstorder.
+        exists (AVfun l f xs e); split; [sfirstorder |].
+        constructor; [reflexivity |].
+        constructor.
+        (* the captured environment, at the free variables of the closure *)
+        eapply approx_env_subset; [eapply G_approx_env; eauto | eapply fun_fv_subset; eauto].
       }
 
       edestruct (Hk _  bdr Rs eq_refl Hescθ H10 Hbdr (i - 1) (M.set f (Tag l (Vfun f ρ1 xs e)) ρ1) (M.set f (CTag (θ c) c l (CVfun f ρ2 xs e)) ρ2)) with (j1 := c0) (r1 := (Res w)) as [j2 [r2 [I2 [Hk2 Rr]]]]; eauto; try lia.
@@ -2190,34 +2299,38 @@ Section Compat.
         * apply Hesc; exact Hneqc.
   Qed.
 
-  Lemma cescaped_handover_list {θ c c1 ρ xs vs} :
+  Lemma cescaped_handover_list {θ c c1 Γ ρ xs vs} :
     wf_cenv θ ρ ->
-    cescaped_env c ρ ->
-    cbinding_env c (θ c) ρ ->
-    approx_env (ai_env (θ c)) ρ ->
+    cescaped_env c Γ ρ ->
+    cbinding_env c (θ c) Γ ρ ->
+    approx_env (ai_env (θ c)) Γ ρ ->
+    FromList xs \subset Γ ->
     Forall (fun x => ai_env (θ c) x \subset ai_esc (θ c)) xs ->
     get_list xs ρ = Some vs ->
     Forall (cescaped c1) vs.
   Proof.
-    intros Hwf Hesc Hbind Happrox Hsub.
-    revert vs.
-    induction Hsub as [| x xs Hxsub Hsub IH]; simpl; intros vs Hget.
+    intros Hwf Hesc Hbind Happrox HΓ Hsub.
+    revert vs HΓ.
+    induction Hsub as [| x xs Hxsub Hsub IH]; simpl; intros vs HΓ Hget.
     - inv Hget; constructor.
     - destruct (M.get x ρ) as [v |] eqn:Hx; [| discriminate Hget].
       destruct (get_list xs ρ) as [vs' |] eqn:Hxs; [| discriminate Hget].
       inv Hget.
+      assert (HxΓ : x \in Γ) by (apply HΓ; left; reflexivity).
       constructor.
       + eapply (@cescaped_handover _ c).
         * eapply wf_cenv_get; [exact Hwf | exact Hx].
-        * eapply cescaped_env_get; [exact Hesc | exact Hx].
-        * eapply cbinding_env_get; [exact Hbind | exact Hx].
-        * eapply approx_env_get; [exact Happrox | exact Hx].
+        * eapply cescaped_env_get; [exact Hesc | exact HxΓ | exact Hx].
+        * eapply cbinding_env_get; [exact Hbind | exact HxΓ | exact Hx].
+        * eapply approx_env_get; [exact Happrox | exact HxΓ | exact Hx].
         * exact Hxsub.
       + eapply IH; eauto.
+        intros y Hy; apply HΓ; right; exact Hy.
   Qed.
 
   Lemma G_cescaped_handover_list {θ c c1 i Γ ρ1 ρ2 xs vs} :
     G θ c i Γ ρ1 ρ2 ->
+    FromList xs \subset Γ ->
     Forall (fun x => ai_env (θ c) x \subset ai_esc (θ c)) xs ->
     get_list xs ρ2 = Some vs ->
     Forall (cescaped c1) vs.
@@ -2345,10 +2458,10 @@ Section Compat.
         - destruct (Nat.eq_dec c1 c) as [Heqc | Hneqc].
           + (* internal call *)
             subst c1.
-            eapply cescaped_env_get_list; [eapply G_cescaped_env; eauto | exact Heqvs2].
+            eapply cescaped_env_get_list; [eapply G_cescaped_env; eauto | exact Hxs | exact Heqvs2].
           + (* foreign call: the caller approximates the callee by `AVtop`, so its arguments escape *)
             assert (Htop : AVtop \in ai_env (θ c) f).
-            { pose proof (cbinding_env_get f _ (G_cbinding_env _ H) Heqfv2) as Hloc_f.
+            { pose proof (cbinding_env_get f _ (G_cbinding_env _ H) Hf Heqfv2) as Hloc_f.
               unfold cbinding in Hloc_f.
               destruct Hloc_f as [_ Hforeign].
               exact (Hforeign Hneqc). }
@@ -2358,10 +2471,10 @@ Section Compat.
         - destruct (Nat.eq_dec c1 c) as [Heqc | Hneqc]; subst.
           + inv Hwf2.
             assert (Hcbinding_xs : Forall2 (cbinding c (θ c)) xs vs2).
-            { eapply cbinding_env_get_list; [eapply G_cbinding_env; eauto | exact Heqvs2]. }
+            { eapply cbinding_env_get_list; [eapply G_cbinding_env; eauto | exact Hxs | exact Heqvs2]. }
             assert (Hcbinding_f : cbinding c (θ c) f (CTAG cval (θ c) (c, l0) (CVfun v0 t l1 e0))).
             {
-              eapply cbinding_env_get; [eapply G_cbinding_env; eauto | eauto ].
+              eapply cbinding_env_get; [eapply G_cbinding_env; eauto | exact Hf | eauto ].
             }
             unfold cbinding in Hcbinding_f.
             destruct Hcbinding_f as [Hfown _].
@@ -2374,7 +2487,7 @@ Section Compat.
               eapply cbinding_subset_list; eauto.
 
           + assert (Htop : AVtop \in ai_env (θ c) f).
-            { pose proof (cbinding_env_get f _ (G_cbinding_env _ H) Heqfv2) as Hloc_f.
+            { pose proof (cbinding_env_get f _ (G_cbinding_env _ H) Hf Heqfv2) as Hloc_f.
               unfold cbinding in Hloc_f.
               destruct Hloc_f as [_ Hforeign].
               exact (Hforeign Hneqc). }
@@ -2385,21 +2498,21 @@ Section Compat.
             subst A0.
 
             assert (Hfesc : AVfun l0 v0 l1 e0 \in ai_esc (θ c1)).
-            { pose proof (cescaped_env_get f _ (G_cescaped_env _ H) Heqfv2) as Hf_esc.
+            { pose proof (cescaped_env_get f _ (G_cescaped_env _ H) Hf Heqfv2) as Hf_esc.
               unfold cescaped in Hf_esc.
               exact (Hf_esc Hneqc). }
             destruct (Hescθ c1) as [_ Hesc_ok].
             destruct (Hesc_ok _ _ _ _ Hfesc) as [Hparams _].
             eapply (cbinding_handover_list Hneqc);
               [ eapply wf_cenv_get_list; [eapply G_wf_cenv_r; eauto | exact Heqvs2]
-              | eapply cescaped_env_get_list; [eapply G_cescaped_env; eauto | exact Heqvs2]
+              | eapply cescaped_env_get_list; [eapply G_cescaped_env; eauto | exact Hxs | exact Heqvs2]
               | exact Hparams
               | exact Heqρ4 ].
 
         - intros; subst.
           inv Hwf2.
-          pose proof (approx_env_get_list (G_approx_env _ H) _ _ Heqvs2) as Happrox_xs.
-          pose proof (cbinding_env_get f _ (G_cbinding_env _ H) Heqfv2) as Hloc_f.
+          pose proof (approx_env_get_list (G_approx_env _ H) _ _ Hxs Heqvs2) as Happrox_xs.
+          pose proof (cbinding_env_get f _ (G_cbinding_env _ H) Hf Heqfv2) as Hloc_f.
           unfold cbinding in Hloc_f.
           destruct Hloc_f as [Hint _].
           specialize (Hint eq_refl).
@@ -2414,14 +2527,14 @@ Section Compat.
             eapply Hesc_ok; eauto.
 
         - intros Hneq.
-          pose proof (cescaped_env_get f _ (G_cescaped_env _ H) Heqfv2) as Hf_esc.
+          pose proof (cescaped_env_get f _ (G_cescaped_env _ H) Hf Heqfv2) as Hf_esc.
           unfold cescaped in Hf_esc.
           exact (Hf_esc Hneq).
 
         - (* only a foreign call runs the body at the boundary, and then the
              closure has escaped *)
           destruct (Nat.eqb_spec c1 c); simpl; auto.
-          pose proof (cescaped_env_get f _ (G_cescaped_env _ H) Heqfv2) as Hf_esc.
+          pose proof (cescaped_env_get f _ (G_cescaped_env _ H) Hf Heqfv2) as Hf_esc.
           unfold cescaped in Hf_esc; eauto.
       }
 
@@ -2436,12 +2549,12 @@ Section Compat.
 
         exists (S j2), (CRes v2), (((c, l0), (c, l)) |: I2); split; eauto.
 
-        pose proof (approx_env_get_list (G_approx_env _ H) _ _ Heqvs2) as Happrox_xs.
+        pose proof (approx_env_get_list (G_approx_env _ H) _ _ Hxs Heqvs2) as Happrox_xs.
 
         assert (Hint : Ensembles.In aval (ai_env (θ c) f) (AVfun l0 v0 l1 e0) \/
                         (Ensembles.In aval (ai_esc (θ c)) (AVfun l0 v0 l1 e0) /\ Ensembles.In aval (ai_env (θ c) f) AVtop)).
         {
-          pose proof (cbinding_env_get f _ (G_cbinding_env _ H) Heqfv2) as Hloc_f.
+          pose proof (cbinding_env_get f _ (G_cbinding_env _ H) Hf Heqfv2) as Hloc_f.
           unfold cbinding in Hloc_f.
           destruct Hloc_f as [Hint _].
           apply (Hint eq_refl).
@@ -2450,7 +2563,7 @@ Section Compat.
         (* the arguments are bound at the parameters *)
         assert (Hbind_params : Forall2 (cbinding c (θ c)) l1 vs2).
         { assert (Hcbinding_xs : Forall2 (cbinding c (θ c)) xs vs2)
-            by (eapply cbinding_env_get_list; [eapply G_cbinding_env; eauto | exact Heqvs2]).
+            by (eapply cbinding_env_get_list; [eapply G_cbinding_env; eauto | exact Hxs | exact Heqvs2]).
           destruct Hint as [Hin | [Hesc Htop]].
           - edestruct (H7 _ _ _ _ Hin) as [_ [_ [Hsub _]]]; eauto.
             eapply cbinding_subset_list; eauto.
@@ -2493,12 +2606,12 @@ Section Compat.
         exists (S j2), (CRes v2), (((c1, l0), (c, l)) |: I2); split; eauto.
         assert (Hafv : (AVfun l0 v0 l1 e0) \in (ai_esc (θ c1))).
         {
-          pose proof (cescaped_env_get f _ (G_cescaped_env _ H) Heqfv2) as Hf_esc.
+          pose proof (cescaped_env_get f _ (G_cescaped_env _ H) Hf Heqfv2) as Hf_esc.
           unfold cescaped in Hf_esc; eauto.
         }
 
         assert (Htop : AVtop \in ai_env (θ c) f).
-        { pose proof (cbinding_env_get f _ (G_cbinding_env _ H) Heqfv2) as Hloc_f.
+        { pose proof (cbinding_env_get f _ (G_cbinding_env _ H) Hf Heqfv2) as Hloc_f.
           unfold cbinding in Hloc_f.
           destruct Hloc_f as [_ Hforeign].
           exact (Hforeign n). }
@@ -2523,10 +2636,12 @@ Section Compat.
           -- destruct (H8 Htop) as [Hargs _].
              eapply G_cescaped_handover_list; eauto.
 
-          -- assert (Happrox : approx_env (ai_env (θ c1)) (M.set v0 (CTag (θ c1) c1 l0 (CVfun v0 t l1 e0)) t)) by eauto using approx_env_set.
-             eapply (approx_env_set_lists Happrox l1 vs2); eauto.
-             pose proof (approx_env_get_list (G_approx_env _ H) _ _ Heqvs2) as Happrox_xs.
-
+          -- (* the callee's environment, at the free variables of its body *)
+             assert (Happrox : approx_env (ai_env (θ c1)) (v0 |: fun_fv v0 l1 e0)
+                                 (M.set v0 (CTag (θ c1) c1 l0 (CVfun v0 t l1 e0)) t))
+               by (apply approx_env_set; eauto).
+             eapply approx_env_subset; [| apply occurs_free_fun_fv].
+             eapply (approx_env_set_lists Happrox l1 vs2); [| exact Heqρ4].
              eapply set_lists_approx_top; eauto.
              destruct (Hescθ c1) as [_ Hesc_ok].
              eapply Hesc_ok; eauto.
@@ -3107,27 +3222,9 @@ Section LRTop.
     eapply cbstep_top_fuel_cboundary_res; eauto.
   Qed.
 
-  Definition approx_env_top c1 c2 ρ2 :=
-    forall c,
-      c1 <= c < c2 ->
-      approx_env (ai_env (θ c)) ρ2.
-
-  Definition cescaped_env_top c1 c2 ρ2 :=
-    forall c,
-      c1 <= c < c2 ->
-      cescaped_env c ρ2.
-
-  Definition cbinding_env_top c1 c2 ρ2 :=
-    forall c,
-      c1 <= c < c2 ->
-      cbinding_env c (θ c) ρ2.
-
-  Definition G_top c1 c2 i Γ1 ρ1 ρ2 :=
+  Definition G_top i Γ1 ρ1 ρ2 :=
     wf_env Γ1 ρ1 /\
       wf_cenv θ ρ2 /\
-      approx_env_top c1 c2 ρ2 /\
-      cescaped_env_top c1 c2 ρ2 /\
-      cbinding_env_top c1 c2 ρ2 /\
       forall x,
         (x \in Γ1) ->
         exists v1 v2,
@@ -3135,37 +3232,56 @@ Section LRTop.
             M.get x ρ2 = Some v2 /\
             V_top i v1 v2.
 
-  Lemma G_top_G {c1 c2 i Γ1 ρ1 ρ2} :
-    G_top c1 c2 i Γ1 ρ1 ρ2 ->
+  Definition imports_unknown (A : analysis_result) (Γ : vars) : Prop :=
+    forall x,
+      (x \in Γ) ->
+      AVtop \in ai_env A x.
+
+  Lemma G_top_G {i Γ1 ρ1 ρ2} :
+    G_top i Γ1 ρ1 ρ2 ->
     forall c,
-      c1 <= c < c2 ->
+      imports_unknown (θ c) Γ1 ->
       G θ c i Γ1 ρ1 ρ2.
   Proof.
-    unfold G_top, G.
-    intros.
-    destruct H as [Hwf1 [Hwf2 [Happrox [Hesc [Hbind HG]]]]].
-    repeat (split; eauto); intros.
-    edestruct HG as [v1 [v2 [Heqv1 [Heqv2 HV]]]]; eauto.
-    eexists; eexists; repeat (split; eauto).
-    unfold V_top in *.
-    fcrush.
+    unfold G_top, G, imports_unknown.
+    intros [Hwf1 [Hwf2 HG]] c Htop.
+    split; [exact Hwf1 | split; [exact Hwf2 | split; [| split; [| split]]]].
+    - constructor; intros x v Hx Hget.
+      exists AVtop; split; [apply Htop; exact Hx | constructor].
+    - intros x v Hx Hget.
+      destruct (HG x Hx) as [v1 [v2 [Hg1 [Hg2 [_ HB]]]]].
+      rewrite Hg2 in Hget; inv Hget.
+      apply cboundary_cescaped; exact HB.
+    - intros x v Hx Hget.
+      destruct (HG x Hx) as [v1 [v2 [Hg1 [Hg2 [HV HB]]]]].
+      rewrite Hg2 in Hget; inv Hget.
+      apply cboundary_cbinding;
+        [eapply V_wf_cval_r; eauto | exact HB | apply Htop; exact Hx].
+    - intros x Hx.
+      destruct (HG x Hx) as [v1 [v2 [Hg1 [Hg2 [HV HB]]]]].
+      exists v1, v2; auto.
   Qed.
 
-  Lemma G_top_wf_env_l c1 c2 i Γ1 ρ1 ρ2 :
-    G_top c1 c2 i Γ1 ρ1 ρ2 ->
+  Lemma G_top_wf_env_l i Γ1 ρ1 ρ2 :
+    G_top i Γ1 ρ1 ρ2 ->
     wf_env Γ1 ρ1.
   Proof. unfold G_top. intros; tauto. Qed.
 
-  Lemma G_top_wf_cenv_r c1 c2 i Γ1 ρ1 ρ2 :
-    G_top c1 c2 i Γ1 ρ1 ρ2 ->
+  Lemma G_top_wf_cenv_r i Γ1 ρ1 ρ2 :
+    G_top i Γ1 ρ1 ρ2 ->
     wf_cenv θ ρ2.
   Proof. unfold G_top. intros; tauto. Qed.
 
-  Lemma G_top_subset c1 c2 i Γ1 ρ1 Γ2 ρ2 :
-    G_top c1 c2 i Γ1 ρ1 ρ2 ->
+  Lemma G_top_subset i Γ1 ρ1 Γ2 ρ2 :
+    G_top i Γ1 ρ1 ρ2 ->
     Γ2 \subset Γ1 ->
-    G_top c1 c2 i Γ2 ρ1 ρ2.
-  Proof. unfold G_top. fcrush. Qed.
+    G_top i Γ2 ρ1 ρ2.
+  Proof.
+    unfold G_top.
+    intros [Hwf1 [Hwf2 HG]] Hsub.
+    split; [eapply wf_env_subset; eauto | split; [exact Hwf2 |]].
+    intros x Hx; apply HG; apply Hsub; exact Hx.
+  Qed.
 
   (* Top-level Monotonicity Lemmas *)
   Lemma V_top_mono i :
@@ -3218,19 +3334,18 @@ Section LRTop.
     apply R_top_mono with (i - j1); try lia; auto.
   Qed.
 
-  Lemma G_top_mono {Γ1 c1 c2 ρ1 ρ2} i j:
-    G_top c1 c2 i Γ1 ρ1 ρ2 ->
+  Lemma G_top_mono {Γ1 ρ1 ρ2} i j:
+    G_top i Γ1 ρ1 ρ2 ->
     j <= i ->
-    G_top c1 c2 j Γ1 ρ1 ρ2.
+    G_top j Γ1 ρ1 ρ2.
   Proof.
     unfold G_top.
-    intros.
-    destruct H as [Hwf1 [Hwf2 [Happ [Hesc [Hbind HG]]]]].
-    repeat (split; eauto); intros.
-    edestruct HG as [v1 [v2 [Heqv1 [Heqv2 HV]]]]; eauto.
-    eexists; eexists; repeat (split; eauto).
-    apply V_top_mono with i; eauto.
-    fcrush.
+    intros [Hwf1 [Hwf2 HG]] Hj.
+    split; [exact Hwf1 | split; [exact Hwf2 |]].
+    intros x Hx.
+    destruct (HG x Hx) as [v1 [v2 [Hg1 [Hg2 HV]]]].
+    exists v1, v2.
+    split; [exact Hg1 | split; [exact Hg2 | eapply V_top_mono; eauto]].
   Qed.
 
 End LRTop.
@@ -3245,17 +3360,18 @@ Section Top.
         analysis_context_of θ cce ->
         analysis_context_escape_ok θ ->
         forall i ρ1 ρ2,
-          G_top θ c1 c2 i (occurs_free e) ρ1 ρ2 ->
+          G_top θ i (occurs_free e) ρ1 ρ2 ->
           E_top θ i ρ1 e ρ2 cce.
 
   Theorem top A e Rs :
     acheck A e Rs ->
     escapes_ok A ->
     Rs \subset (ai_esc A) ->
+    imports_unknown A (occurs_free e) ->
     trans_correct_top e (CEunit A Rs e).
   Proof.
-    unfold trans_correct_top.
-    intros Hack Hesc Hsub; intros.
+    unfold trans_correct_top, imports_unknown.
+    intros Hack Hesc Hsub Himp; intros.
     split; intros.
     apply occurs_free_top_cexp; eauto.
     inv H.
@@ -3276,17 +3392,15 @@ Section Top.
       symmetry.
       eapply H0; eauto.
     - eapply G_top_G; eauto.
+      intros y Hy.
+      rewrite <- (H0 c1 A (Has_unit_unit A Rs c1 e)).
+      apply Himp; exact Hy.
   Qed.
 
 End Top.
 
 Section Linking.
   (* Linking Preservation *)
-
-  (* Every unit of `ce` treats the top-level variable `x` as unknown: whatever
-   the context binds it to is approximated by `AVtop`. *)
-  Definition import_unknown (x : var) (ce : cexp) : Prop :=
-    forall A, has_cunit ce A -> AVtop \in ai_env A x.
 
   Lemma coloring_link_inv {c1 x e1 e2 c3 cce} :
     coloring c1 (CElink x e1 e2) c3 cce ->
@@ -3335,36 +3449,19 @@ Section Linking.
         exists A; apply Has_unit_link2; exact HA.
   Qed.
 
-  Lemma coloring_import_unknown {θ c1 ce c2 cce x} :
-    coloring c1 ce c2 cce ->
-    analysis_context_of θ cce ->
-    import_unknown x ce ->
-    forall c, c1 <= c < c2 -> AVtop \in ai_env (θ c) x.
-  Proof.
-    intros Hcol Hθ Hx c Hc.
-    destruct (coloring_surj Hcol c Hc) as [A HA].
-    rewrite <- (Hθ c A HA).
-    apply Hx.
-    eapply coloring_has_cunit; eassumption.
-  Qed.
-
   (* The environment relation for the first component: the closure `f` is
-   unused, and only the units `[c1, c2)` run. *)
-  Lemma G_top_link1 θ c1 c2 c3 i f x e1 e2 ρ1 ρ2 :
-    c2 <= c3 ->
+   unused. *)
+  Lemma G_top_link1 θ i f x e1 e2 ρ1 ρ2 :
     ~ (f \in occurs_free e1) ->
-    G_top θ c1 c3 i (occurs_free (link f x e1 e2)) ρ1 ρ2 ->
-    G_top θ c1 c2 i (occurs_free e1) (M.set f (Tag l0 (Vfun f ρ1 [] e1)) ρ1) ρ2.
+    G_top θ i (occurs_free (link f x e1 e2)) ρ1 ρ2 ->
+    G_top θ i (occurs_free e1) (M.set f (Tag l0 (Vfun f ρ1 [] e1)) ρ1) ρ2.
   Proof.
-    intros Hle Hf [Hwf1 [Hwf2 [Happ [Hesc [Hbind HG]]]]].
-    refine (conj _ (conj Hwf2 (conj _ (conj _ (conj _ _))))).
+    intros Hf [Hwf1 [Hwf2 HG]].
+    refine (conj _ (conj Hwf2 _)).
     - eapply wf_env_subset; [exact (link_wf_env_fun Hwf1 Hf) |].
       intros y Hy.
       apply Union_intror.
       apply link_free_e1; assumption.
-    - intros c Hc; apply Happ; lia.
-    - intros c Hc; apply Hesc; lia.
-    - intros c Hc; apply Hbind; lia.
     - intros y Hy.
       destruct (HG y (link_free_e1 f x e1 e2 Hf y Hy)) as [w1 [w2 [Hget1 [Hget2 HVw]]]].
       exists w1, w2.
@@ -3374,23 +3471,21 @@ Section Linking.
   Qed.
 
   (* The environment relation for the second component: the result of the
-   first component is bound to `x`, and only the units `[c2, c3)` run. *)
-  Lemma G_top_link2 θ c1 c2 c3 i j f x e1 e2 ρ1 ρ2 v1 v2 :
-    c1 <= c2 ->
+   first component, which crosses the boundary, is bound to `x`. *)
+  Lemma G_top_link2 θ i j f x e1 e2 ρ1 ρ2 v1 v2 :
     j <= i ->
     ~ (f \in occurs_free e1) ->
     ~ (f \in occurs_free e2) ->
-    (forall c, c2 <= c < c3 -> AVtop \in ai_env (θ c) x) ->
-    G_top θ c1 c3 i (occurs_free (link f x e1 e2)) ρ1 ρ2 ->
+    G_top θ i (occurs_free (link f x e1 e2)) ρ1 ρ2 ->
     V_top θ j v1 v2 ->
-    G_top θ c2 c3 j (occurs_free e2)
+    G_top θ j (occurs_free e2)
       (M.set x v1 (M.set f (Tag l0 (Vfun f ρ1 [] e1)) ρ1))
       (M.set x v2 ρ2).
   Proof.
-    intros Hle Hj Hf1 Hf Htop [Hwf1 [Hwf2 [Happ [Hesc [Hbind HG]]]]] [HV HB].
+    intros Hj Hf1 Hf [Hwf1 [Hwf2 HG]] [HV HB].
     assert (Hwfv1 : wf_val v1) by (eapply V_wf_val_l; eauto).
     assert (Hwfv2 : wf_cval θ v2) by (eapply V_wf_cval_r; eauto).
-    refine (conj _ (conj _ (conj _ (conj _ (conj _ _))))).
+    refine (conj _ (conj _ _)).
     - eapply wf_env_subset.
       + eapply wf_env_set; [exact (link_wf_env_fun Hwf1 Hf1) | exact Hwfv1].
       + intros y Hy.
@@ -3399,15 +3494,6 @@ Section Linking.
         * apply Union_intror; apply Union_intror.
           apply link_free_e2; assumption.
     - apply wf_cenv_set; [exact Hwf2 | exact Hwfv2].
-    - intros c Hc.
-      apply approx_env_set; [apply Happ; lia |].
-      exists AVtop; split; [apply Htop; exact Hc | constructor].
-    - intros c Hc.
-      apply cescaped_env_set; [apply Hesc; lia |].
-      apply cboundary_cescaped; exact HB.
-    - intros c Hc.
-      apply cbinding_env_set; [apply Hbind; lia |].
-      apply cboundary_cbinding; [exact Hwfv2 | exact HB | apply Htop; exact Hc].
     - intros y Hy.
       destruct (M.elt_eq x y) as [Hxy | Hxy].
       + subst y.
@@ -3429,12 +3515,11 @@ Section Linking.
     f <> x ->
     ~ (f \in occurs_free e1) ->
     ~ (f \in occurs_free e2) ->
-    import_unknown x e2' ->
     trans_correct_top e1 e1' ->
     trans_correct_top e2 e2' ->
     trans_correct_top (link f x e1 e2) (clink x e1' e2').
   Proof.
-    intros Hfx Hf1 Hf2 Hx [Hfree1 He1] [Hfree2 He2].
+    intros Hfx Hf1 Hf2 [Hfree1 He1] [Hfree2 He2].
     split.
     - intros y Hy.
       unfold Ensembles.In, clink in Hy.
@@ -3444,11 +3529,8 @@ Section Linking.
     - intros θ cce c1 c3 Hcol Hθ Hesc_ok i ρ1 ρ2 HG.
       destruct (coloring_link_inv Hcol) as [c2 [cce1 [cce2 [Heq [Hcol1 Hcol2]]]]].
       subst cce.
-      pose proof (coloring_mono Hcol1) as Hle12.
-      pose proof (coloring_mono Hcol2) as Hle23.
       pose proof (analysis_context_of_link1 Hθ) as Hθ1.
       pose proof (analysis_context_of_link2 Hθ) as Hθ2.
-      pose proof (coloring_import_unknown Hcol2 Hθ2 Hx) as Htop.
       unfold E_top, E_top'.
       intros j1 r1 Hj1 Hstep.
       destruct (bstep_link_inv Hstep) as [HOOT | [ca [cb [v [Heqj [Hs1 Hs2]]]]]].
@@ -3459,12 +3541,12 @@ Section Linking.
       + subst j1.
         (* run the first component *)
         pose proof (He1 θ cce1 c1 c2 Hcol1 Hθ1 Hesc_ok i _ ρ2
-                      (G_top_link1 θ c1 c2 c3 i f x e1 e2 ρ1 ρ2 Hle23 Hf1 HG)) as HE1.
+                      (G_top_link1 θ i f x e1 e2 ρ1 ρ2 Hf1 HG)) as HE1.
         destruct (HE1 ca (Res v) ltac:(lia) Hs1) as [j2 [r2 [I2 [Hc1 HR1]]]].
         destruct r2 as [| v2]; [destruct HR1 |].
         (* run the second component with its result bound to `x` *)
-        pose proof (G_top_link2 θ c1 c2 c3 i (i - ca) f x e1 e2 ρ1 ρ2 v v2
-                      Hle12 ltac:(lia) Hf1 Hf2 Htop HG HR1) as HG2.
+        pose proof (G_top_link2 θ i (i - ca) f x e1 e2 ρ1 ρ2 v v2
+                      ltac:(lia) Hf1 Hf2 HG HR1) as HG2.
         pose proof (He2 θ cce2 c2 c3 Hcol2 Hθ2 Hesc_ok (i - ca) _ _ HG2) as HE2.
         destruct (HE2 cb r1 ltac:(lia) Hs2) as [j3 [r3 [I3 [Hc2 HR2]]]].
         destruct v2 as [A [c l] w].
