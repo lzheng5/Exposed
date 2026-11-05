@@ -697,8 +697,8 @@ Section LRBase.
               (* the closure is recorded at its defining unit *)
               (An.AVfun l1 f1 xs1 e1 \in An.ai_env A1 f1) /\
               (* the source closure environment invariants *)
-              An.cescaped_env c1 ρ1 /\
-              An.cbinding_env c1 A1 ρ1 /\
+              An.cescaped_env c1 (An.fun_fv f1 xs1 e1) ρ1 /\
+              An.cbinding_env c1 A1 (An.fun_fv f1 xs1 e1) ρ1 /\
 
               match i with
               | 0 => True
@@ -799,8 +799,8 @@ Section LRBase.
   Definition G c i Γ1 ρ1 ρ2 :=
     An.wf_cenv θ ρ1 /\
       wf_cenv ρ2 /\
-      An.cescaped_env c ρ1 /\
-      An.cbinding_env c (θ c) ρ1 /\
+      An.cescaped_env c Γ1 ρ1 /\
+      An.cbinding_env c (θ c) Γ1 ρ1 /\
       forall x,
         (x \in Γ1) ->
         exists v1 v2,
@@ -813,7 +813,14 @@ Section LRBase.
     G c i Γ1 ρ1 ρ2 ->
     Γ2 \subset Γ1 ->
     G c i Γ2 ρ1 ρ2.
-  Proof. unfold G. fcrush. Qed.
+  Proof.
+    unfold G.
+    intros [Hwf1 [Hwf2 [Hesc [Hbind HG]]]] Hsub.
+    split; [exact Hwf1 | split; [exact Hwf2 | split; [| split]]].
+    - eapply An.cescaped_env_subset; eauto.
+    - eapply An.cbinding_env_subset; eauto.
+    - intros x Hx; apply HG; apply Hsub; exact Hx.
+  Qed.
 
   Lemma G_wf_cenv_l {c i Γ1 ρ1 ρ2}:
     G c i Γ1 ρ1 ρ2 ->
@@ -827,13 +834,13 @@ Section LRBase.
 
   Lemma G_cescaped_env {c i Γ1 ρ1 ρ2}:
     G c i Γ1 ρ1 ρ2 ->
-    An.cescaped_env c ρ1.
-  Proof. unfold G. fcrush. Qed.
+    An.cescaped_env c Γ1 ρ1.
+  Proof. unfold G. intros [_ [_ [Hesc _]]]. exact Hesc. Qed.
 
   Lemma G_cbinding_env {c i Γ1 ρ1 ρ2}:
     G c i Γ1 ρ1 ρ2 ->
-    An.cbinding_env c (θ c) ρ1.
-  Proof. unfold G. fcrush. Qed.
+    An.cbinding_env c (θ c) Γ1 ρ1.
+  Proof. unfold G. intros [_ [_ [_ [Hbind _]]]]. exact Hbind. Qed.
 
   Lemma G_get {c Γ1 i ρ1 ρ2}:
     G c i Γ1 ρ1 ρ2 ->
@@ -1352,8 +1359,13 @@ Section Compat.
     unfold well_annotated.
     intros HS HL Hθ Hesc Hω Hweb Hw He i.
     induction i; simpl; subst; intros; auto;
-      assert (Hesc_env : An.cescaped_env c ρ1) by eauto using G_cescaped_env;
-      assert (Hloc_env : An.cbinding_env c (θ c) ρ1) by eauto using G_cbinding_env;
+      (* the closure environment invariants, at the free variables of the closure *)
+      assert (Hesc_env : An.cescaped_env c (An.fun_fv f xs e) ρ1)
+        by (eapply An.cescaped_env_subset;
+            [eapply G_cescaped_env; eauto | eapply An.fun_fv_subset; eauto]);
+      assert (Hloc_env : An.cbinding_env c (θ c) (An.fun_fv f xs e) ρ1)
+        by (eapply An.cbinding_env_subset;
+            [eapply G_cbinding_env; eauto | eapply An.fun_fv_subset; eauto]);
       repeat (split; auto);
       eexists; repeat (split; eauto);
       intros; (repeat split; auto).
@@ -1788,27 +1800,31 @@ Section LRTop.
         cbstep_top_fuel ρ2 e2 j2 r2 /\
         R' P (i - j1) r1 r2.
 
-  (* Related values that cross the program boundary are exposed. *)
-  Definition V_top i v1 v2 := V θ ω i v1 v2 /\ to_exposed v2.
+  (* Related values that cross the program boundary: the source value has
+     escaped, and the target value is exposed. *)
+  Definition V_top i v1 v2 := V θ ω i v1 v2 /\ An.cboundary v1 /\ to_exposed v2.
 
   Definition R_top := R' V_top.
   Definition E_top := E_top' V_top.
 
   Lemma V_V_top i v1 v2 :
+    An.cboundary v1 ->
     to_exposed v2 ->
     (V θ ω i v1 v2 <-> V_top i v1 v2).
   Proof. unfold V_top; tauto. Qed.
 
   Lemma R_R_top :
     forall i r1 r2,
+      An.cboundary_res r1 ->
       to_exposed_cres r2 ->
       (R θ ω i r1 r2 <-> R_top i r1 r2).
   Proof.
-    unfold R, R_top, R', cboundary_res.
-    intros.
-    split; destruct r1; destruct r2; try contradiction;
-      intros; eauto; inv H;
-      eapply V_V_top; eauto.
+    unfold R, R_top, R'.
+    intros i r1 r2 Hb Hx.
+    destruct r1 as [| v1], r2 as [| v2]; try tauto.
+    cbn in Hb.
+    inv Hx.
+    unfold V_top; tauto.
   Qed.
 
   Lemma E_E_top A c Rs W i ρ1 ρ2 e :
@@ -1820,8 +1836,9 @@ Section LRTop.
     inv H1.
     edestruct H as [j2 [r2 [Hcbstep HR]]]; eauto.
     exists j2, r2; split; eauto.
+    assert (Hb1 : An.cboundary_res r1) by (eapply An.cbstep_fuel_cboundary_res; eauto).
+    assert (Hb2 : to_exposed_cres r2) by (eapply cbstep_fuel_to_exposed_cres; eauto).
     eapply R_R_top; eauto.
-    eapply cbstep_fuel_to_exposed_cres; eauto.
   Qed.
 
   Lemma E_top_E A c Rs W i ρ1 ρ2 e :
@@ -1833,15 +1850,17 @@ Section LRTop.
     edestruct H as [j2 [r2 [Hcbstep HR]]]; eauto.
     exists j2, r2; split; eauto.
     eapply cbstep_top_fuel_cbstep_fuel; eauto.
+    assert (Hb1 : An.cboundary_res r1) by (eapply An.cbstep_fuel_cboundary_res; eauto).
+    assert (Hb2 : to_exposed_cres r2) by (eapply cbstep_top_fuel_to_exposed_cres; eauto).
     eapply R_R_top; eauto.
-    eapply cbstep_top_fuel_to_exposed_cres; eauto.
   Qed.
 
-  Definition G_top c1 c2 i Γ1 ρ1 ρ2 :=
+  (* Every value bound at the top level crosses the program boundary, so the
+     environment invariants of a unit are recovered in `G_top_G` from the unit
+     treating its imports as unknown. *)
+  Definition G_top i Γ1 ρ1 ρ2 :=
     An.wf_cenv θ ρ1 /\
       wf_cenv ρ2 /\
-      An.cescaped_env_top c1 c2 ρ1 /\
-      An.cbinding_env_top θ c1 c2 ρ1 /\
       forall x,
         (x \in Γ1) ->
         exists v1 v2,
@@ -1849,37 +1868,49 @@ Section LRTop.
             M.get x ρ2 = Some v2 /\
             V_top i v1 v2.
 
-  Lemma G_top_G {c1 c2 i Γ1 ρ1 ρ2} :
-    G_top c1 c2 i Γ1 ρ1 ρ2 ->
+  Lemma G_top_G {i Γ1 ρ1 ρ2} :
+    G_top i Γ1 ρ1 ρ2 ->
     forall c,
-      c1 <= c < c2 ->
+      (forall x, (x \in Γ1) -> AVtop \in An.ai_env (θ c) x) ->
       G θ ω c i Γ1 ρ1 ρ2.
   Proof.
     unfold G_top, G.
-    intros.
-    destruct H as [Hwf1 [Hwf2 [Hesc [Hbind HG]]]].
-    repeat (split; eauto); intros.
-    edestruct HG as [v1 [v2 [Heqv1 [Heqv2 HV]]]]; eauto.
-    eexists; eexists; repeat (split; eauto).
-    unfold V_top in *.
-    fcrush.
+    intros [Hwf1 [Hwf2 HG]] c Htop.
+    split; [exact Hwf1 | split; [exact Hwf2 | split; [| split]]].
+    - intros x v Hx Hget.
+      destruct (HG x Hx) as [v1 [v2 [Hg1 [Hg2 [_ [HB _]]]]]].
+      rewrite Hg1 in Hget; inv Hget.
+      apply An.cboundary_cescaped; exact HB.
+    - intros x v Hx Hget.
+      destruct (HG x Hx) as [v1 [v2 [Hg1 [Hg2 [HV [HB _]]]]]].
+      rewrite Hg1 in Hget; inv Hget.
+      apply An.cboundary_cbinding;
+        [eapply V_wf_cval_l; eauto | exact HB | apply Htop; exact Hx].
+    - intros x Hx.
+      destruct (HG x Hx) as [v1 [v2 [Hg1 [Hg2 [HV _]]]]].
+      exists v1, v2; auto.
   Qed.
 
-  Lemma G_top_wf_env_l c1 c2 i Γ1 ρ1 ρ2 :
-    G_top c1 c2 i Γ1 ρ1 ρ2 ->
+  Lemma G_top_wf_env_l i Γ1 ρ1 ρ2 :
+    G_top i Γ1 ρ1 ρ2 ->
     An.wf_cenv θ ρ1.
   Proof. unfold G_top. intros; tauto. Qed.
 
-  Lemma G_top_wf_cenv_r c1 c2 i Γ1 ρ1 ρ2 :
-    G_top c1 c2 i Γ1 ρ1 ρ2 ->
+  Lemma G_top_wf_cenv_r i Γ1 ρ1 ρ2 :
+    G_top i Γ1 ρ1 ρ2 ->
     wf_cenv ρ2.
   Proof. unfold G_top. intros; tauto. Qed.
 
-  Lemma G_top_subset c1 c2 i Γ1 ρ1 Γ2 ρ2 :
-    G_top c1 c2 i Γ1 ρ1 ρ2 ->
+  Lemma G_top_subset i Γ1 ρ1 Γ2 ρ2 :
+    G_top i Γ1 ρ1 ρ2 ->
     Γ2 \subset Γ1 ->
-    G_top c1 c2 i Γ2 ρ1 ρ2.
-  Proof. unfold G_top. fcrush. Qed.
+    G_top i Γ2 ρ1 ρ2.
+  Proof.
+    unfold G_top.
+    intros [Hwf1 [Hwf2 HG]] Hsub.
+    split; [exact Hwf1 | split; [exact Hwf2 |]].
+    intros x Hx; apply HG; apply Hsub; exact Hx.
+  Qed.
 
   (* Top-level Monotonicity Lemmas *)
   Lemma V_top_mono i :
@@ -1888,12 +1919,8 @@ Section LRTop.
       j <= i ->
       V_top j v1 v2.
   Proof.
-    intros.
-    eapply V_V_top; eauto.
-    fcrush.
-    eapply V_mono; eauto.
-    eapply V_V_top; eauto.
-    fcrush.
+    intros j v1 v2 [HV [HB Hx]] Hj.
+    split; [eapply V_mono; eauto | split; assumption].
   Qed.
 
   Lemma V_top_mono_Forall {vs1 vs2} i j :
@@ -1932,19 +1959,18 @@ Section LRTop.
     apply R_top_mono with (i - j1); try lia; auto.
   Qed.
 
-  Lemma G_top_mono {Γ1 c1 c2 ρ1 ρ2} i j:
-    G_top c1 c2 i Γ1 ρ1 ρ2 ->
+  Lemma G_top_mono {Γ1 ρ1 ρ2} i j:
+    G_top i Γ1 ρ1 ρ2 ->
     j <= i ->
-    G_top c1 c2 j Γ1 ρ1 ρ2.
+    G_top j Γ1 ρ1 ρ2.
   Proof.
     unfold G_top.
-    intros.
-    destruct H as [Hwf1 [Hwf2 [Hesc [Hbind HG]]]].
-    repeat (split; eauto); intros.
-    edestruct HG as [v1 [v2 [Heqv1 [Heqv2 HV]]]]; eauto.
-    eexists; eexists; repeat (split; eauto).
-    apply V_top_mono with i; eauto.
-    fcrush.
+    intros [Hwf1 [Hwf2 HG]] Hj.
+    split; [exact Hwf1 | split; [exact Hwf2 |]].
+    intros x Hx.
+    destruct (HG x Hx) as [v1 [v2 [Hg1 [Hg2 HV]]]].
+    exists v1, v2.
+    split; [exact Hg1 | split; [exact Hg2 | eapply V_top_mono; eauto]].
   Qed.
 
 End LRTop.
@@ -1961,17 +1987,18 @@ Section Top.
         web_map_context_of ω cce we ->
         valid_web_map_context ω θ ->
         forall i ρ1 ρ2,
-          G_top θ ω c1 c2 i (An.occurs_free_top ce) ρ1 ρ2 ->
+          G_top θ ω i (An.occurs_free_top ce) ρ1 ρ2 ->
           E_top θ ω i ρ1 cce ρ2 we.
 
   Theorem top A e Rs W:
     web_map_exposed W A ->
     has_label e \subset Dom_map W ->
     Rs \subset An.ai_esc A ->
+    imports_unknown A (occurs_free e) ->
     trans_correct_top (An.CEunit A Rs e) (CEunit W e).
   Proof.
-    unfold trans_correct_top.
-    intros Hexp Hsub Hesc; intros.
+    unfold trans_correct_top, imports_unknown.
+    intros Hexp Hsub Hesc Himp; intros.
     split; intros.
 
     eapply Included_trans.
@@ -1998,9 +2025,115 @@ Section Top.
     - unfold aexposed_avals.
       intros.
       eapply AExp_esc; eauto.
-    - eapply G_top_G; eauto.
-      eapply G_top_subset; eauto.
-      eapply An.occurs_free_top_cexp; eauto.
+    - eapply (G_top_G θ ω).
+      + eapply G_top_subset; eauto.
+        eapply An.occurs_free_top_cexp; eauto.
+      + intros y Hy.
+        rewrite <- (H0 c1 A (An.Has_unit_unit A Rs c1 e)).
+        apply Himp; exact Hy.
   Qed.
 
 End Top.
+
+Section Linking.
+
+  (* Inversion of the source top-level semantics of a link *)
+  Lemma An_cbstep_top_fuel_link_inv {ρ x cce1 cce2 j r I} :
+    An.cbstep_top_fuel ρ (An.CClink x cce1 cce2) j r I ->
+    (r = An.COOT /\ j = 0) \/
+      (exists i1 I1,
+          j = S (S i1) /\ r = An.COOT /\ An.cbstep_top_fuel ρ cce1 i1 An.COOT I1) \/
+      (exists i1 i2 v I1 I2,
+          j = S (S (i1 + i2)) /\
+            An.cbstep_top_fuel ρ cce1 i1 (An.CRes v) I1 /\
+            An.cbstep_top_fuel (M.set x v ρ) cce2 i2 r I2).
+  Proof.
+    intros H.
+    inv H; [left; auto | right].
+    match goal with [Hl : An.cbstep_top _ _ _ _ _ |- _] => inv Hl end.
+    - right; do 5 eexists; split; [reflexivity | split; eassumption].
+    - left; do 2 eexists; split; [reflexivity | split; [reflexivity | eassumption]].
+  Qed.
+
+  (* The environment relation for the second component: the result of the
+     first component, which crosses the boundary, is bound to `x`. *)
+  Lemma G_top_link θ ω i j x e1 e2 ρ1 ρ2 v1 v2 :
+    valid_web_map_context ω θ ->
+    j <= i ->
+    G_top θ ω i (An.occurs_free_top (An.clink x e1 e2)) ρ1 ρ2 ->
+    V_top θ ω j v1 v2 ->
+    G_top θ ω j (An.occurs_free_top e2) (M.set x v1 ρ1) (M.set x v2 ρ2).
+  Proof.
+    intros Hω Hj [Hwf1 [Hwf2 HG]] HV.
+    assert (Hwfv1 : An.wf_cval θ v1)
+      by (destruct HV as [HV _]; eapply V_wf_cval_l; eauto).
+    assert (Hwfv2 : wf_cval v2)
+      by (destruct HV as [HV _]; eapply V_wf_cval_r; eauto).
+    refine (conj _ (conj _ _)).
+    - apply An.wf_cenv_set; [exact Hwf1 | exact Hwfv1].
+    - apply wf_cenv_set; [exact Hwf2 | exact Hwfv2].
+    - intros y Hy.
+      destruct (M.elt_eq x y) as [Hxy | Hxy].
+      + subst y.
+        exists v1, v2.
+        rewrite !M.gss.
+        exact (conj eq_refl (conj eq_refl HV)).
+      + destruct (HG y (An.Free_clink2 x y e1 e2 Hxy Hy)) as [w1 [w2 [Hget1 [Hget2 HVw]]]].
+        exists w1, w2.
+        rewrite !M.gso by (intros Heq; subst y; contradiction).
+        split; [exact Hget1 | split; [exact Hget2 | eapply V_top_mono; eauto]].
+  Qed.
+
+  Theorem preserves_linking x e1 e1' e2 e2' :
+    trans_correct_top e1 e1' ->
+    trans_correct_top e2 e2' ->
+    trans_correct_top (An.clink x e1 e2) (clink x e1' e2').
+  Proof.
+    intros [Hfree1 He1] [Hfree2 He2].
+    split.
+    - intros y Hy.
+      unfold Ensembles.In, clink in Hy.
+      inv Hy.
+      + apply An.Free_clink1; apply Hfree1; assumption.
+      + apply An.Free_clink2; [assumption | apply Hfree2; assumption].
+    - intros θ ω cce c1 c3 Hcol Hθ Hesc_ok Hωof Hω i ρ1 ρ2 HG.
+      destruct (An.coloring_link_inv Hcol) as [c2 [cce1 [cce2 [Heq [Hcol1 Hcol2]]]]].
+      subst cce.
+      destruct (web_map_context_of_link_inv Hωof) as [we1 [we2 [Heqwe [Hω1 Hω2]]]].
+      unfold clink in Heqwe; inv Heqwe.
+      pose proof (An.analysis_context_of_link1 Hθ) as Hθ1.
+      pose proof (An.analysis_context_of_link2 Hθ) as Hθ2.
+      (* the first component runs in the same environment *)
+      assert (HG1 : G_top θ ω i (An.occurs_free_top e1) ρ1 ρ2).
+      { eapply G_top_subset; [exact HG |].
+        intros y Hy; apply An.Free_clink1; exact Hy. }
+      pose proof (He1 θ ω cce1 c1 c2 Hcol1 Hθ1 Hesc_ok Hω1 Hω i ρ1 ρ2 HG1) as HE1.
+      unfold E_top, E_top'.
+      intros j1 r1 I1 Hj1 Hstep.
+      destruct (An_cbstep_top_fuel_link_inv Hstep)
+        as [[-> ->] | [[k1 [J1 [-> [-> Hs1]]]] | [k1 [k2 [u [J1 [J2 [-> [Hs1 Hs2]]]]]]]]].
+      + (* out of time: so is the linked program, right away *)
+        exists 0, COOT.
+        split; [apply CbstepTF_link_OOT | exact I].
+      + (* the first component runs out of time *)
+        destruct (HE1 k1 An.COOT J1 ltac:(lia) Hs1) as [j2 [r2 [Hc1 HR1]]].
+        destruct r2 as [| v2]; [| destruct HR1].
+        exists (S (S j2)), COOT.
+        split; [| exact I].
+        apply CbstepTF_link_Step; apply CbstepT_link_OOT; exact Hc1.
+      + (* run the first component *)
+        destruct (HE1 k1 (An.CRes u) J1 ltac:(lia) Hs1) as [j2 [r2 [Hc1 HR1]]].
+        destruct r2 as [| v2]; [destruct HR1 |].
+        (* run the second component with its result bound to `x` *)
+        pose proof (G_top_link θ ω i (i - k1) x e1 e2 ρ1 ρ2 u v2 Hω ltac:(lia) HG HR1) as HG2.
+        pose proof (He2 θ ω cce2 c2 c3 Hcol2 Hθ2 Hesc_ok Hω2 Hω (i - k1) _ _ HG2) as HE2.
+        destruct (HE2 k2 r1 J2 ltac:(lia) Hs2) as [j3 [r3 [Hc2 HR2]]].
+        destruct v2 as [l' W' w'].
+        exists (S (S (j2 + j3))), r3.
+        split.
+        * apply CbstepTF_link_Step.
+          eapply CbstepT_link_Res; [exact Hc1 | exact Hc2].
+        * eapply R_top_mono; eauto; lia.
+  Qed.
+
+End Linking.
