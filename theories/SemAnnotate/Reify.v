@@ -1243,6 +1243,143 @@ Proof.
   exact HR'.
 Qed.
 
+Section BehaviorRefinement.
+
+  (* Behavioral Refinement *)
+  Inductive val_ref : Aw.clval -> AT.wval -> Prop :=
+  | Ref_TAG :
+    forall l W w v1 v2,
+      W ! l = Some w ->
+      (w \in Exposed) ->
+      val_ref' v1 v2 ->
+      val_ref (Aw.CTag l W v1) (AT.Tag w v2)
+
+  with val_ref' : Aw.cval -> AT.val -> Prop :=
+  | Ref_Vfun :
+    forall f1 ρ1 xs1 e1 f2 ρ2 xs2 e2,
+      val_ref' (Aw.CVfun f1 ρ1 xs1 e1) (AT.Vfun f2 ρ2 xs2 e2)
+
+  | Ref_Vconstr_nil :
+    forall c,
+      val_ref' (Aw.CVconstr c []) (AT.Vconstr c [])
+
+  | Ref_Vconstr_cons :
+    forall c v1 v2 vs1 vs2,
+      val_ref v1 v2 ->
+      val_ref' (Aw.CVconstr c vs1) (AT.Vconstr c vs2) ->
+      val_ref' (Aw.CVconstr c (v1 :: vs1)) (AT.Vconstr c (v2 :: vs2)).
+
+  Hint Constructors val_ref : core.
+  Hint Constructors val_ref' : core.
+
+  Scheme val_ref_mut := Induction for val_ref Sort Prop
+  with val_ref'_mut := Induction for val_ref' Sort Prop.
+
+  Lemma val_ref_Vconstr c l W w vs1 vs2 :
+    W ! l = Some w ->
+    w \in Exposed ->
+    Forall2 val_ref vs1 vs2 ->
+    val_ref (Aw.CTag l W (Aw.CVconstr c vs1)) (AT.Tag w (AT.Vconstr c vs2)).
+  Proof.
+    intros Hl Hw Hvs.
+    apply Ref_TAG; [exact Hl | exact Hw |].
+    induction Hvs as [| v1 v2 vs1' vs2' Hv Hvs' IHvs'].
+    - apply Ref_Vconstr_nil.
+    - apply Ref_Vconstr_cons; assumption.
+  Qed.
+
+  Lemma exposed_Tag_inv {w v} :
+    exposed (AT.Tag w v) ->
+    w \in Exposed.
+  Proof.
+    intros Hex.
+    inversion Hex as [w' f ρ xs e Hw' | w' c vs Hw' Hvs]; subst; assumption.
+  Qed.
+
+  Lemma V_top_val_ref_aux {v1 v2} :
+    Aw.wf_cval v1 ->
+    (forall i, V_top i v1 v2) ->
+    val_ref v1 v2.
+  Proof.
+    intros Hwf HV.
+    revert v2 HV.
+    induction Hwf as [W l w v Hl Hto Hwf' IHwf'
+                     | f ρ xs e Hρ IHρ
+                     | c
+                     | c v vs Hv IHv Hvs IHvs
+                     | ρ Hρ IHρ]
+      using Aw.wf_cval_mut
+      with (P0 := fun cv _ =>
+                    forall c vs1,
+                      cv = Aw.CVconstr c vs1 ->
+                      forall vs2,
+                        (forall i, Forall2 (V_top i) vs1 vs2) ->
+                        Forall2 val_ref vs1 vs2)
+           (P1 := fun _ _ => True).
+    - (* WF_TAG *)
+      intros v2 HV.
+      destruct v2 as [w' v2'].
+      pose proof (HV 0) as HV0; simpl in HV0.
+      destruct HV0 as [_ [_ [Hex [Hl' HV0]]]].
+      pose proof (exposed_Tag_inv Hex) as Hw'.
+      destruct v as [f1 ρ1 xs1 e1 | c1 vs1];
+        destruct v2' as [f2 ρ2 xs2 e2 | c2 vs2];
+        simpl in HV0; try contradiction.
+      + apply Ref_TAG; [exact Hl' | exact Hw' | apply Ref_Vfun].
+      + destruct HV0 as [<- _].
+        apply val_ref_Vconstr; [exact Hl' | exact Hw' |].
+        apply (IHwf' c1 vs1 eq_refl).
+        intros i.
+        specialize (HV (S i)); simpl in HV.
+        destruct HV as [_ [_ [_ [_ [_ [_ HVs]]]]]].
+        exact HVs.
+    - (* WF_CVfun *)
+      intros c vs1 Heq.
+      discriminate Heq.
+    - (* WF_CVconstr_nil *)
+      intros c' vs1 Heq vs2 HVs.
+      injection Heq as <- <-.
+      destruct vs2 as [| v2 vs2'].
+      + constructor.
+      + pose proof (HVs 0) as Hlen.
+        apply Forall2_length in Hlen.
+        discriminate Hlen.
+    - (* WF_CVconstr *)
+      intros c' vs1 Heq vs2 HVs.
+      injection Heq as <- <-.
+      destruct vs2 as [| v2 vs2'].
+      + pose proof (HVs 0) as Hlen.
+        apply Forall2_length in Hlen.
+        discriminate Hlen.
+      + apply Forall2_cons.
+        * apply IHv.
+          intros i.
+          pose proof (HVs i) as HVi.
+          inversion HVi as [| x y l l' Hxy Hll]; subst.
+          exact Hxy.
+        * apply (IHvs c vs eq_refl).
+          intros i.
+          pose proof (HVs i) as HVi.
+          inversion HVi as [| x y l l' Hxy Hll]; subst.
+          exact Hll.
+    - (* WF_cenv *)
+      exact I.
+  Qed.
+
+  Theorem V_top_val_ref {v1 v2} :
+    (forall i, V_top i v1 v2) ->
+    val_ref v1 v2.
+  Proof.
+    intros H.
+    eapply V_top_val_ref_aux; eauto.
+    specialize (H 0).
+    eapply V_wf_cval_l; eauto.
+    eapply V_V_top; eauto.
+    eapply V_top_exposed_r; eauto.
+  Qed.
+
+End BehaviorRefinement.
+
 (* Linking Preservation *)
 
 Lemma preserves_linking f w x e1 e2 e1' e2' :

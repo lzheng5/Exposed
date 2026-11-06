@@ -3700,6 +3700,70 @@ Section Adequacy.
 
 End Adequacy.
 
+Section BehaviorRefinement.
+
+  (* Behavioral Refinement *)
+  Inductive val_ref : wval -> clval -> Prop :=
+  | Ref_Vfun :
+    forall l f ρ1 xs e A c ρ2,
+      val_ref (Tag l (Vfun f ρ1 xs e)) (CTag A c l (CVfun f ρ2 xs e))
+
+              (*
+  | Ref_Vconstr_nil :
+    forall c l0,
+      val_ref_ (A0.Vconstr c []) (Tag l0 (A1.Vconstr c []))
+
+  | Ref_Vconstr_cons :
+    forall c v1 v2 l0 vs1 vs2,
+      val_ref_ v1 v2 ->
+      val_ref_ (A0.Vconstr c vs1) (Tag l0 (A1.Vconstr c vs2)) ->
+      val_ref_ (A0.Vconstr c (v1 :: vs1)) (Tag l0 (A1.Vconstr c (v2 :: vs2)))
+               *) .
+
+  Hint Constructors val_ref : core.
+
+  (*
+  Lemma val_ref_Vconstr c l0 vs1 vs2 :
+    Forall2 val_ref vs1 vs2 ->
+    val_ref (A0.Vconstr c vs1) (Tag l0 (A1.Vconstr c vs2)).
+  Proof.
+    intros.
+    induction H; simpl; auto.
+  Qed.
+*)
+
+  Lemma V_top_val_ref_aux {θ v1 v2} :
+    wf_val v1 ->
+    (forall i, V_top θ i v1 v2) ->
+    val_ref v1 v2.
+  Proof.
+    intros _ HV.
+    specialize (HV 0); unfold V_top in HV.
+    destruct HV as [HV _].
+    destruct HV as [_ [_ HV]].
+    destruct v1 as [l1 v1']; destruct v2 as [A2 [c2 l2] v2']; simpl in HV.
+    destruct HV as [-> HV].
+    destruct v1' as [f1 ρ1 xs1 e1 | c1 vs1];
+      destruct v2' as [f2 ρ2 xs2 e2 | c2' vs2];
+      simpl in HV; try contradiction.
+    destruct HV as [-> [-> [-> _]]].
+    constructor.
+  Qed.
+
+  Theorem V_top_val_ref {θ v1 v2} :
+    (forall i, V_top θ i v1 v2) ->
+    val_ref v1 v2.
+  Proof.
+    intros H.
+    eapply V_top_val_ref_aux; eauto.
+    specialize (H 0).
+    unfold V_top in H.
+    inv H.
+    eapply V_wf_val_l; eauto.
+  Qed.
+
+End BehaviorRefinement.
+
 Section Linking.
   (* Linking Preservation *)
 

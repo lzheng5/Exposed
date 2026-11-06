@@ -226,6 +226,30 @@ Section Adequacy.
 
 End Adequacy.
 
+Section BehaviorRefinement.
+
+  (* Behavioral Refinement *)
+  Definition val_ref := Cross L.val_ref
+                          (Cross An.val_ref
+                             (Cross Aw.val_ref
+                                R.val_ref)).
+
+  Lemma val_ref_Vconstr c w vs1 vs2 :
+    w \in Exposed ->
+    Forall2 val_ref vs1 vs2 ->
+    val_ref (AS.Vconstr c vs1) (AT.Tag w (AT.Vconstr c vs2)).
+  Proof.
+    intros.
+  Admitted.
+
+  Lemma V_val_ref {θ ω v1 v2} :
+    V θ ω v1 v2 ->
+    val_ref v1 v2.
+  Proof.
+  Admitted.
+
+End BehaviorRefinement.
+
 Section Linking.
 
   (* Linking Preservation *)
