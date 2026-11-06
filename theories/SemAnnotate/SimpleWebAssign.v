@@ -7,10 +7,10 @@ Require Import Lia.
 From Hammer Require Import Hammer Tactics Reflect.
 
 From Common Require Import Util.
-From SemAnnotate Require Import LabeledANF ValueSetAnalysis.
+From SemAnnotate Require Import LabeledANF SimpleCFA.
 From LambdaWeb Require Import Base.
 
-Module An := ValueSetAnalysis.
+Module An := SimpleCFA.
 
 (* Simple Web Assignment With Only Two Webs *)
 

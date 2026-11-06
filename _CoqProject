@@ -61,9 +61,9 @@ theories/ArityAnnotate/Comp.v
 -Q theories/SemAnnotate SemAnnotate
 theories/SemAnnotate/LabeledANF.v
 theories/SemAnnotate/Label.v
-theories/SemAnnotate/ValueSetAnalysis.v
+theories/SemAnnotate/SimpleCFA.v
 theories/SemAnnotate/SimpleWebAssign.v
-theories/SemAnnotate/Reify.v
+theories/SemAnnotate/Rewrite.v
 theories/SemAnnotate/Comp.v
 #theories/SemAnnotate/CompAttempt.v
 

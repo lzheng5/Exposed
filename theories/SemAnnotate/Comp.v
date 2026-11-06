@@ -8,7 +8,7 @@ From Hammer Require Import Hammer Tactics Reflect.
 
 From Common Require Import Util RelComp.
 From LambdaANF Require Import ANF.
-From SemAnnotate Require Import LabeledANF Label ValueSetAnalysis SimpleWebAssign Reify.
+From SemAnnotate Require Import LabeledANF Label SimpleCFA SimpleWebAssign Rewrite.
 From LambdaWeb Require Import ANF.
 
 (* Compositionality of The Analysis Pipeline *)
@@ -16,9 +16,9 @@ From LambdaWeb Require Import ANF.
 Module AS := LambdaANF.ANF.
 Module L := Label.
 Module AL := LabeledANF.
-Module An := ValueSetAnalysis.
+Module An := SimpleCFA.
 Module Aw := SimpleWebAssign.
-Module R := Reify.
+Module R := Rewrite.
 Module AT := LambdaWeb.ANF.
 
 Section Comp.
