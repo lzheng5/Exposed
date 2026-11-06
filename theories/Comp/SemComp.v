@@ -149,8 +149,6 @@ Section Adequacy.
   Lemma Top_n_adequacy n m e1 e2:
     Top_n n m e1 e2 ->
     exists θ ω,
-      C.An.analysis_context_escape_ok θ /\
-      C.Aw.valid_web_map_context ω θ /\
         forall ρ1 ρ2,
           G_n θ ω n m (A0.occurs_free e1) ρ1 ρ2 ->
           forall j1 r1,
@@ -163,10 +161,8 @@ Section Adequacy.
     intros [e2' [[e1' [HC0 HA]] HC1]].
 
     (* the contexts come from the semantic analysis component *)
-    destruct (C.adequacy e1' e2' HA) as [θ [ω [Hesc [Hω Hrun]]]].
+    destruct (C.adequacy e1' e2' HA) as [θ [ω Hrun]].
     exists θ, ω.
-    split; [exact Hesc |].
-    split; [exact Hω |].
 
     intros ρ1 ρ2 HG j1 r1 Hstep.
     unfold G_n, Cross in HG.
@@ -201,8 +197,6 @@ Section Adequacy.
     Top_n n m e1 e2 ->
     A0.occurs_free e1 \subset (Empty_set _) ->
     exists θ ω,
-      C.An.analysis_context_escape_ok θ /\
-      C.Aw.valid_web_map_context ω θ /\
         forall j1 r1,
           A0.bstep_fuel (M.empty _) e1 j1 r1 ->
           exists j2 r2,
@@ -210,10 +204,8 @@ Section Adequacy.
               R_n θ ω n m r1 r2.
   Proof.
     intros Hrel Hclosed.
-    destruct (Top_n_adequacy n m e1 e2 Hrel) as [θ [ω [Hesc [Hω Hrun]]]].
+    destruct (Top_n_adequacy n m e1 e2 Hrel) as [θ [ω Hrun]].
     exists θ, ω.
-    split; [exact Hesc |].
-    split; [exact Hω |].
     intros j1 r1 Hstep.
     eapply Hrun; [| exact Hstep].
     apply G_n_empty; exact Hclosed.
@@ -223,8 +215,6 @@ Section Adequacy.
   Theorem Top_n_preserves_termination n m e1 e2 :
     Top_n n m e1 e2 ->
     exists θ ω,
-      C.An.analysis_context_escape_ok θ /\
-      C.Aw.valid_web_map_context ω θ /\
         forall ρ1 ρ2,
           G_n θ ω n m (A0.occurs_free e1) ρ1 ρ2 ->
           forall j1 v1,
@@ -234,10 +224,8 @@ Section Adequacy.
                 V_n θ ω n m v1 v2.
   Proof.
     intros Hrel.
-    destruct (Top_n_adequacy n m e1 e2 Hrel) as [θ [ω [Hesc [Hω Hrun]]]].
+    destruct (Top_n_adequacy n m e1 e2 Hrel) as [θ [ω Hrun]].
     exists θ, ω.
-    split; [exact Hesc |].
-    split; [exact Hω |].
     intros ρ1 ρ2 HG j1 v1 Hstep.
     destruct (Hrun ρ1 ρ2 HG j1 _ Hstep) as [j2 [r2 [Hstep2 HR]]].
     destruct (R_n_Res_inv _ _ _ _ _ _ HR) as [v2 [-> HV]].
@@ -248,8 +236,6 @@ Section Adequacy.
     Top_n n m e1 e2 ->
     A0.occurs_free e1 \subset (Empty_set _) ->
     exists θ ω,
-      C.An.analysis_context_escape_ok θ /\
-      C.Aw.valid_web_map_context ω θ /\
         forall j1 v1,
           A0.bstep_fuel (M.empty _) e1 j1 (A0.Res v1) ->
           exists j2 v2,
@@ -257,10 +243,8 @@ Section Adequacy.
               V_n θ ω n m v1 v2.
   Proof.
     intros Hrel Hclosed.
-    destruct (Top_n_adequacy_closed n m e1 e2 Hrel Hclosed) as [θ [ω [Hesc [Hω Hrun]]]].
+    destruct (Top_n_adequacy_closed n m e1 e2 Hrel Hclosed) as [θ [ω Hrun]].
     exists θ, ω.
-    split; [exact Hesc |].
-    split; [exact Hω |].
     intros j1 v1 Hstep.
     destruct (Hrun j1 _ Hstep) as [j2 [r2 [Hstep2 HR]]].
     destruct (R_n_Res_inv _ _ _ _ _ _ HR) as [v2 [-> HV]].

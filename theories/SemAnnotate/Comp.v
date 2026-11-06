@@ -162,8 +162,6 @@ Section Adequacy.
   Theorem adequacy e we :
     trans_correct_top e we ->
     exists θ ω,
-      An.analysis_context_escape_ok θ /\
-        Aw.valid_web_map_context ω θ /\
         forall ρ1 ρ2,
           G θ ω (AS.occurs_free e) ρ1 ρ2 ->
           forall j1 r1,
@@ -177,8 +175,6 @@ Section Adequacy.
     edestruct (Aw.adequacy2 e4 e5) as [θ [ω [cce [c1 [c2 [Hcolor [Hactx [Haesc [Hwctx [Hweb HAn]]]]]]]]]]; eauto.
 
     exists θ, ω.
-    split; auto.
-    split; auto.
 
     intros.
     edestruct H as [ρ1' [HGL [ρ2' [HGAn [ρ3 [HGAw HGR]]]]]]; eauto.
@@ -213,8 +209,6 @@ Section Adequacy.
     trans_correct_top e we ->
     AS.occurs_free e \subset (Empty_set _) ->
     exists θ ω,
-      An.analysis_context_escape_ok θ /\
-        Aw.valid_web_map_context ω θ /\
         forall j1 r1,
           AS.bstep_fuel (M.empty _) e j1 r1 ->
           exists j2 r2,
@@ -222,10 +216,8 @@ Section Adequacy.
               R θ ω r1 r2.
   Proof.
     intros Htc Hclosed.
-    destruct (adequacy e we Htc) as [θ [ω [Hesc [Hω Hrun]]]].
+    destruct (adequacy e we Htc) as [θ [ω Hrun]].
     exists θ, ω.
-    split; [exact Hesc |].
-    split; [exact Hω |].
 
     intros j1 r1 Hstep.
     eapply Hrun; [| exact Hstep].
