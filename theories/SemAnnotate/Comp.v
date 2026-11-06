@@ -15,7 +15,7 @@ From LambdaWeb Require Import ANF.
 
 Module AS := LambdaANF.ANF.
 Module L := Label.
-Module AL := SemAnnotate.LabeledANF.
+Module AL := LabeledANF.
 Module An := ValueSetAnalysis.
 Module Aw := SimpleWebAssign.
 Module R := Reify.
@@ -93,17 +93,6 @@ Section Comp.
     exists v2; split; [reflexivity | apply R_V; exact H].
   Qed.
 
-  Lemma trans_correct_top_subset e1 e2 :
-    trans_correct_top e1 e2 ->
-    AT.occurs_free e2 \subset AS.occurs_free e1.
-  Proof.
-    unfold trans_correct_top, Cross.
-    intros [e3 [HL [ce [HA [we [HW HR]]]]]].
-    eapply Included_trans; [apply (proj1 HR) |].
-    eapply Included_trans; [apply (proj1 HW) |].
-    eapply Included_trans; [apply (proj1 HA) | apply (proj1 HL)].
-  Qed.
-
   Lemma G_wf_env_r {θ ω Γ1 ρ1 ρ2} :
     G θ ω Γ1 ρ1 ρ2 ->
     AT.wf_env ρ2.
@@ -124,6 +113,45 @@ Section Comp.
     exists ρ4; split; [intros k; eapply An.G_top_subset; eauto |].
     exists ρ5; split; [intros k; eapply Aw.G_top_subset; eauto |].
     intros k; eapply R.G_top_subset; eauto.
+  Qed.
+
+  (* The empty environments are related along the pipeline when there are no
+   free variables. *)
+  Lemma G_empty θ ω Γ :
+    Γ \subset (Empty_set _) ->
+    G θ ω Γ (M.empty _) (M.empty _).
+  Proof.
+    intros Hclosed.
+    unfold G, Cross.
+    exists (M.empty _); split.
+    { intros k x Hx; apply Hclosed in Hx; inv Hx. }
+    exists (M.empty _); split.
+    { intros k; split; [| split].
+      - constructor.
+        + intros x v Hget; rewrite M.gempty in Hget; discriminate.
+        + intros x Hx; apply Hclosed in Hx; inv Hx.
+      - constructor; intros x v Hget; rewrite M.gempty in Hget; discriminate.
+      - intros x Hx; apply Hclosed in Hx; inv Hx. }
+    exists (M.empty _); split.
+    { intros k; split; [| split].
+      - constructor; intros x v Hget; rewrite M.gempty in Hget; discriminate.
+      - constructor; intros x v Hget; rewrite M.gempty in Hget; discriminate.
+      - intros x Hx; apply Hclosed in Hx; inv Hx. }
+    intros k; split; [| split].
+    - constructor; intros x v Hget; rewrite M.gempty in Hget; discriminate.
+    - constructor; intros x v Hget; rewrite M.gempty in Hget; discriminate.
+    - intros x Hx; apply Hclosed in Hx; inv Hx.
+  Qed.
+
+  Lemma trans_correct_top_subset e1 e2 :
+    trans_correct_top e1 e2 ->
+    AT.occurs_free e2 \subset AS.occurs_free e1.
+  Proof.
+    unfold trans_correct_top, Cross.
+    intros [e3 [HL [ce [HA [we [HW HR]]]]]].
+    eapply Included_trans; [apply (proj1 HR) |].
+    eapply Included_trans; [apply (proj1 HW) |].
+    eapply Included_trans; [apply (proj1 HA) | apply (proj1 HL)].
   Qed.
 
 End Comp.
@@ -179,34 +207,6 @@ Section Adequacy.
 
     exists j4', r4'; split; eauto.
     exists r1'; split; eauto.
-  Qed.
-
-  (* The empty environments are related along the pipeline when there are no
-   free variables. *)
-  Lemma G_empty θ ω Γ :
-    Γ \subset (Empty_set _) ->
-    G θ ω Γ (M.empty _) (M.empty _).
-  Proof.
-    intros Hclosed.
-    unfold G, Cross.
-    exists (M.empty _); split.
-    { intros k x Hx; apply Hclosed in Hx; inv Hx. }
-    exists (M.empty _); split.
-    { intros k; split; [| split].
-      - constructor.
-        + intros x v Hget; rewrite M.gempty in Hget; discriminate.
-        + intros x Hx; apply Hclosed in Hx; inv Hx.
-      - constructor; intros x v Hget; rewrite M.gempty in Hget; discriminate.
-      - intros x Hx; apply Hclosed in Hx; inv Hx. }
-    exists (M.empty _); split.
-    { intros k; split; [| split].
-      - constructor; intros x v Hget; rewrite M.gempty in Hget; discriminate.
-      - constructor; intros x v Hget; rewrite M.gempty in Hget; discriminate.
-      - intros x Hx; apply Hclosed in Hx; inv Hx. }
-    intros k; split; [| split].
-    - constructor; intros x v Hget; rewrite M.gempty in Hget; discriminate.
-    - constructor; intros x v Hget; rewrite M.gempty in Hget; discriminate.
-    - intros x Hx; apply Hclosed in Hx; inv Hx.
   Qed.
 
   Theorem adequacy_closed e we :
