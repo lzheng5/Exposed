@@ -2108,6 +2108,7 @@ Section Compat.
 
   (* `Rs` is quantified inside as function bodies are checked against other return sets. *)
   Definition well_annotated A c Γ e : Prop :=
+    escapes_ok A /\
     forall θ (bdr : bool) Rs,
       θ c = A ->
       analysis_context_escape_ok θ ->
@@ -2118,11 +2119,14 @@ Section Compat.
         E θ A c bdr i ρ1 ρ2 e Rs.
 
   Lemma ret_compat A c Γ x :
+    escapes_ok A ->
     (x \in Γ) ->
     well_annotated A c Γ (Eret x).
   Proof.
     unfold well_annotated, E, E', R, R', Ensembles.Included, Ensembles.In.
-    intros Hx θ bdr Rs Heqθ Hescθ Hack Hesc; intros.
+    intros HescA Hx.
+    split; [exact HescA |].
+    intros θ bdr Rs Heqθ Hescθ Hack Hesc; intros.
 
     inv H1.
     - fcrush.
@@ -2179,7 +2183,7 @@ Section Compat.
       V θ i (Tag l (Vfun f ρ1 xs e)) (CTag A c l (CVfun f ρ2 xs e)).
   Proof.
     unfold well_annotated.
-    intros HS Hθ Hesc He Hack i.
+    intros HS Hθ Hesc [_ He] Hack i.
     induction i; simpl; subst; intros; auto;
       (* the closure environment invariants, at the free variables of the closure *)
       assert (Haenv : approx_env (ai_env (θ c)) (fun_fv f xs e) ρ2)
@@ -2218,8 +2222,13 @@ Section Compat.
     well_annotated A c (f |: Γ) k ->
     well_annotated A c Γ (Efun f l xs e k).
   Proof.
-    unfold well_annotated, E, E'.
-    intros HS He Hk θ bdr Rs Heqθ Hescθ Hack Hbdr; intros.
+    unfold well_annotated.
+    intros HS He Hk.
+    pose proof (proj1 He) as HescA.
+    destruct Hk as [_ Hk].
+    split; [exact HescA |].
+    unfold E, E' in *.
+    intros θ bdr Rs Heqθ Hescθ Hack Hbdr; intros.
 
     inv H1.
     - fcrush.
@@ -2424,12 +2433,15 @@ Section Compat.
   Qed.
 
   Lemma app_compat A Γ xs f l c :
+    escapes_ok A ->
     (f \in Γ) ->
     (FromList xs \subset Γ) ->
     well_annotated A c Γ (Eapp f l xs).
   Proof.
     unfold well_annotated, E, E'.
-    intross Hf Hxs θ bdr Rs Heqθ Hescθ Hack Hbdr; simpl.
+    intros HescA Hf Hxs.
+    split; [exact HescA |].
+    intross θ bdr Rs Heqθ Hescθ Hack Hbdr; simpl.
 
     inv H1.
     - fcrush.
@@ -2670,10 +2682,11 @@ Section Compat.
   Qed.
 
   Lemma fundamental_property {A c Γ e}:
+    escapes_ok A ->
     well_scoped Γ e ->
     well_annotated A c Γ e.
   Proof.
-    intros H.
+    intros HescA H.
     induction H; intros.
     - eapply ret_compat; eauto.
     - eapply fun_compat; eauto.
@@ -3501,6 +3514,7 @@ Section Top.
 
   Definition trans_correct_top e ce :=
     (occurs_free_top ce) \subset (occurs_free e) /\
+      (forall A, has_cunit ce A -> escapes_ok A) /\
       forall θ cce c1 c2,
         coloring c1 ce c2 cce ->
         analysis_context_of θ cce ->
@@ -3523,8 +3537,10 @@ Section Top.
   Proof.
     unfold trans_correct_top, imports_unknown.
     intros Hack Hesc Hsub Himp; intros.
-    split; intros.
+    split; [| split]; intros.
     apply occurs_free_top_cexp; eauto.
+    { (* the only unit is `A` *)
+      inv H; exact Hesc. }
     inv H.
 
     assert (Hwa : well_annotated A c1 (occurs_free e) e).
@@ -3536,8 +3552,7 @@ Section Top.
     }
 
     eapply E_E_top; eauto.
-    unfold well_annotated in Hwa.
-    eapply Hwa; eauto.
+    eapply (proj2 Hwa); eauto.
 
     - unfold analysis_context_of in *.
       symmetry.
@@ -3568,7 +3583,7 @@ Section Adequacy.
             cbstep_top_fuel ρ2 cce j2 r2 I2 /\
               (forall k, R_top θ k r1 r2).
   Proof.
-    intros [HS HT] θ cce c1 c2 Hcol Hθ Hesc ρ1 ρ2 HG j1 r1 Hstep.
+    intros [HS [Hunits HT]] θ cce c1 c2 Hcol Hθ Hesc ρ1 ρ2 HG j1 r1 Hstep.
 
     (* the run of the target, from the relation at index `j1` *)
     assert (HE : E_top θ j1 ρ1 e ρ2 cce) by (eapply HT; eauto).
@@ -3617,21 +3632,24 @@ Section Adequacy.
 
   Theorem adequacy2 e ce:
     trans_correct_top e ce ->
-    (forall A, has_cunit ce A -> escapes_ok A) ->
 
     exists θ cce c1 c2,
       coloring c1 ce c2 cce /\
       analysis_context_of θ cce /\
       analysis_context_escape_ok θ /\
+
       forall ρ1 ρ2,
         (forall k, G_top θ k (occurs_free e) ρ1 ρ2) ->
+
         forall j1 r1,
           bstep_fuel ρ1 e j1 r1 ->
+
           exists j2 r2 I2,
             cbstep_top_fuel ρ2 cce j2 r2 I2 /\
               (forall k, R_top θ k r1 r2).
   Proof.
-    intros Htc Hunits.
+    intros Htc.
+    pose proof (proj1 (proj2 Htc)) as Hunits.
 
     (* color `ce`, and pick a context agreeing with the coloring *)
     destruct (coloring_exists 0 ce) as [c2 [cce Hcol]].
@@ -3647,7 +3665,6 @@ Section Adequacy.
   Theorem adequacy_closed2 e ce :
     trans_correct_top e ce ->
     occurs_free e \subset (Empty_set _) ->
-    (forall A, has_cunit ce A -> escapes_ok A) ->
 
     exists θ cce c1 c2,
       coloring c1 ce c2 cce /\
@@ -3661,8 +3678,8 @@ Section Adequacy.
           cbstep_top_fuel (M.empty _) cce j2 r2 I2 /\
             (forall k, R_top θ k r1 r2).
   Proof.
-    intros Htc Hclosed Hunits.
-    destruct (adequacy2 e ce Htc Hunits)
+    intros Htc Hclosed.
+    destruct (adequacy2 e ce Htc)
       as [θ [cce [c1 [c2 [Hcol [Hθ [Hesc Hrun]]]]]]].
     exists θ, cce, c1, c2.
     split; [exact Hcol | split; [exact Hθ | split; [exact Hesc |]]].
@@ -3803,13 +3820,17 @@ Section Linking.
     trans_correct_top e2 e2' ->
     trans_correct_top (link f x e1 e2) (clink x e1' e2').
   Proof.
-    intros Hfx Hf1 Hf2 [Hfree1 He1] [Hfree2 He2].
-    split.
+    intros Hfx Hf1 Hf2 [Hfree1 [Hunits1 He1]] [Hfree2 [Hunits2 He2]].
+    split; [| split].
     - intros y Hy.
       unfold Ensembles.In, clink in Hy.
       inv Hy.
       + apply link_free_e1; [exact Hf1 | apply Hfree1; assumption].
       + apply link_free_e2; [exact Hf2 | apply Hfree2; assumption | assumption].
+    - (* the units of a link are those of its components *)
+      intros A Hu.
+      unfold clink in Hu.
+      inv Hu; [apply Hunits1 | apply Hunits2]; assumption.
     - intros θ cce c1 c3 Hcol Hθ Hesc_ok i ρ1 ρ2 HG.
       destruct (coloring_link_inv Hcol) as [c2 [cce1 [cce2 [Heq [Hcol1 Hcol2]]]]].
       subst cce.

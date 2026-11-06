@@ -2176,6 +2176,9 @@ Section Top.
 
   Definition trans_correct_top ce we :=
     (occurs_free_top we) \subset (An.occurs_free_top ce) /\
+      (* each web map is valid for the analysis result of its unit *)
+      web_map_valid_of ce we /\
+      (forall A, An.has_cunit ce A -> An.escapes_ok A) /\
       forall θ ω cce c1 c2,
         coloring c1 ce c2 cce ->
         analysis_context_of θ cce ->
@@ -2192,6 +2195,8 @@ Section Top.
   Proof. unfold trans_correct_top. fcrush. Qed.
 
   Theorem top A e Rs W:
+    An.escapes_ok A ->
+    web_map_assign W ->
     web_map_exposed W A ->
     has_label e \subset Dom_map W ->
     Rs \subset An.ai_esc A ->
@@ -2199,12 +2204,18 @@ Section Top.
     trans_correct_top (An.CEunit A Rs e) (CEunit W e).
   Proof.
     unfold trans_correct_top, imports_unknown.
-    intros Hexp Hsub Hesc Himp; intros.
-    split; intros.
+    intros HescA Hassign Hexp Hsub Hesc Himp; intros.
+    split; [| split; [| split]]; intros.
 
     eapply Included_trans.
     eapply occurs_free_top_cexp; eauto.
     eapply An.occurs_free_top_cexp; eauto.
+
+    { (* the only web map is `W` *)
+      constructor; assumption. }
+
+    { (* the only unit is `A` *)
+      inv H; exact HescA. }
 
     inv H.
     assert (Hwa : well_annotated A c1 W (occurs_free e) e).
@@ -2256,7 +2267,7 @@ Section Adequacy.
             cbstep_top_fuel ρ2 we j2 r2 /\
               (forall k, R_top θ ω k r1 r2).
   Proof.
-    intros [HS HT] θ ω cce c1 c2 Hcol Hθ Hesc Hωof Hω ρ1 ρ2 HG j1 r1 I1 Hstep.
+    intros [HS [Hvalid [Hunits HT]]] θ ω cce c1 c2 Hcol Hθ Hesc Hωof Hω ρ1 ρ2 HG j1 r1 I1 Hstep.
 
     (* the run of the target, from the relation at index `j1` *)
     assert (HE : E_top θ ω j1 ρ1 cce ρ2 we) by (eapply HT; eauto).
@@ -2308,8 +2319,6 @@ Section Adequacy.
      produced rather than assumed. *)
   Theorem adequacy2 ce we :
     trans_correct_top ce we ->
-    web_map_valid_of ce we ->
-    (forall A, An.has_cunit ce A -> An.escapes_ok A) ->
 
     exists θ ω cce c1 c2,
       An.coloring c1 ce c2 cce /\
@@ -2325,7 +2334,9 @@ Section Adequacy.
             cbstep_top_fuel ρ2 we j2 r2 /\
               (forall k, R_top θ ω k r1 r2).
   Proof.
-    intros Htc Hvalid Hunits.
+    intros Htc.
+    pose proof (proj1 (proj2 Htc)) as Hvalid.
+    pose proof (proj1 (proj2 (proj2 Htc))) as Hunits.
 
     (* color `ce`, and pick contexts agreeing with the coloring *)
     destruct (An.coloring_exists 0 ce) as [c2 [cce Hcol]].
@@ -2346,8 +2357,6 @@ Section Adequacy.
   Theorem adequacy_closed2 ce we :
     trans_correct_top ce we ->
     An.occurs_free_top ce \subset (Empty_set _) ->
-    web_map_valid_of ce we ->
-    (forall A, An.has_cunit ce A -> An.escapes_ok A) ->
 
     exists θ ω cce c1 c2,
       An.coloring c1 ce c2 cce /\
@@ -2361,8 +2370,8 @@ Section Adequacy.
           cbstep_top_fuel (M.empty _) we j2 r2 /\
             (forall k, R_top θ ω k r1 r2).
   Proof.
-    intros Htc Hclosed Hvalid Hunits.
-    destruct (adequacy2 ce we Htc Hvalid Hunits)
+    intros Htc Hclosed.
+    destruct (adequacy2 ce we Htc)
       as [θ [ω [cce [c1 [c2 [Hcol [Hθ [Hesc [Hωof [Hω Hrun]]]]]]]]]].
     exists θ, ω, cce, c1, c2.
     split; [exact Hcol |].
@@ -2440,13 +2449,19 @@ Section Linking.
     trans_correct_top e2 e2' ->
     trans_correct_top (An.clink x e1 e2) (clink x e1' e2').
   Proof.
-    intros [Hfree1 He1] [Hfree2 He2].
-    split.
+    intros [Hfree1 [Hvalid1 [Hunits1 He1]]] [Hfree2 [Hvalid2 [Hunits2 He2]]].
+    split; [| split; [| split]].
     - intros y Hy.
       unfold Ensembles.In, clink in Hy.
       inv Hy.
       + apply An.Free_clink1; apply Hfree1; assumption.
       + apply An.Free_clink2; [assumption | apply Hfree2; assumption].
+    - (* the web maps of a link are those of its components *)
+      constructor; assumption.
+    - (* the units of a link are those of its components *)
+      intros A Hu.
+      unfold An.clink in Hu.
+      inv Hu; [apply Hunits1 | apply Hunits2]; assumption.
     - intros θ ω cce c1 c3 Hcol Hθ Hesc_ok Hωof Hω i ρ1 ρ2 HG.
       destruct (An.coloring_link_inv Hcol) as [c2 [cce1 [cce2 [Heq [Hcol1 Hcol2]]]]].
       subst cce.

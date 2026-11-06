@@ -46,33 +46,6 @@ Definition G θ ω Γ1 :=
        (Cross (fun ρ1 ρ2 => forall k, Aw.G_top θ ω k Γ1 ρ1 ρ2)
           (fun ρ1 ρ2 => forall k, R.G_top k Γ1 ρ1 ρ2))).
 
-(* The middle of the pipeline on colored objects: the analysis-level program
-   `ce` is colored as `cce`, and `θ` and `ω` agree with the coloring. *)
-Definition trans_correct_colored θ ω e3 we :=
-  exists ce cce c1 c2,
-    An.trans_correct_top e3 ce /\
-      Aw.trans_correct_top ce we /\
-      An.coloring c1 ce c2 cce /\
-      An.analysis_context_of θ cce /\
-      An.analysis_context_escape_ok θ /\
-      Aw.web_map_context_of ω cce we /\
-      Aw.valid_web_map_context ω θ.
-
-Definition trans_correct_top_colored θ ω :=
-  Cross L.trans_correct_top
-    (Cross (trans_correct_colored θ ω) R.trans_correct_top).
-
-Lemma trans_correct_top_colored_trans_correct_top θ ω e1 e2 :
-  trans_correct_top_colored θ ω e1 e2 ->
-  trans_correct_top e1 e2.
-Proof.
-  unfold trans_correct_top_colored, trans_correct_top, trans_correct_colored, Cross.
-  intros [e3 [HL [we [[ce [cce [c1 [c2 [HA [HW _]]]]]] HR]]]].
-  exists e3; split; [exact HL |].
-  exists ce; split; [exact HA |].
-  exists we; split; [exact HW | exact HR].
-Qed.
-
 Lemma V_wf_val_r θ ω v1 v2:
   V θ ω v1 v2 ->
   AT.wf_val v2.
@@ -152,89 +125,7 @@ Proof.
 Qed.
 
 (* Adequacy *)
-Theorem adequacy θ ω e1 e2 :
-  trans_correct_top_colored θ ω e1 e2 ->
-  forall ρ1 ρ2,
-    G θ ω (AS.occurs_free e1) ρ1 ρ2 ->
-    forall j1 r1,
-      AS.bstep_fuel ρ1 e1 j1 r1 ->
-      exists j2 r2,
-        AT.bstep_fuel true ρ2 e2 j2 r2 /\
-          R θ ω r1 r2.
-Proof.
-  unfold trans_correct_top_colored, trans_correct_colored, G, R, Cross.
-  intros [e3 [HL [we [[ce [cce [c1 [c2 [HA [HW [Hcol [Hθ [Hesc [Hωof Hω]]]]]]]]]] HR]]]].
-  intros ρ1 ρ2 [ρ3 [HGL [ρ4 [HGA [ρ5 [HGW HGR]]]]]] j1 r1 Hstep.
-
-  (* the free variables shrink along the pipeline *)
-  pose proof (proj1 HL) as HfL.
-  pose proof (proj1 HA) as HfA.
-  pose proof (proj1 HW) as HfW.
-
-  (* LambdaANF -> LabeledANF *)
-  destruct (L.adequacy e1 e3 HL ρ1 ρ3 HGL j1 r1 Hstep) as [j3 [r3 [Hstep3 HR3]]].
-
-  (* LabeledANF -> analysis checking semantics *)
-  assert (HGA' : forall k, An.G_top θ k (AL.occurs_free e3) ρ3 ρ4)
-    by (intros k; eapply An.G_top_subset; [apply HGA | exact HfL]).
-  destruct (An.adequacy e3 ce HA θ cce c1 c2 Hcol Hθ Hesc ρ3 ρ4 HGA' j3 r3 Hstep3)
-    as [j4 [r4 [I4 [Hstep4 HR4]]]].
-
-  (* analysis checking semantics -> web checking semantics *)
-  assert (HGW' : forall k, Aw.G_top θ ω k (An.occurs_free_top ce) ρ4 ρ5).
-  { intros k; eapply Aw.G_top_subset; [apply HGW |].
-    eapply Included_trans; [exact HfA | exact HfL]. }
-  destruct (Aw.adequacy ce we HW θ ω cce c1 c2 Hcol Hθ Hesc Hωof Hω ρ4 ρ5 HGW' j4 r4 I4 Hstep4)
-    as [j5 [r5 [Hstep5 HR5]]].
-
-  (* web checking semantics -> LambdaWeb *)
-  assert (HGR' : forall k, R.G_top k (Aw.occurs_free_top we) ρ5 ρ2).
-  { intros k; eapply R.G_top_subset; [apply HGR |].
-    eapply Included_trans; [exact HfW |].
-    eapply Included_trans; [exact HfA | exact HfL]. }
-  destruct (R.adequacy we e2 HR ρ5 ρ2 HGR' j5 r5 Hstep5) as [j2 [r2 [Hstep2 HR2]]].
-
-  exists j2, r2; split; [exact Hstep2 |].
-  exists r3; split; [exact HR3 |].
-  exists r4; split; [exact HR4 |].
-  exists r5; split; [exact HR5 | exact HR2].
-Qed.
-
-Theorem adequacy_closed θ ω e1 e2 :
-  trans_correct_top_colored θ ω e1 e2 ->
-  AS.occurs_free e1 \subset (Empty_set _) ->
-  forall j1 r1,
-    AS.bstep_fuel (M.empty _) e1 j1 r1 ->
-    exists j2 r2,
-      AT.bstep_fuel true (M.empty _) e2 j2 r2 /\
-        R θ ω r1 r2.
-Proof.
-  intros Htc Hclosed j1 r1 Hstep.
-  eapply adequacy; [exact Htc | | exact Hstep].
-
-  (* the empty environments are related along the pipeline *)
-  unfold G, Cross.
-  exists (M.empty _); split.
-  { intros k x Hx; apply Hclosed in Hx; inv Hx. }
-  exists (M.empty _); split.
-  { intros k; split; [| split].
-    - constructor.
-      + intros x v Hget; rewrite M.gempty in Hget; discriminate.
-      + intros x Hx; apply Hclosed in Hx; inv Hx.
-    - constructor; intros x v Hget; rewrite M.gempty in Hget; discriminate.
-    - intros x Hx; apply Hclosed in Hx; inv Hx. }
-  exists (M.empty _); split.
-  { intros k; split; [| split].
-    - constructor; intros x v Hget; rewrite M.gempty in Hget; discriminate.
-    - constructor; intros x v Hget; rewrite M.gempty in Hget; discriminate.
-    - intros x Hx; apply Hclosed in Hx; inv Hx. }
-  intros k; split; [| split].
-  - constructor; intros x v Hget; rewrite M.gempty in Hget; discriminate.
-  - constructor; intros x v Hget; rewrite M.gempty in Hget; discriminate.
-  - intros x Hx; apply Hclosed in Hx; inv Hx.
-Qed.
-
-Theorem adequacy2 e we :
+Theorem adequacy e we :
   trans_correct_top e we ->
   exists θ ω,
     An.analysis_context_escape_ok θ /\
@@ -247,11 +138,9 @@ Theorem adequacy2 e we :
             AT.bstep_fuel true ρ2 we j2 r2 /\
               R θ ω r1 r2.
 Proof.
-  unfold trans_correct_top_colored, trans_correct_colored, G, R, Cross.
+  unfold trans_correct_top, G, R, Cross.
   intros [e3 [HL1 [e4 [Ha1 [e5 [Hw1 HR1]]]]]].
   edestruct (Aw.adequacy2 e4 e5) as [θ [ω [cce [c1 [c2 [Hcolor [Hactx [Haesc [Hwctx [Hweb HAn]]]]]]]]]]; eauto.
-  admit.
-  admit.
 
   exists θ, ω.
   split; auto.
@@ -282,12 +171,60 @@ Proof.
   eapply An.trans_correct_top_subset; eauto.
   eapply L.trans_correct_top_subset; eauto.
 
-  exists j4', r4'.
-  split; eauto.
+  exists j4', r4'; split; eauto.
+  exists r1'; split; eauto.
+Qed.
 
-  exists r1'.
-  split; eauto.
-Admitted.
+(* The empty environments are related along the pipeline when there are no
+   free variables. *)
+Lemma G_empty θ ω Γ :
+  Γ \subset (Empty_set _) ->
+  G θ ω Γ (M.empty _) (M.empty _).
+Proof.
+  intros Hclosed.
+  unfold G, Cross.
+  exists (M.empty _); split.
+  { intros k x Hx; apply Hclosed in Hx; inv Hx. }
+  exists (M.empty _); split.
+  { intros k; split; [| split].
+    - constructor.
+      + intros x v Hget; rewrite M.gempty in Hget; discriminate.
+      + intros x Hx; apply Hclosed in Hx; inv Hx.
+    - constructor; intros x v Hget; rewrite M.gempty in Hget; discriminate.
+    - intros x Hx; apply Hclosed in Hx; inv Hx. }
+  exists (M.empty _); split.
+  { intros k; split; [| split].
+    - constructor; intros x v Hget; rewrite M.gempty in Hget; discriminate.
+    - constructor; intros x v Hget; rewrite M.gempty in Hget; discriminate.
+    - intros x Hx; apply Hclosed in Hx; inv Hx. }
+  intros k; split; [| split].
+  - constructor; intros x v Hget; rewrite M.gempty in Hget; discriminate.
+  - constructor; intros x v Hget; rewrite M.gempty in Hget; discriminate.
+  - intros x Hx; apply Hclosed in Hx; inv Hx.
+Qed.
+
+Theorem adequacy_closed e we :
+  trans_correct_top e we ->
+  AS.occurs_free e \subset (Empty_set _) ->
+  exists θ ω,
+    An.analysis_context_escape_ok θ /\
+    Aw.valid_web_map_context ω θ /\
+      forall j1 r1,
+        AS.bstep_fuel (M.empty _) e j1 r1 ->
+        exists j2 r2,
+          AT.bstep_fuel true (M.empty _) we j2 r2 /\
+            R θ ω r1 r2.
+Proof.
+  intros Htc Hclosed.
+  destruct (adequacy e we Htc) as [θ [ω [Hesc [Hω Hrun]]]].
+  exists θ, ω.
+  split; [exact Hesc |].
+  split; [exact Hω |].
+
+  intros j1 r1 Hstep.
+  eapply Hrun; [| exact Hstep].
+  apply G_empty; exact Hclosed.
+Qed.
 
 (* Linking Preservation *)
 Lemma preserves_linking f w x e1 e2 e1' e2' :
