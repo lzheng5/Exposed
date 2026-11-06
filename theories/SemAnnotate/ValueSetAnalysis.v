@@ -2855,6 +2855,84 @@ Qed.
 Definition analysis_context_of (Θ : analysis_context) (cce : ccexp) : Prop :=
   forall c A, has_unit cce c A -> A = Θ c.
 
+(* Every colorless unit tree can be colored, starting from any color. *)
+Lemma coloring_exists c1 ce :
+  exists c2 cce, coloring c1 ce c2 cce.
+Proof.
+  revert c1.
+  induction ce as [A Rs e | x ce1 IH1 ce2 IH2]; intros c1.
+  - exists (S c1), (CCunit c1 A Rs e); constructor.
+  - destruct (IH1 c1) as [c2 [cce1 Hc1]].
+    destruct (IH2 c2) as [c3 [cce2 Hc2]].
+    exists c3, (CClink x cce1 cce2); econstructor; eassumption.
+Qed.
+
+Lemma cexp_has_cunit ce :
+  exists A, has_cunit ce A.
+Proof.
+  induction ce as [A Rs e | x ce1 IH1 ce2 IH2].
+  - exists A; constructor.
+  - destruct IH1 as [A HA]; exists A; apply Has_cunit_link1; exact HA.
+Qed.
+
+(* A context agreeing with the coloring, falling back to `d` on colors that
+   name no unit. *)
+Lemma coloring_context {c1 ce c2 cce} :
+  coloring c1 ce c2 cce ->
+  forall d,
+    escapes_ok d ->
+    (forall A, has_cunit ce A -> escapes_ok A) ->
+    exists θ,
+      analysis_context_of θ cce /\
+      analysis_context_escape_ok θ.
+Proof.
+  intros Hcol.
+  induction Hcol as [c A Rs e | c1 c2 c3 x e1 e2 cce1 cce2 Hc1 IH1 Hc2 IH2];
+    intros d Hd Hesc.
+  - exists (fun c' => if Nat.eqb c' c then A else d); split.
+    + intros c' A' Hu; inv Hu.
+      cbn beta; rewrite Nat.eqb_refl; reflexivity.
+    + intros c'; cbn beta.
+      destruct (Nat.eqb c' c); [apply Hesc; constructor | exact Hd].
+  - destruct (IH1 d Hd (fun A HA => Hesc A (Has_cunit_link1 x e1 e2 A HA)))
+      as [θ1 [Hof1 Hok1]].
+    destruct (IH2 d Hd (fun A HA => Hesc A (Has_cunit_link2 x e1 e2 A HA)))
+      as [θ2 [Hof2 Hok2]].
+    exists (fun c' => if Nat.ltb c' c2 then θ1 c' else θ2 c'); split.
+    + intros c' A' Hu; inv Hu; cbn beta.
+      * match goal with
+        | [Hu1 : has_unit cce1 c' A' |- _] =>
+            destruct (coloring_range Hc1 c' A' Hu1) as [_ Hhi];
+            destruct (Nat.ltb c' c2) eqn:Hb;
+            [exact (Hof1 c' A' Hu1)
+            | exfalso; pose proof (proj1 (Nat.ltb_ge c' c2) Hb); lia]
+        end.
+      * match goal with
+        | [Hu2 : has_unit cce2 c' A' |- _] =>
+            destruct (coloring_range Hc2 c' A' Hu2) as [Hlo _];
+            destruct (Nat.ltb c' c2) eqn:Hb;
+            [exfalso; pose proof (proj1 (Nat.ltb_lt c' c2) Hb); lia
+            | exact (Hof2 c' A' Hu2)]
+        end.
+    + intros c'; cbn beta.
+      destruct (Nat.ltb c' c2); [apply Hok1 | apply Hok2].
+Qed.
+
+Lemma coloring_closed ce :
+  occurs_free_top ce \subset (Empty_set _) ->
+  (forall A, has_cunit ce A -> escapes_ok A) ->
+  exists cce c1 c2 θ,
+    coloring c1 ce c2 cce /\
+    analysis_context_of θ cce /\
+    analysis_context_escape_ok θ.
+Proof.
+  intros Hclose Hesc.
+  destruct (coloring_exists 0 ce) as [c2 [cce Hcol]].
+  destruct (cexp_has_cunit ce) as [d Hd].
+  destruct (coloring_context Hcol d (Hesc d Hd) Hesc) as [θ [Hof Hok]].
+  exists cce, 0, c2, θ; auto.
+Qed.
+
 (* A value crossing the boundary has escaped, whoever holds it. *)
 Lemma cboundary_cescaped {c v} :
   cboundary v ->
@@ -3520,6 +3598,72 @@ Section Adequacy.
   Proof.
     intros Htc Hclosed θ cce c1 c2 Hcol Hθ Hesc j1 r1 Hstep.
     eapply adequacy; eauto.
+
+    (* the empty environments are related at every index *)
+    intros k.
+    split; [| split].
+    - constructor.
+      + intros x v Hget; rewrite M.gempty in Hget; discriminate.
+      + intros x Hx; apply Hclosed in Hx; inv Hx.
+    - constructor.
+      intros x v Hget; rewrite M.gempty in Hget; discriminate.
+    - intros x Hx; apply Hclosed in Hx; inv Hx.
+  Qed.
+
+  Theorem adequacy2 e ce:
+    trans_correct_top e ce ->
+    (forall A, has_cunit ce A -> escapes_ok A) ->
+
+    exists θ cce c1 c2,
+      coloring c1 ce c2 cce /\
+      analysis_context_of θ cce /\
+      analysis_context_escape_ok θ /\
+      forall ρ1 ρ2,
+        (forall k, G_top θ k (occurs_free e) ρ1 ρ2) ->
+        forall j1 r1,
+          bstep_fuel ρ1 e j1 r1 ->
+          exists j2 r2 I2,
+            cbstep_top_fuel ρ2 cce j2 r2 I2 /\
+              (forall k, R_top θ k r1 r2).
+  Proof.
+    intros Htc Hunits.
+
+    (* color `ce`, and pick a context agreeing with the coloring *)
+    destruct (coloring_exists 0 ce) as [c2 [cce Hcol]].
+    destruct (cexp_has_cunit ce) as [d Hd].
+    destruct (coloring_context Hcol d (Hunits d Hd) Hunits) as [θ [Hθ Hesc]].
+    exists θ, cce, 0, c2.
+    split; [exact Hcol | split; [exact Hθ | split; [exact Hesc |]]].
+
+    intros ρ1 ρ2 HG j1 r1 Hstep.
+    eapply adequacy; eassumption.
+  Qed.
+
+  Theorem adequacy_closed2 e ce :
+    trans_correct_top e ce ->
+    occurs_free e \subset (Empty_set _) ->
+    (forall A, has_cunit ce A -> escapes_ok A) ->
+
+    exists θ cce c1 c2,
+      coloring c1 ce c2 cce /\
+      analysis_context_of θ cce /\
+      analysis_context_escape_ok θ /\
+
+      forall j1 r1,
+        bstep_fuel (M.empty _) e j1 r1 ->
+
+        exists j2 r2 I2,
+          cbstep_top_fuel (M.empty _) cce j2 r2 I2 /\
+            (forall k, R_top θ k r1 r2).
+  Proof.
+    intros Htc Hclosed Hunits.
+    destruct (adequacy2 e ce Htc Hunits)
+      as [θ [cce [c1 [c2 [Hcol [Hθ [Hesc Hrun]]]]]]].
+    exists θ, cce, c1, c2.
+    split; [exact Hcol | split; [exact Hθ | split; [exact Hesc |]]].
+
+    intros j1 r1 Hstep.
+    eapply Hrun; [| exact Hstep].
 
     (* the empty environments are related at every index *)
     intros k.
