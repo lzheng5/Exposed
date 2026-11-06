@@ -1900,6 +1900,84 @@ Lemma web_map_context_of_link_inv {ω x cce1 cce2 we} :
     web_map_context_of ω cce2 we2.
 Proof. intros H; inv H; eauto. Qed.
 
+(* The units of the analysis-level program `ce` and of its web-annotated
+   counterpart `we` are paired up, and each web map is valid for the analysis
+   result of its unit. *)
+Inductive web_map_valid_of : An.cexp -> cexp -> Prop :=
+| Web_map_valid_of_unit :
+  forall A Rs e W,
+    web_map_assign W ->
+    web_map_exposed W A ->
+    web_map_valid_of (An.CEunit A Rs e) (CEunit W e)
+
+| Web_map_valid_of_link :
+  forall x ce1 ce2 we1 we2,
+    web_map_valid_of ce1 we1 ->
+    web_map_valid_of ce2 we2 ->
+    web_map_valid_of (An.CElink x ce1 ce2) (CElink x we1 we2).
+
+Hint Constructors web_map_valid_of : core.
+
+(* `web_map_context_of` only depends on `ω` at the colors of the units. *)
+Lemma web_map_context_of_ext {ω ω' cce we} :
+  web_map_context_of ω cce we ->
+  (forall c A, An.has_unit cce c A -> ω c = ω' c) ->
+  web_map_context_of ω' cce we.
+Proof.
+  intros H.
+  induction H as [c A Rs e | x cce1 cce2 we1 we2 H1 IH1 H2 IH2]; intros Hag.
+  - rewrite (Hag c A (An.Has_unit_unit A Rs c e)).
+    constructor.
+  - constructor.
+    + apply IH1; intros c A Hu; eapply Hag; eapply An.Has_unit_link1; exact Hu.
+    + apply IH2; intros c A Hu; eapply Hag; apply An.Has_unit_link2; exact Hu.
+Qed.
+
+(* A web map context agreeing with the coloring, falling back to the empty map
+   on colors that name no unit. *)
+Lemma web_map_context_exists {θ c1 ce c2 cce} :
+  An.coloring c1 ce c2 cce ->
+  An.analysis_context_of θ cce ->
+  forall we,
+    web_map_valid_of ce we ->
+    exists ω,
+      web_map_context_of ω cce we /\
+      valid_web_map_context ω θ.
+Proof.
+  intros Hcol.
+  induction Hcol as [c A Rs e | c1 c2 c3 x e1 e2 cce1 cce2 Hc1 IH1 Hc2 IH2];
+    intros Hθ we Hv.
+  - inversion Hv as [A' Rs' e' W Hassign Hexp | ]; subst.
+    pose (ω := fun c' => if Nat.eqb c' c then W else (M.empty web)).
+    assert (Hωc : ω c = W) by (unfold ω; rewrite Nat.eqb_refl; reflexivity).
+    exists ω; split.
+    + rewrite <- Hωc; constructor.
+    + intros c'; unfold ω.
+      destruct (Nat.eqb c' c) eqn:Hc.
+      * apply Nat.eqb_eq in Hc; subst c'.
+        split; [exact Hassign |].
+        rewrite <- (Hθ c A (An.Has_unit_unit A Rs c e)); exact Hexp.
+      * split; intros l w Hget; rewrite M.gempty in Hget; discriminate.
+  - inversion Hv as [ | x' e1' e2' we1 we2 Hv1 Hv2 ]; subst.
+    destruct (IH1 (An.analysis_context_of_link1 Hθ) we1 Hv1) as [ω1 [Hof1 Hvalid1]].
+    destruct (IH2 (An.analysis_context_of_link2 Hθ) we2 Hv2) as [ω2 [Hof2 Hvalid2]].
+    pose (ω := fun c' => if Nat.ltb c' c2 then ω1 c' else ω2 c').
+    exists ω; split.
+    + constructor.
+      * eapply web_map_context_of_ext; [exact Hof1 |].
+        intros c A Hu.
+        destruct (An.coloring_range Hc1 c A Hu) as [Hlo Hhi].
+        assert (Hlt : Nat.ltb c c2 = true) by (apply Nat.ltb_lt; lia).
+        unfold ω; rewrite Hlt; reflexivity.
+      * eapply web_map_context_of_ext; [exact Hof2 |].
+        intros c A Hu.
+        destruct (An.coloring_range Hc2 c A Hu) as [Hlo Hhi].
+        assert (Hge : Nat.ltb c c2 = false) by (apply Nat.ltb_ge; lia).
+        unfold ω; rewrite Hge; reflexivity.
+    + intros c'; unfold ω.
+      destruct (Nat.ltb c' c2); [exact (Hvalid1 c') | exact (Hvalid2 c')].
+Qed.
+
 Section LRTop.
 
   (* Cross-language Logical Relations *)
@@ -2108,6 +2186,11 @@ Section Top.
           G_top θ ω i (An.occurs_free_top ce) ρ1 ρ2 ->
           E_top θ ω i ρ1 cce ρ2 we.
 
+  Lemma trans_correct_top_subset ce we :
+    trans_correct_top ce we ->
+    (occurs_free_top we) \subset (An.occurs_free_top ce).
+  Proof. unfold trans_correct_top. fcrush. Qed.
+
   Theorem top A e Rs W:
     web_map_exposed W A ->
     has_label e \subset Dom_map W ->
@@ -2210,6 +2293,86 @@ Section Adequacy.
   Proof.
     intros Htc Hclosed θ ω cce c1 c2 Hcol Hθ Hesc Hωof Hω j1 r1 I1 Hstep.
     eapply adequacy; eauto.
+
+    (* the empty environments are related at every index *)
+    intros k.
+    split; [| split].
+    - constructor.
+      intros x v Hget; rewrite M.gempty in Hget; discriminate.
+    - constructor.
+      intros x v Hget; rewrite M.gempty in Hget; discriminate.
+    - intros x Hx; apply Hclosed in Hx; inv Hx.
+  Qed.
+
+  (* Adequacy from the colorless relations: the coloring, `θ` and `ω` are
+     produced rather than assumed. *)
+  Theorem adequacy2 ce we :
+    trans_correct_top ce we ->
+    web_map_valid_of ce we ->
+    (forall A, An.has_cunit ce A -> An.escapes_ok A) ->
+
+    exists θ ω cce c1 c2,
+      An.coloring c1 ce c2 cce /\
+      An.analysis_context_of θ cce /\
+      An.analysis_context_escape_ok θ /\
+      web_map_context_of ω cce we /\
+      valid_web_map_context ω θ /\
+      forall ρ1 ρ2,
+        (forall k, G_top θ ω k (An.occurs_free_top ce) ρ1 ρ2) ->
+        forall j1 r1 I1,
+          An.cbstep_top_fuel ρ1 cce j1 r1 I1 ->
+          exists j2 r2,
+            cbstep_top_fuel ρ2 we j2 r2 /\
+              (forall k, R_top θ ω k r1 r2).
+  Proof.
+    intros Htc Hvalid Hunits.
+
+    (* color `ce`, and pick contexts agreeing with the coloring *)
+    destruct (An.coloring_exists 0 ce) as [c2 [cce Hcol]].
+    destruct (An.cexp_has_cunit ce) as [d Hd].
+    destruct (An.coloring_context Hcol d (Hunits d Hd) Hunits) as [θ [Hθ Hesc]].
+    destruct (web_map_context_exists Hcol Hθ we Hvalid) as [ω [Hωof Hω]].
+    exists θ, ω, cce, 0, c2.
+    split; [exact Hcol |].
+    split; [exact Hθ |].
+    split; [exact Hesc |].
+    split; [exact Hωof |].
+    split; [exact Hω |].
+
+    intros ρ1 ρ2 HG j1 r1 I1 Hstep.
+    exact (adequacy ce we Htc θ ω cce 0 c2 Hcol Hθ Hesc Hωof Hω ρ1 ρ2 HG j1 r1 I1 Hstep).
+  Qed.
+
+  Theorem adequacy_closed2 ce we :
+    trans_correct_top ce we ->
+    An.occurs_free_top ce \subset (Empty_set _) ->
+    web_map_valid_of ce we ->
+    (forall A, An.has_cunit ce A -> An.escapes_ok A) ->
+
+    exists θ ω cce c1 c2,
+      An.coloring c1 ce c2 cce /\
+      An.analysis_context_of θ cce /\
+      An.analysis_context_escape_ok θ /\
+      web_map_context_of ω cce we /\
+      valid_web_map_context ω θ /\
+      forall j1 r1 I1,
+        An.cbstep_top_fuel (M.empty _) cce j1 r1 I1 ->
+        exists j2 r2,
+          cbstep_top_fuel (M.empty _) we j2 r2 /\
+            (forall k, R_top θ ω k r1 r2).
+  Proof.
+    intros Htc Hclosed Hvalid Hunits.
+    destruct (adequacy2 ce we Htc Hvalid Hunits)
+      as [θ [ω [cce [c1 [c2 [Hcol [Hθ [Hesc [Hωof [Hω Hrun]]]]]]]]]].
+    exists θ, ω, cce, c1, c2.
+    split; [exact Hcol |].
+    split; [exact Hθ |].
+    split; [exact Hesc |].
+    split; [exact Hωof |].
+    split; [exact Hω |].
+
+    intros j1 r1 I1 Hstep.
+    eapply Hrun; [| exact Hstep].
 
     (* the empty environments are related at every index *)
     intros k.

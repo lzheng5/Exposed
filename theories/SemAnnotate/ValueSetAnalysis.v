@@ -3509,6 +3509,11 @@ Section Top.
           G_top θ i (occurs_free e) ρ1 ρ2 ->
           E_top θ i ρ1 e ρ2 cce.
 
+  Lemma trans_correct_top_subset e ce :
+    trans_correct_top e ce ->
+    (occurs_free_top ce) \subset (occurs_free e).
+  Proof. unfold trans_correct_top. fcrush. Qed.
+
   Theorem top A e Rs :
     acheck A e Rs ->
     escapes_ok A ->

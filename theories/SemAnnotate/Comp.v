@@ -234,6 +234,61 @@ Proof.
   - intros x Hx; apply Hclosed in Hx; inv Hx.
 Qed.
 
+Theorem adequacy2 e we :
+  trans_correct_top e we ->
+  exists θ ω,
+    An.analysis_context_escape_ok θ /\
+    Aw.valid_web_map_context ω θ /\
+      forall ρ1 ρ2,
+        G θ ω (AS.occurs_free e) ρ1 ρ2 ->
+        forall j1 r1,
+          AS.bstep_fuel ρ1 e j1 r1 ->
+          exists j2 r2,
+            AT.bstep_fuel true ρ2 we j2 r2 /\
+              R θ ω r1 r2.
+Proof.
+  unfold trans_correct_top_colored, trans_correct_colored, G, R, Cross.
+  intros [e3 [HL1 [e4 [Ha1 [e5 [Hw1 HR1]]]]]].
+  edestruct (Aw.adequacy2 e4 e5) as [θ [ω [cce [c1 [c2 [Hcolor [Hactx [Haesc [Hwctx [Hweb HAn]]]]]]]]]]; eauto.
+  admit.
+  admit.
+
+  exists θ, ω.
+  split; auto.
+  split; auto.
+
+  intros.
+  edestruct H as [ρ1' [HGL [ρ2' [HGAn [ρ3 [HGAw HGR]]]]]]; eauto.
+  edestruct (L.adequacy e e3) as [j1' [r1' [HLstep HRL]]]; eauto.
+
+  edestruct (An.adequacy e3 e4) with (ρ2 := ρ2') as [j2' [r2' [I2' [HAnstep HRAn]]]]; eauto.
+  intros.
+  eapply An.G_top_subset; eauto.
+  eapply L.trans_correct_top_subset; eauto.
+
+  edestruct HAn with (ρ2 := ρ3) as [j3' [r3' [HAwstep HRAw]]]; eauto.
+  intros.
+  eapply Aw.G_top_subset; eauto.
+  eapply Included_trans.
+  eapply An.trans_correct_top_subset; eauto.
+  eapply L.trans_correct_top_subset; eauto.
+
+  edestruct (R.adequacy e5 we) with (ρ2 := ρ2) as [j4' [r4' [HRstep HRR]]]; eauto.
+  intros.
+  eapply R.G_top_subset; eauto.
+  eapply Included_trans.
+  eapply Aw.trans_correct_top_subset; eauto.
+  eapply Included_trans.
+  eapply An.trans_correct_top_subset; eauto.
+  eapply L.trans_correct_top_subset; eauto.
+
+  exists j4', r4'.
+  split; eauto.
+
+  exists r1'.
+  split; eauto.
+Admitted.
+
 (* Linking Preservation *)
 Lemma preserves_linking f w x e1 e2 e1' e2' :
   (w \in Exposed) ->
