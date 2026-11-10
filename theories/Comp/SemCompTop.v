@@ -221,48 +221,68 @@ Section Adequacy.
 
 End Adequacy.
 
-(*
 Section Refinement.
 
-  Definition val_ref := Cross (Cross C.val_ref Erase.val_ref) C0.val_ref.
+  Definition val_ref := Cross (Cross C.val_ref EC.val_ref) C0.val_ref.
 
-  Lemma R_n_res_val_ref {n m p v1 v2} :
-    R_n n m p (A0.Res v1) (A0.Res v2) ->
+  Lemma R_n_res_val_ref {θ ω n m p v1 v2} :
+    R_n θ ω n m p (A0.Res v1) (A0.Res v2) ->
     val_ref v1 v2.
   Proof.
     unfold R_n, val_ref, Cross.
-    intros.
-    destruct H as [r2' [[r1' [HC0 HR]] HC1]].
-    edestruct C.R_n_Res_inv as [v1' [Heqv1' HV1]]; eauto; subst.
-    eapply C.R_n_res_val_ref in HC0; eauto.
-    edestruct Erase.R_res_inv_l as [v2' [Heqv2' HV2]]; eauto; subst.
-    eapply C0.R_n_res_val_ref in HC1; eauto.
-    eexists; split; eauto.
-    - eexists; split; eauto.
-      eapply Erase.V_val_ref; eauto.
-      eapply C.V_n_wf_val_r; eauto.
+    intros [r2' [[r1' [HC HA]] HC1]].
+    destruct (C.R_n_Res_inv _ _ _ _ _ _ HC) as [v1' [-> HV]].
+    destruct (Erase.R_res_inv_l _ _ HA) as [v2' [-> HVE]].
+    pose proof (C.R_n_res_val_ref HC) as Hvr.
+    (* the value handed over to Erase is well-formed and exposed *)
+    assert (Hex : exposed v1').
+    { destruct Hvr as [v3 [_ Hvr1]].
+      exact (C1.val_ref_exposed_r _ _ Hvr1). }
+    exists v2'; split.
+    - exists v1'; split; [exact Hvr |].
+      exact (EC.V_val_ref (C.V_n_wf_val_r _ _ _ _ _ _ HV) Hex HVE).
+    - exact (C0.R_n_res_val_ref HC1).
   Qed.
 
   (* Behavioral Refinement *)
   Theorem Top_n_val_ref n m p e1 e2 :
     Top_n n m p e1 e2 ->
-    forall ρ1 ρ2,
-      G_n n m p (A0.occurs_free e1) (A0.occurs_free e2) ρ1 ρ2 ->
-      forall j1 v1,
-        A0.bstep_fuel ρ1 e1 j1 (A0.Res v1) ->
-        exists j2 v2,
-          A0.bstep_fuel ρ2 e2 j2 (A0.Res v2) /\
-            val_ref v1 v2.
+    exists θ ω,
+      forall ρ1 ρ2,
+        G_n θ ω n m p (A0.occurs_free e1) ρ1 ρ2 ->
+        forall j1 v1,
+          A0.bstep_fuel ρ1 e1 j1 (A0.Res v1) ->
+          exists j2 v2,
+            A0.bstep_fuel ρ2 e2 j2 (A0.Res v2) /\
+              val_ref v1 v2.
   Proof.
-    intros.
-    edestruct Top_n_adequacy with (ρ1 := ρ1) as [j2 [r2 [Hr2 HR]]]; eauto.
-    edestruct R_n_Res_inv as [v2 [Heq HVn]]; eauto; subst.
-    eexists; eexists; split; eauto.
-    eapply R_n_res_val_ref; eauto.
+    intros Hrel.
+    destruct (Top_n_adequacy n m p e1 e2 Hrel) as [θ [ω Hrun]].
+    exists θ, ω.
+    intros ρ1 ρ2 HG j1 v1 Hstep.
+    destruct (Hrun ρ1 ρ2 HG j1 _ Hstep) as [j2 [r2 [Hstep2 HR]]].
+    destruct (R_n_Res_inv _ _ _ _ _ _ _ HR) as [v2 [-> _]].
+    exists j2, v2; split; [exact Hstep2 | exact (R_n_res_val_ref HR)].
+  Qed.
+
+  Theorem Top_n_val_ref_closed n m p e1 e2 :
+    Top_n n m p e1 e2 ->
+    A0.occurs_free e1 \subset (Empty_set _) ->
+    forall j1 v1,
+      A0.bstep_fuel (M.empty _) e1 j1 (A0.Res v1) ->
+      exists j2 v2,
+        A0.bstep_fuel (M.empty _) e2 j2 (A0.Res v2) /\
+          val_ref v1 v2.
+  Proof.
+    intros Hrel Hclosed.
+    destruct (Top_n_adequacy_closed n m p e1 e2 Hrel Hclosed) as [θ [ω Hrun]].
+    intros j1 v1 Hstep.
+    destruct (Hrun j1 _ Hstep) as [j2 [r2 [Hstep2 HR]]].
+    destruct (R_n_Res_inv _ _ _ _ _ _ _ HR) as [v2 [-> _]].
+    exists j2, v2; split; [exact Hstep2 | exact (R_n_res_val_ref HR)].
   Qed.
 
 End Refinement.
- *)
 
 Section Linking.
 

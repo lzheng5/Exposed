@@ -234,19 +234,35 @@ Section BehaviorRefinement.
                              (Cross Aw.val_ref
                                 R.val_ref)).
 
-  Lemma val_ref_Vconstr c w vs1 vs2 :
-    w \in Exposed ->
-    Forall2 val_ref vs1 vs2 ->
-    val_ref (AS.Vconstr c vs1) (AT.Tag w (AT.Vconstr c vs2)).
+  (* A list related by a composed relation is related through an
+     intermediate list. *)
+  Lemma Forall2_Cross {T1 T2 T3} {R1 : T1 -> T2 -> Prop} {R2 : T2 -> T3 -> Prop} {xs zs} :
+    Forall2 (Cross R1 R2) xs zs ->
+    exists ys, Forall2 R1 xs ys /\ Forall2 R2 ys zs.
   Proof.
-    intros.
-  Admitted.
+    intros H.
+    induction H as [| x z xs zs [y [Hxy Hyz]] _ [ys [Hxys Hyzs]]].
+    - exists []; split; constructor.
+    - exists (y :: ys); split; constructor; assumption.
+  Qed.
+
+  (* An analysis result for the intermediate constructors, which carry no
+     information that the refinement looks at. *)
+  Definition empty_analysis_result : An.analysis_result :=
+    An.mk_analysis_result
+      (fun _ => Empty_set _) (fun _ => Empty_set _) (fun _ => Empty_set _)
+      (Empty_set _) (Empty_set _).
 
   Lemma V_val_ref {θ ω v1 v2} :
     V θ ω v1 v2 ->
     val_ref v1 v2.
   Proof.
-  Admitted.
+    unfold V, val_ref, Cross.
+    intros [v3 [HL [v4 [HA [v5 [HW HR]]]]]].
+    exists v3; split; [exact (L.V_val_ref HL) |].
+    exists v4; split; [exact (An.V_top_val_ref HA) |].
+    exists v5; split; [exact (Aw.V_top_val_ref HW) | exact (R.V_top_val_ref HR)].
+  Qed.
 
 End BehaviorRefinement.
 
