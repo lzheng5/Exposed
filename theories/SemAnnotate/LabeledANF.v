@@ -308,6 +308,48 @@ Proof.
   eapply bstep_lt_Res_not_OOT with (c0 := c); eauto; lia.
 Qed.
 
+(* Inversion Lemmas for the Source Semantics *)
+Lemma bstep_fuel_inv {ρ e j r} :
+  bstep_fuel ρ e j r ->
+  (j = 0 /\ r = OOT) \/ (exists j', j = S j' /\ bstep ρ e j' r).
+Proof.
+  intros H; inv H.
+  - left; split; reflexivity.
+  - right; eexists; split; [reflexivity | eassumption].
+Qed.
+
+Lemma bstep_constr_inv {ρ x l t ys k j r} :
+  bstep ρ (Econstr x l t ys k) j r ->
+  exists vs,
+    get_list ys ρ = Some vs /\
+      bstep_fuel (M.set x (Tag l (Vconstr t vs)) ρ) k j r.
+Proof. intros H; inv H; eexists; split; eassumption. Qed.
+
+Lemma bstep_proj_inv {ρ x l n y k j r} :
+  bstep ρ (Eproj x l n y k) j r ->
+  exists w t vs v,
+    M.get y ρ = Some (Tag w (Vconstr t vs)) /\
+      nth_error vs n = Some v /\
+      bstep_fuel (M.set x v ρ) k j r.
+Proof. intros H; inv H; do 4 eexists; split; [eassumption | split; eassumption]. Qed.
+
+Lemma bstep_case_inv {ρ x l cl j r} :
+  bstep ρ (Ecase x l cl) j r ->
+  exists w t vs e,
+    M.get x ρ = Some (Tag w (Vconstr t vs)) /\
+      find_tag cl t e /\
+      bstep_fuel ρ e j r.
+Proof. intros H; inv H; do 4 eexists; split; [eassumption | split; eassumption]. Qed.
+
+Lemma find_tag_cons_inv {T : Type} {t e cl t' e'} :
+  @find_tag T ((t, e) :: cl) t' e' ->
+  (t' = t /\ e' = e) \/ (find_tag cl t' e' /\ t <> t').
+Proof.
+  intros H; inv H.
+  - left; split; reflexivity.
+  - right; split; assumption.
+Qed.
+
 (* Free Variables *)
 Inductive occurs_free : exp -> vars :=
 | Free_ret :

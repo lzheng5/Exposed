@@ -157,11 +157,19 @@ Definition escapes_ok (A : analysis_result) : Prop :=
 (* The Abstract Semantics                                            *)
 (* --------------------------------------------------------------- *)
 
-(* TODO: rename into aelim_constr_int *)
+(* Interactions at Elimination Sites *)
+(* The call site `l` eliminates everything that reaches `f`; since `AVtop`
+   also stands for our own escaped closures, it eliminates each of them as
+   well. *)
+Definition aelim_fun_int (A : analysis_result) (f : var) (l : label) : Prop :=
+  (forall av, (av \in ai_env A f) -> ((label_of av, l) \in ai_int A)) /\
+    ((AVtop \in ai_env A f) ->
+     forall l' f' xs' e', (AVfun l' f' xs' e' \in ai_esc A) -> ((l', l) \in ai_int A)).
+
 (* The elimination site `l` of a constructor held in `y` (by a projection or
    a case) eliminates everything that reaches `y`; since `AVtop` also stands
    for our own escaped constructors, it eliminates each of them as well. *)
-Definition aelim (A : analysis_result) (y : var) (l : label) : Prop :=
+Definition aelim_constr_int (A : analysis_result) (y : var) (l : label) : Prop :=
   (forall av, (av \in ai_env A y) -> ((label_of av, l) \in ai_int A)) /\
     ((AVtop \in ai_env A y) ->
      forall l' t, (AVconstr l' t \in ai_esc A) -> ((l', l) \in ai_int A)).
@@ -188,9 +196,8 @@ Inductive acheck (A : analysis_result) : exp -> avals -> Prop :=
 
 | Acheck_app :
   forall {f l xs R},
-    (* TODO: refactor this into aelim_fun_int *)
     (* the call site (c, l) eliminates everything that reaches [f] *)
-    (forall av, (av \in ai_env A f) -> ((label_of av, l) \in ai_int A)) ->
+    aelim_fun_int A f l ->
 
     (* internal call: arguments flow to parameters, results flow out *)
     (forall l' f' xs' e',
@@ -208,7 +215,6 @@ Inductive acheck (A : analysis_result) : exp -> avals -> Prop :=
        (AVtop \in R) /\ (* result is unknown *)
        (forall l' f' xs' e',
            (AVfun l' f' xs' e' \in ai_esc A) ->
-             ((l', l) \in ai_int A) /\ (* each escaping function can be called at this callsite *)
              length xs = length xs' /\
              (AVfun l' f' xs' e' \in ai_env A f') /\
              Forall2 (fun x x' => ai_env A x \subset ai_env A x') xs xs' /\ (* call the escaping function with the current arguments *)
@@ -227,7 +233,7 @@ Inductive acheck (A : analysis_result) : exp -> avals -> Prop :=
 
 | Acheck_proj :
   forall {x l n y k R},
-    aelim A y l ->
+    aelim_constr_int A y l ->
     (* internal constructor: its fields flow into [x] *)
     (forall l' t, (AVconstr l' t \in ai_env A y) -> ai_fld A l' \subset ai_env A x) ->
     (* unknown constructor: the field is unknown; since `AVtop` also stands for
@@ -240,7 +246,7 @@ Inductive acheck (A : analysis_result) : exp -> avals -> Prop :=
 
 | Acheck_case_nil :
   forall {x l R},
-    aelim A x l ->
+    aelim_constr_int A x l ->
     acheck A (Ecase x l []) R
 
 | Acheck_case_cons :
@@ -260,7 +266,7 @@ Proof. intros H; inv H; split; [assumption | split; assumption]. Qed.
 
 Lemma acheck_proj_inv {A x l n y k R} :
   acheck A (Eproj x l n y k) R ->
-  aelim A y l /\
+  aelim_constr_int A y l /\
     (forall l' t, (AVconstr l' t \in ai_env A y) -> ai_fld A l' \subset ai_env A x) /\
     ((AVtop \in ai_env A y) ->
        (AVtop \in ai_env A x) /\
@@ -271,9 +277,9 @@ Proof.
   split; [assumption | split; [assumption | split; assumption]].
 Qed.
 
-Lemma acheck_case_aelim {A x l cl R} :
+Lemma acheck_case_aelim_constr_int {A x l cl R} :
   acheck A (Ecase x l cl) R ->
-  aelim A x l.
+  aelim_constr_int A x l.
 Proof.
   induction cl as [| [t e] cl IH]; intros Hack; inv Hack.
   - assumption.
@@ -2430,49 +2436,6 @@ Section LRBase.
 
 End LRBase.
 
-(* TODO: move this into LabeledANF.v *)
-(* Inversion Lemmas for the Source Semantics *)
-Lemma bstep_fuel_inv {ρ e j r} :
-  bstep_fuel ρ e j r ->
-  (j = 0 /\ r = OOT) \/ (exists j', j = S j' /\ bstep ρ e j' r).
-Proof.
-  intros H; inv H.
-  - left; split; reflexivity.
-  - right; eexists; split; [reflexivity | eassumption].
-Qed.
-
-Lemma bstep_constr_inv {ρ x l t ys k j r} :
-  bstep ρ (Econstr x l t ys k) j r ->
-  exists vs,
-    get_list ys ρ = Some vs /\
-      bstep_fuel (M.set x (Tag l (Vconstr t vs)) ρ) k j r.
-Proof. intros H; inv H; eexists; split; eassumption. Qed.
-
-Lemma bstep_proj_inv {ρ x l n y k j r} :
-  bstep ρ (Eproj x l n y k) j r ->
-  exists w t vs v,
-    M.get y ρ = Some (Tag w (Vconstr t vs)) /\
-      nth_error vs n = Some v /\
-      bstep_fuel (M.set x v ρ) k j r.
-Proof. intros H; inv H; do 4 eexists; split; [eassumption | split; eassumption]. Qed.
-
-Lemma bstep_case_inv {ρ x l cl j r} :
-  bstep ρ (Ecase x l cl) j r ->
-  exists w t vs e,
-    M.get x ρ = Some (Tag w (Vconstr t vs)) /\
-      find_tag cl t e /\
-      bstep_fuel ρ e j r.
-Proof. intros H; inv H; do 4 eexists; split; [eassumption | split; eassumption]. Qed.
-
-Lemma find_tag_cons_inv {T : Type} {t e cl t' e'} :
-  @find_tag T ((t, e) :: cl) t' e' ->
-  (t' = t /\ e' = e) \/ (find_tag cl t' e' /\ t <> t').
-Proof.
-  intros H; inv H.
-  - left; split; reflexivity.
-  - right; split; assumption.
-Qed.
-
 Section Compat.
 
   (* Compatibility Lemmas *)
@@ -2863,7 +2826,7 @@ Section Compat.
             * edestruct (H7 _ _ _ _ Hin) as [_ [_ [Hsub _]]]; eauto.
               eapply cbinding_subset_list; eauto.
             * destruct (H8 Htop) as [_ [_ Hesc_fun]].
-              destruct (Hesc_fun _ _ _ _ Hesc) as [_ [_ [_ [Hsub _]]]].
+              destruct (Hesc_fun _ _ _ _ Hesc) as [_ [_ [Hsub _]]].
               eapply cbinding_subset_list; eauto.
 
           + assert (Htop : AVtop \in ai_env (θ c) f).
@@ -2948,7 +2911,7 @@ Section Compat.
           - edestruct (H7 _ _ _ _ Hin) as [_ [_ [Hsub _]]]; eauto.
             eapply cbinding_subset_list; eauto.
           - destruct (H8 Htop) as [_ [_ Hesc_fun]].
-            destruct (Hesc_fun _ _ _ _ Hesc) as [_ [_ [_ [Hsub _]]]].
+            destruct (Hesc_fun _ _ _ _ Hesc) as [_ [_ [Hsub _]]].
             eapply cbinding_subset_list; eauto. }
 
         (* what the callee may return can be returned from this call site *)
@@ -2956,7 +2919,7 @@ Section Compat.
         { destruct Hint as [Hin | [Hesc Htop]].
           - destruct (H7 _ _ _ _ Hin) as [_ [_ [_ Hsub]]]; exact Hsub.
           - destruct (H8 Htop) as [_ [_ Hesc_fun]].
-            destruct (Hesc_fun _ _ _ _ Hesc) as [_ [_ [_ [_ Hsub]]]]; exact Hsub. }
+            destruct (Hesc_fun _ _ _ _ Hesc) as [_ [_ [_ Hsub]]]; exact Hsub. }
 
         assert (Hok : cresult c (θ c) Rs (CRes v2))
           by (eapply cresult_subset; [eapply cbstep_fuel_cresult; eauto | exact Hret]).
@@ -2968,9 +2931,8 @@ Section Compat.
         * assert (HI2 : approx_int c (ai_int (θ c)) I2) by eauto using cbstep_fuel_approx_int.
           apply approx_int_add_internal; [| exact HI2].
           destruct Hint as [Hin | [Hesc Htop]].
-          -- apply (H5 _ Hin).
-          -- destruct (H8 Htop) as [_ [_ Hesc_fun]].
-             eapply (Hesc_fun _ _ _ _ Hesc); eauto.
+          -- exact (proj1 H5 _ Hin).
+          -- exact (proj2 H5 Htop _ _ _ _ Hesc).
 
         * (* the result crosses the boundary if `Rs` escapes *)
           destruct bdr; [| exact I].
@@ -3030,7 +2992,7 @@ Section Compat.
           destruct (H8 Htop) as [_ [HRs _]].
           econstructor; [exact HRs | constructor].
 
-        * assert (Hltop : (l_top_intro, l) \in (ai_int (θ c))) by fcrush.
+        * assert (Hltop : (l_top_intro, l) \in (ai_int (θ c))) by exact (proj1 H5 AVtop Htop).
           apply approx_int_add.
           -- apply approx_int_singleton.
              ++ intros Heq _; exfalso; exact (n Heq).
@@ -3048,27 +3010,23 @@ Section Compat.
             | assumption ].
   Qed.
 
-  (* TODO: refactor *)
-  (* Eliminating a constructor held in `y`, at the site `l`, is predicted by
-     the analysis of the unit `c`:
+  (* Eliminating a related constructor, held by the unit `c` in `y`, at the
+     site `l` is predicted by the analysis of `c`:
      - an internal constructor is approximated at `y` by its own allocation
        site, or has escaped and is stood for by `AVtop`;
      - a foreign constructor is stood for by `AVtop`, and has escaped from its
        own unit, which then sees it eliminated by the context. *)
-  Lemma G_elim_constr {θ c i Γ ρ1 ρ2 y l A' c' l' t vs} :
+  Lemma V_elim_constr {θ c i v1 y l A' c' l' t vs} :
     analysis_context_escape_ok θ ->
-    G θ c i Γ ρ1 ρ2 ->
-    (y \in Γ) ->
-    M.get y ρ2 = Some (CTag A' c' l' (CVconstr t vs)) ->
-    aelim (θ c) y l ->
+    V θ i v1 (CTag A' c' l' (CVconstr t vs)) ->
+    cescaped c (CTag A' c' l' (CVconstr t vs)) ->
+    cbinding c (θ c) y (CTag A' c' l' (CVconstr t vs)) ->
+    aelim_constr_int (θ c) y l ->
     approx_int c (ai_int (θ c)) [set ((c', l'), (c, l))] /\
       (c' <> c -> (AVconstr l' t \in ai_esc A') /\ ((l', l_top_elim) \in ai_int A')).
   Proof.
-    intros Hescθ HG Hy Hget [Helim Htop].
-    pose proof (wf_cenv_get (G_wf_cenv_r _ HG) _ _ Hget) as Hwf.
-    destruct (wf_cval_CTag_inv Hwf) as [HA' _]; subst A'.
-    pose proof (cbinding_env_get y _ (G_cbinding_env _ HG) Hy Hget) as Hb.
-    pose proof (cescaped_env_get y _ (G_cescaped_env _ HG) Hy Hget) as He.
+    intros Hescθ HV He Hb [Helim Htop].
+    destruct (wf_cval_CTag_inv (V_wf_cval_r _ HV)) as [HA' _]; subst A'.
     unfold cbinding in Hb; unfold cescaped in He; simpl in Hb, He.
     destruct Hb as [Hown Hforeign].
     split.
@@ -3163,7 +3121,9 @@ Section Compat.
       destruct (G_get _ HG y _ Hy Hgety1) as [v2y [Hgety2 HVy]].
       destruct (V_Vconstr_inv _ HVy) as [c' [vs2 [-> [Happf [Hescf [Hflf HVs]]]]]].
       simpl in HVs.
-      destruct (G_elim_constr Hescθ HG Hy Hgety2 Haelim) as [Hint_y Hsem_y].
+      pose proof (cescaped_env_get y _ (G_cescaped_env _ HG) Hy Hgety2) as Hesc_y.
+      pose proof (cbinding_env_get y _ (G_cbinding_env _ HG) Hy Hgety2) as Hb_y.
+      destruct (V_elim_constr Hescθ HVy Hesc_y Hb_y Haelim) as [Hint_y Hsem_y].
       destruct (Forall2_nth_error Hnth1 HVs) as [v2 [Hnth2 HV]].
       pose proof (Forall_nth_error Hnth2 Happf) as Happ_v.
       pose proof (Forall_nth_error Hnth2 Hescf) as Hesc_v.
@@ -3172,8 +3132,7 @@ Section Compat.
 
       (* the projected field is bound at `x` as the environment relation requires *)
       assert (Hbind : approx_vals (ai_env (θ c) x) v2 /\ cescaped c v2 /\ cbinding c (θ c) x v2).
-      { pose proof (cbinding_env_get y _ (G_cbinding_env _ HG) Hy Hgety2) as Hb_y.
-        unfold cbinding in Hb_y; simpl in Hb_y.
+      { unfold cbinding in Hb_y; simpl in Hb_y.
         destruct Hb_y as [Hown Hforeign].
         destruct (Nat.eq_dec c' c) as [Heqc | Hneqc].
         - (* internal: the fields flow from the field set of the site into `x` *)
@@ -3247,7 +3206,7 @@ Section Compat.
     split; [exact HescA |].
     intros θ bdr Rs Heqθ Hescθ Hack Hbdr i ρ1 ρ2 HG.
     subst A.
-    pose proof (acheck_case_aelim Hack) as Haelim.
+    pose proof (acheck_case_aelim_constr_int Hack) as Haelim.
     destruct (acheck_case_cons_inv Hack) as [Hack_e Hack_cl].
     unfold E, E' in *.
     intros j1 r1 Hj1 Hstep.
@@ -3258,7 +3217,9 @@ Section Compat.
       destruct (V_Vconstr_inv _ HVx) as [c' [vs2 [-> _]]].
       destruct (find_tag_cons_inv Hft) as [[-> ->] | [Hft' Hneq]].
       + (* the first branch is taken *)
-        destruct (G_elim_constr Hescθ HG Hx Hgetx2 Haelim) as [Hint_x Hsem_x].
+        pose proof (cescaped_env_get x _ (G_cescaped_env _ HG) Hx Hgetx2) as Hesc_x.
+        pose proof (cbinding_env_get x _ (G_cbinding_env _ HG) Hx Hgetx2) as Hb_x.
+        destruct (V_elim_constr Hescθ HVx Hesc_x Hb_x Haelim) as [Hint_x Hsem_x].
         destruct (He θ bdr Rs eq_refl Hescθ Hack_e Hbdr i ρ1 ρ2 HG n1 r1 ltac:(lia) Hstep1)
           as [j2 [r2 [I2 [Hrun HR]]]].
         exists (S j2), r2, (((c', w), (c, l)) |: I2); split.
