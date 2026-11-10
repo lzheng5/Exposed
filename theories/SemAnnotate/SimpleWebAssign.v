@@ -35,7 +35,9 @@ Definition web_map_assign (W : web_map) :=
    - closed under interactions in both directions, since an introduction and
      its elimination must share a web;
    - closed under flow through exposed closures, since the arguments and the
-     results of an exposed closure must be exposed. *)
+     results of an exposed closure must be exposed;
+   - closed under flow through exposed constructors, since the fields of an
+     exposed constructor must be exposed. *)
 Inductive aexposed (A : An.analysis_result) : labels :=
 | AExp_top_intro :
   aexposed A An.l_top_intro
@@ -72,6 +74,12 @@ Inductive aexposed (A : An.analysis_result) : labels :=
   forall l av,
     aexposed A l ->
     (av \in An.ai_ret A l) ->
+    aexposed A (An.label_of av)
+
+| AExp_fld :
+  forall l av,
+    aexposed A l ->
+    (av \in An.ai_fld A l) ->
     aexposed A (An.label_of av).
 
 Hint Constructors aexposed : core.
@@ -677,15 +685,13 @@ Section LRBase.
         W2 = ω c1 /\
         exists w2, W2 ! l2 = Some w2 /\
         match v1, v2 with
-          (*
-        | Vconstr c1 vs1, CVconstr c2 vs2 =>
-            c1 = c2 /\
+        | An.CVconstr t1 vs1, CVconstr t2 vs2 =>
+            t1 = t2 /\
               length vs1 = length vs2 /\
               match i with
               | 0 => True
               | S i0 => Forall2 (V i0) vs1 vs2
               end
-           *)
 
         | An.CVfun f1 ρ1 xs1 e1, CVfun f2 ρ2 xs2 e2 =>
             f1 = f2 /\ xs1 = xs2 /\ e1 = e2 /\
@@ -970,35 +976,35 @@ Section LRBase.
       j <= i ->
       V j v1 v2.
   Proof.
-    induction i using lt_wf_rec; intros.
-    destruct v1; destruct v2.
-    destruct i; simpl in H0;
-      destruct j; simpl; intros;
-      destruct H0 as [Hwf1 [Hwf2 HV]];
-      rename w into W;
-      destruct c; destruct HV as [Heql [HwqW [w2 [Heqw2 HV]]]]; subst.
-    - destruct c0; destruct c1; try contradiction.
-      sfirstorder.
-    - fcrush.
-(*    - repeat (split; auto).
-      destruct v; destruct c0; try contradiction.
-      + fcrush.
-      + fcrush. *)
-    - repeat (split; auto).
-      eexists; split; eauto.
-      destruct c0; destruct c1; try contradiction.
-      sfirstorder.
-    - repeat (split; auto).
-      eexists; split; eauto.
-      destruct c0; destruct c1; try contradiction.
-      destruct HV as [Heqv [Heql [Heqe [Hsub [Hsite [Hesc [Hloc HV]]]]]]]; subst.
-      repeat (split; eauto); intros.
-      specialize (HV bdr j0 c0 vs1 vs2 ρ3 ρ4).
-      rewrite normalize_step in *; try lia.
-      eapply HV; eauto; try lia.
-      (* + destruct HV as [Heqc [Hlen HV]]; subst.
-        eexists; repeat (split; eauto).
-        eapply V_mono_Forall_aux; eauto; lia. *)
+    induction i as [i IH] using lt_wf_rec; intros j v1 v2 HV Hj.
+    destruct (Nat.eq_dec j i) as [-> | Hneq]; [exact HV |].
+    destruct i as [| i]; [lia |].
+    destruct v1 as [A1 [c1 l1] w1]; destruct v2 as [l2 W2 w2].
+    simpl in HV.
+    destruct HV as [Hwf1 [Hwf2 [Hl [HW [w [Hw HV]]]]]].
+    destruct w1 as [f1 ρ1 xs1 e1 | t1 vs1];
+      destruct w2 as [f2 ρ2 xs2 e2 | t2 vs2];
+      simpl in HV; try contradiction;
+      destruct j as [| j]; simpl;
+      refine (conj Hwf1 (conj Hwf2 (conj Hl (conj HW (ex_intro _ w (conj Hw _)))))).
+    - (* closure, down to 0 *)
+      destruct HV as [Hf [Hxs [He [Hsub [Hsite [Hesc [Hloc _]]]]]]].
+      exact (conj Hf (conj Hxs (conj He (conj Hsub (conj Hsite (conj Hesc (conj Hloc I))))))).
+    - (* closure *)
+      destruct HV as [Hf [Hxs [He [Hsub [Hsite [Hesc [Hloc HV]]]]]]].
+      refine (conj Hf (conj Hxs (conj He (conj Hsub (conj Hsite (conj Hesc (conj Hloc _))))))).
+      intros bdr j0 c vs1 vs2 ρ3 ρ4 Hj0.
+      rewrite (normalize_step j j0 Hj0).
+      specialize (HV bdr j0 c vs1 vs2 ρ3 ρ4 ltac:(lia)).
+      rewrite (normalize_step i j0 ltac:(lia)) in HV.
+      exact HV.
+    - (* constructor, down to 0 *)
+      destruct HV as [Ht [Hlen _]].
+      exact (conj Ht (conj Hlen I)).
+    - (* constructor *)
+      destruct HV as [Ht [Hlen HVs]].
+      refine (conj Ht (conj Hlen _)).
+      eapply V_mono_Forall_aux; [exact IH | exact HVs | lia].
   Qed.
 
   Lemma V_mono_Forall {vs1 vs2} i j :
@@ -1011,6 +1017,47 @@ Section LRBase.
     induction H; simpl; intros; auto.
     constructor; eauto.
     eapply V_mono; eauto.
+  Qed.
+
+  (* Constructor Lemmas *)
+  Lemma Vconstr_V {i c l w t vs1 vs2} :
+    (ω c) ! l = Some w ->
+    (w \in Exposed -> Forall to_exposed vs2) ->
+    Forall2 (V i) vs1 vs2 ->
+    V i (An.CTag (θ c) c l (An.CVconstr t vs1)) (CTag l (ω c) (CVconstr t vs2)).
+  Proof.
+    intros Hw Hex HVs.
+    assert (Hwf1 : An.wf_cval θ (An.CTag (θ c) c l (An.CVconstr t vs1)))
+      by (apply An.WF_TAG;
+          [reflexivity | apply An.wf_cval'_CVconstr; eapply V_wf_cval_Forall_l; eauto]).
+    assert (Hwf2 : wf_cval (CTag l (ω c) (CVconstr t vs2)))
+      by (eapply wf_cval_CVconstr; [eapply V_wf_cval_Forall_r; eauto | exact Hw | exact Hex]).
+    assert (Hlen : length vs1 = length vs2) by (eapply Forall2_length; eauto).
+    destruct i as [| i]; simpl.
+    - exact (conj Hwf1 (conj Hwf2 (conj eq_refl (conj eq_refl
+               (ex_intro _ w (conj Hw (conj eq_refl (conj Hlen I)))))))).
+    - refine (conj Hwf1 (conj Hwf2 (conj eq_refl (conj eq_refl
+                (ex_intro _ w (conj Hw (conj eq_refl (conj Hlen _)))))))).
+      eapply V_mono_Forall; [exact HVs | lia].
+  Qed.
+
+  Lemma V_Vconstr_inv {i A1 c1 l1 t vs1 v2} :
+    V i (An.CTag A1 c1 l1 (An.CVconstr t vs1)) v2 ->
+    exists w vs2,
+      v2 = CTag l1 (ω c1) (CVconstr t vs2) /\
+        (ω c1) ! l1 = Some w /\
+        match i with
+        | 0 => True
+        | S i0 => Forall2 (V i0) vs1 vs2
+        end.
+  Proof.
+    intros HV.
+    destruct v2 as [l2 W2 w2].
+    destruct i as [| i]; simpl in HV;
+      destruct HV as [_ [_ [Hl [HW [w [Hw HV]]]]]]; subst l2 W2;
+      destruct w2 as [f2 ρ2 xs2 e2 | t2 vs2]; simpl in HV; try contradiction;
+      destruct HV as [Ht [_ HVs]]; subst t2;
+      exact (ex_intro _ w (ex_intro _ vs2 (conj eq_refl (conj Hw HVs)))).
   Qed.
 
   Lemma R_mono {r1 r2} i j :
@@ -1061,17 +1108,18 @@ Section LRBase.
   Proof.
     intros HV Hl.
     pose proof (An.wf_cval_CTag_inv (V_wf_cval_l HV)) as [Hθ _].
+    pose proof (V_wf_cval_r HV) as Hwf2.
     destruct (ω_valid c1) as [_ Hexp].
     unfold web_map_exposed in *.
     destruct v2 as [l2 W2 cv2].
-    destruct i; cbn in HV;
-      destruct HV as (_ & _ & Heql & HeqW & w2 & Hw2 & Hcase);
-      subst l2 W2;
-      destruct cv1, cv2; try contradiction;
-      (eapply ToExp_cfun; [exact Hw2 |]);
-      apply w_ext_exposed;
-      apply (Hexp _ _ Hw2);
-      rewrite Hθ; exact Hl.
+    assert (Hlw : l1 = l2 /\ W2 = ω c1)
+      by (destruct i; cbn in HV; destruct HV as (_ & _ & Heql & HeqW & _); split; assumption).
+    destruct Hlw as [<- ->].
+    (* the target value is well-formed, so it is exposed once its web is *)
+    inv Hwf2.
+    apply H3.
+    apply w_ext_exposed.
+    eapply Hexp; eauto.
   Qed.
 
   (* A value held by the unit wearing `c` that flows into `avs` is exposed,
@@ -1088,19 +1136,12 @@ Section LRBase.
     intros HV Hesc Hfl Havs.
     destruct v1 as [A1 [c1 l1] cv1].
     pose proof (An.wf_cval_CTag_inv (V_wf_cval_l HV)) as [Hθ _].
-    destruct cv1 as [f ρ xs e | t vs].
-    - eapply V_exposed_label; [exact HV |].
-      cbn in Hesc, Hfl.
-      destruct (Nat.eq_dec c1 c) as [-> | Hneq].
-      + destruct (proj1 Hfl eq_refl) as [Hin | [Hin _]];
-          rewrite <- Hθ.
-        * exact (Havs _ Hin).
-        * exact (AExp_esc _ _ Hin).
-      + exact (AExp_esc _ _ (Hesc Hneq)).
-    - exfalso.
-      destruct v2 as [l2 W2 cv2].
-      destruct i, cv2; cbn in HV;
-        destruct HV as (_ & _ & _ & _ & ? & _ & []).
+    eapply V_exposed_label; [exact HV |].
+    destruct cv1 as [f ρ xs e | t vs]; cbn in Hesc, Hfl;
+      (destruct (Nat.eq_dec c1 c) as [-> | Hneq];
+       [ destruct (proj1 Hfl eq_refl) as [Hin | [Hin _]]; rewrite <- Hθ;
+         [ exact (Havs _ Hin) | exact (AExp_esc _ _ Hin) ]
+       | exact (AExp_esc _ _ (Hesc Hneq)) ]).
   Qed.
 
   (* A value escaping from the unit wearing `c` to the one wearing `c'` is exposed. *)
@@ -1113,16 +1154,26 @@ Section LRBase.
   Proof.
     intros Hcc' HV Hesc Hesc'.
     destruct v1 as [A1 [c1 l1] cv1].
-    destruct cv1 as [f ρ xs e | t vs].
-    - eapply V_exposed_label; [exact HV |].
-      cbn in Hesc, Hesc'.
-      destruct (Nat.eq_dec c1 c) as [-> | Hneq].
-      + exact (AExp_esc _ _ (Hesc' Hcc')).
-      + exact (AExp_esc _ _ (Hesc Hneq)).
-    - exfalso.
-      destruct v2 as [l2 W2 cv2].
-      destruct i, cv2; cbn in HV;
-        destruct HV as (_ & _ & _ & _ & ? & _ & []).
+    eapply V_exposed_label; [exact HV |].
+    destruct cv1 as [f ρ xs e | t vs]; cbn in Hesc, Hesc';
+      (destruct (Nat.eq_dec c1 c) as [-> | Hneq];
+       [ exact (AExp_esc _ _ (Hesc' Hcc'))
+       | exact (AExp_esc _ _ (Hesc Hneq)) ]).
+  Qed.
+
+  (* Values flowing into a value set whose labels are all exposed are exposed
+     (e.g. the fields of an exposed constructor). *)
+  Lemma V_exposed_Forall {c avs i vs1 vs2} :
+    Forall2 (V i) vs1 vs2 ->
+    Forall (An.cescaped c) vs1 ->
+    Forall (An.cflows c (θ c) avs) vs1 ->
+    aexposed_avals (θ c) avs ->
+    Forall to_exposed vs2.
+  Proof.
+    intros HV.
+    induction HV as [| v1 v2 vs1 vs2 Hv HV IH]; intros Hesc Hfl Havs; constructor.
+    - exact (V_exposed Hv (Forall_inv Hesc) (Forall_inv Hfl) Havs).
+    - exact (IH (Forall_inv_tail Hesc) (Forall_inv_tail Hfl) Havs).
   Qed.
 
   (* Results returned into an exposed return set are exposed. *)
@@ -1290,6 +1341,129 @@ Proof.
   split; [exact Hlabel | apply well_scoped_intro; exact Hfree].
 Qed.
 
+(* Inversion Lemmas for the Source (Analysis) Semantics *)
+Lemma An_cbstep_fuel_inv {A c bdr ρ e j Rs r I} :
+  An.cbstep_fuel A c bdr ρ e j Rs r I ->
+  (j = 0 /\ r = An.COOT /\ I = Empty_set _) \/
+    (exists j',
+        j = S j' /\
+          An.cbstep A c bdr ρ e j' Rs r I /\
+          An.approx_res Rs r /\
+          An.approx_int c (An.ai_int A) I /\
+          An.cresult c A Rs r /\
+          (if bdr then An.cboundary_res r else True)).
+Proof.
+  intros H; inv H.
+  - left; split; [reflexivity | split; reflexivity].
+  - right; eexists; split; [reflexivity |].
+    split; [assumption | split; [assumption | split; [assumption | split; assumption]]].
+Qed.
+
+Lemma An_cbstep_constr_inv {A c bdr ρ x l t ys k j Rs r I} :
+  An.cbstep A c bdr ρ (Econstr x l t ys k) j Rs r I ->
+  exists vs,
+    get_list ys ρ = Some vs /\
+      Forall (An.cflows c A (An.ai_fld A l)) vs /\
+      An.cbstep_fuel A c bdr (M.set x (An.CTag A c l (An.CVconstr t vs)) ρ) k j Rs r I /\
+      (An.AVconstr l t \in An.ai_env A x).
+Proof.
+  intros H; inv H.
+  eexists; split; [eassumption | split; [eassumption | split; eassumption]].
+Qed.
+
+Lemma An_cbstep_proj_inv {A c bdr ρ x l n y k j Rs r I} :
+  An.cbstep A c bdr ρ (Eproj x l n y k) j Rs r I ->
+  exists A' c' l' t vs v I',
+    M.get y ρ = Some (An.CTag A' c' l' (An.CVconstr t vs)) /\
+      nth_error vs n = Some v /\
+      (c' <> c -> (An.AVconstr l' t \in An.ai_esc A') /\ ((l', An.l_top_elim) \in An.ai_int A')) /\
+      An.cescaped c v /\
+      An.cbinding c A x v /\
+      An.cbstep_fuel A c bdr (M.set x v ρ) k j Rs r I' /\
+      I = (((c', l'), (c, l)) |: I').
+Proof.
+  intros H; inv H.
+  do 7 eexists.
+  split; [eassumption |].
+  split; [eassumption |].
+  split; [eassumption |].
+  split; [eassumption |].
+  split; [eassumption |].
+  split; [eassumption | reflexivity].
+Qed.
+
+Lemma An_cbstep_case_inv {A c bdr ρ x l cl j Rs r I} :
+  An.cbstep A c bdr ρ (Ecase x l cl) j Rs r I ->
+  exists A' c' l' t vs e I',
+    M.get x ρ = Some (An.CTag A' c' l' (An.CVconstr t vs)) /\
+      find_tag cl t e /\
+      (c' <> c -> (An.AVconstr l' t \in An.ai_esc A') /\ ((l', An.l_top_elim) \in An.ai_int A')) /\
+      An.cbstep_fuel A c bdr ρ e j Rs r I' /\
+      I = (((c', l'), (c, l)) |: I').
+Proof.
+  intros H; inv H.
+  do 7 eexists.
+  split; [eassumption |].
+  split; [eassumption |].
+  split; [eassumption |].
+  split; [eassumption | reflexivity].
+Qed.
+
+(* A constructor and its elimination share a web: the elimination edge is
+   predicted by the analysis of the eliminating unit `c`, and, if the
+   constructor is foreign, also by the analysis of its own unit `c'`. *)
+Lemma web_map_elim_eq {θ ω c c' l l' w w' I} :
+  valid_web_map_context ω θ ->
+  An.approx_int c (An.ai_int (θ c)) (((c', l'), (c, l)) |: I) ->
+  (c' <> c -> (l', An.l_top_elim) \in An.ai_int (θ c')) ->
+  (ω c') ! l' = Some w' ->
+  (ω c) ! l = Some w ->
+  w' = w.
+Proof.
+  intros Hω Hint Hext Hw' Hw.
+  assert (Hin : ((c', l'), (c, l)) \in (((c', l'), (c, l)) |: I))
+    by (apply Union_introl; constructor).
+  destruct (Hint _ _ _ _ Hin) as [Hcc [_ Hec]].
+  destruct (Nat.eq_dec c' c) as [-> | Hneq].
+  - (* internal: the edge is predicted as it is *)
+    destruct (Hω c) as [Hassign Hexp].
+    exact (web_map_interact_eq Hassign Hexp (Hcc eq_refl eq_refl) Hw' Hw).
+  - (* foreign: both ends interact with the unknown side, hence are exposed *)
+    destruct (Hω c) as [_ Hexp].
+    destruct (Hω c') as [_ Hexp'].
+    assert (Hl : l \in aexposed (θ c))
+      by (eapply AExp_int_l; [exact (Hec Hneq eq_refl) | apply AExp_top_intro]).
+    assert (Hl' : l' \in aexposed (θ c'))
+      by (eapply AExp_int_r; [exact (Hext Hneq) | apply AExp_top_elim]).
+    pose proof (proj2 (Hexp _ _ Hw) Hl) as ->.
+    pose proof (proj2 (Hexp' _ _ Hw') Hl') as ->.
+    reflexivity.
+Qed.
+
+(* A case analysis that does not take its first branch runs as the remaining
+   branches do. *)
+Lemma cbstep_fuel_case_cons {W ex ρ x l t e cl i r} :
+  (forall l' W' t' vs, M.get x ρ = Some (CTag l' W' (CVconstr t' vs)) -> t <> t') ->
+  cbstep_fuel W ex ρ (Ecase x l cl) i r ->
+  cbstep_fuel W ex ρ (Ecase x l ((t, e) :: cl)) i r.
+Proof.
+  intros Hneq Hstep.
+  inv Hstep.
+  - apply CbstepF_OOT.
+  - apply CbstepF_Step; [| assumption].
+    match goal with [Hc : cbstep _ _ _ (Ecase _ _ _) _ _ |- _] => inv Hc end.
+    match goal with
+    | [Hget : M.get x ρ = Some (CTag _ _ (CVconstr ?t' _)),
+       Hft : find_tag cl ?t' _ |- _] =>
+        eapply Cbstep_case;
+        [ exact Hget
+        | apply find_tag_tl; [exact Hft | exact (Hneq _ _ _ _ Hget)]
+        | eassumption
+        | eassumption
+        | eassumption ]
+    end.
+Qed.
+
 Section Compat.
 
   (* Compatibility Lemmas *)
@@ -1372,7 +1546,7 @@ Section Compat.
 
     eapply (He _ _ _ _ _ eq_refl Hesc) with (i := (i - (i - j))) (ρ1 :=  ρ3) (ρ2 := ρ4); eauto.
     - destruct bdr; auto.
-      destruct (Hesc c) as [_ Hres].
+      destruct (Hesc c) as [_ [Hres _]].
       fcrush.
     - destruct (exposed_reflect w) as [Hwx | _]; auto.
       intros av Hav.
@@ -1476,7 +1650,7 @@ Section Compat.
             + eapply An.wf_cenv_get_list; eauto.
             + eapply An.cescaped_env_get_list; eauto.
             + unfold An.analysis_context_escape_ok, An.escapes_ok in *.
-              destruct (Hescθ c') as [_ Hesc]; fcrush.
+              destruct (Hescθ c') as [_ [Hesc _]]; fcrush.
           - intros.
             eapply V_exposed_Forall_escaped; eauto.
             eapply An.cescaped_env_get_list; eauto.
@@ -1614,6 +1788,154 @@ Section Compat.
              exact (V_exposed θ ω Hω HVv Hesc_v Hfl_v Hex).
   Qed.
 
+  Lemma constr_compat A c W w Γ x l t ys k :
+    W ! l = Some w ->
+    (FromList ys \subset Γ) ->
+    well_annotated A c W (x |: Γ) k ->
+    well_annotated A c W Γ (Econstr x l t ys k).
+  Proof.
+    unfold well_annotated, E, E'.
+    intros Hw Hys Hk θ bdr Rs ω ex Heqθ Hescθ Hbdr Hω HW Hex i ρ1 ρ2 HG j1 r1 I1 Hj1 Hstep.
+    subst A W.
+    destruct (An_cbstep_fuel_inv Hstep) as [[-> [-> ->]] | [n1 [-> [Hb _]]]].
+    - exists 0, COOT; split; [apply CbstepF_OOT | exact I].
+    - destruct (An_cbstep_constr_inv Hb) as [vs1 [Hgl1 [Hfl1 [Hstep1 Hx]]]].
+      destruct (G_get_list _ _ HG ys vs1 Hys Hgl1) as [vs2 [Hgl2 HVs]].
+      pose proof (An.cescaped_env_get_list (G_cescaped_env _ _ HG) _ _ Hys Hgl1) as Hesc_vs.
+
+      (* an exposed constructor has exposed fields *)
+      assert (Hexvs : w \in Exposed -> Forall to_exposed vs2).
+      { intros Hwx.
+        destruct (Hω c) as [_ Hexp].
+        assert (Hl : l \in aexposed (θ c))
+          by (apply (Hexp _ _ Hw); apply w_ext_exposed; exact Hwx).
+        eapply (V_exposed_Forall θ ω Hω); [exact HVs | exact Hesc_vs | exact Hfl1 |].
+        intros av Hav.
+        exact (AExp_fld _ _ _ Hl Hav). }
+
+      (* the new constructor is related at the remaining index *)
+      assert (HV : V θ ω (i - 1) (An.CTag (θ c) c l (An.CVconstr t vs1))
+                     (CTag l (ω c) (CVconstr t vs2))).
+      { eapply Vconstr_V; [exact Hw | exact Hexvs |].
+        eapply V_mono_Forall; [exact HVs | lia]. }
+
+      assert (HG' : G θ ω c (i - 1) (x |: Γ)
+                      (M.set x (An.CTag (θ c) c l (An.CVconstr t vs1)) ρ1)
+                      (M.set x (CTag l (ω c) (CVconstr t vs2)) ρ2)).
+      { eapply G_set.
+        - eapply G_mono; [exact HG | lia].
+        - exact HV.
+        - apply An.cescaped_defining.
+        - unfold An.cbinding; simpl.
+          split; [intros _; left; exact Hx | intros Hneq; exfalso; apply Hneq; reflexivity]. }
+
+      destruct (Hk θ bdr Rs ω ex eq_refl Hescθ Hbdr Hω eq_refl Hex (i - 1) _ _ HG' n1 r1 I1 ltac:(lia) Hstep1)
+        as [j2 [r2 [Hrun HR]]].
+      exists (S j2), r2; split.
+      + apply CbstepF_Step.
+        * eapply Cbstep_constr; [exact Hgl2 | exact Hw | exact Hexvs | exact Hrun].
+        * destruct ex; [eapply cbstep_fuel_to_exposed_cres; eauto | exact I].
+      + eapply R_mono; [exact HR | lia].
+  Qed.
+
+  Lemma proj_compat A c W w Γ x l n y k :
+    W ! l = Some w ->
+    (y \in Γ) ->
+    well_annotated A c W (x |: Γ) k ->
+    well_annotated A c W Γ (Eproj x l n y k).
+  Proof.
+    unfold well_annotated, E, E'.
+    intros Hw Hy Hk θ bdr Rs ω ex Heqθ Hescθ Hbdr Hω HW Hex i ρ1 ρ2 HG j1 r1 I1 Hj1 Hstep.
+    subst A W.
+    destruct (An_cbstep_fuel_inv Hstep) as [[-> [-> ->]] | [n1 [-> [Hb [_ [Hint _]]]]]].
+    - exists 0, COOT; split; [apply CbstepF_OOT | exact I].
+    - destruct (An_cbstep_proj_inv Hb)
+        as [A' [c' [l' [t [vs1 [v1 [I' [Hgety1 [Hnth1 [Hext [Hesc1 [Hbind1 [Hstep1 ->]]]]]]]]]]]]].
+      destruct i as [| i]; [lia |].
+      destruct (G_get _ _ HG y _ Hy Hgety1) as [v2y [Hgety2 HVy]].
+      pose proof (An.wf_cval_CTag_inv (V_wf_cval_l _ _ HVy)) as [HA' _]; subst A'.
+      destruct (V_Vconstr_inv _ _ HVy) as [w' [vs2 [-> [Hw' HVs]]]].
+      simpl in HVs.
+      destruct (Forall2_nth_error Hnth1 HVs) as [v2 [Hnth2 HV]].
+
+      (* the constructor and its elimination share a web *)
+      assert (Hweq : w' = w)
+        by (exact (web_map_elim_eq Hω Hint (fun Hneq => proj2 (Hext Hneq)) Hw' Hw)).
+      subst w'.
+
+      assert (HG' : G θ ω c i (x |: Γ) (M.set x v1 ρ1) (M.set x v2 ρ2)).
+      { eapply G_set;
+          [ eapply G_mono; [exact HG | lia] | exact HV | exact Hesc1 | exact Hbind1 ]. }
+
+      destruct (Hk θ bdr Rs ω ex eq_refl Hescθ Hbdr Hω eq_refl Hex i _ _ HG' n1 r1 I' ltac:(lia) Hstep1)
+        as [j2 [r2 [Hrun HR]]].
+      exists (S j2), r2; split.
+      + apply CbstepF_Step.
+        * eapply Cbstep_proj; [exact Hgety2 | exact Hnth2 | exact Hw | exact Hw' | exact Hrun].
+        * destruct ex; [eapply cbstep_fuel_to_exposed_cres; eauto | exact I].
+      + eapply R_mono; [exact HR | lia].
+  Qed.
+
+  Lemma case_nil_compat A c W Γ x l :
+    well_annotated A c W Γ (Ecase x l []).
+  Proof.
+    unfold well_annotated, E, E'.
+    intros θ bdr Rs ω ex Heqθ Hescθ Hbdr Hω HW Hex i ρ1 ρ2 HG j1 r1 I1 Hj1 Hstep.
+    destruct (An_cbstep_fuel_inv Hstep) as [[-> [-> ->]] | [n1 [-> [Hb _]]]].
+    - exists 0, COOT; split; [apply CbstepF_OOT | exact I].
+    - destruct (An_cbstep_case_inv Hb) as [A' [c' [l' [t [vs1 [e' [I' [_ [Hft _]]]]]]]]].
+      inv Hft.
+  Qed.
+
+  Lemma case_cons_compat A c W w Γ x l t e cl :
+    W ! l = Some w ->
+    (x \in Γ) ->
+    well_annotated A c W Γ e ->
+    well_annotated A c W Γ (Ecase x l cl) ->
+    well_annotated A c W Γ (Ecase x l ((t, e) :: cl)).
+  Proof.
+    unfold well_annotated, E, E'.
+    intros Hw Hx He Hcl θ bdr Rs ω ex Heqθ Hescθ Hbdr Hω HW Hex i ρ1 ρ2 HG j1 r1 I1 Hj1 Hstep.
+    subst A W.
+    destruct (An_cbstep_fuel_inv Hstep)
+      as [[-> [-> ->]] | [n1 [-> [Hb [Hres [Hint [Hok Hbd]]]]]]].
+    - exists 0, COOT; split; [apply CbstepF_OOT | exact I].
+    - destruct (An_cbstep_case_inv Hb)
+        as [A' [c' [l' [t' [vs1 [e' [I' [Hgetx1 [Hft [Hext [Hstep1 ->]]]]]]]]]]].
+      destruct (G_get _ _ HG x _ Hx Hgetx1) as [v2x [Hgetx2 HVx]].
+      pose proof (An.wf_cval_CTag_inv (V_wf_cval_l _ _ HVx)) as [HA' _]; subst A'.
+      destruct (V_Vconstr_inv _ _ HVx) as [w' [vs2 [-> [Hw' _]]]].
+
+      (* the constructor and its elimination share a web *)
+      assert (Hweq : w' = w)
+        by (exact (web_map_elim_eq Hω Hint (fun Hneq => proj2 (Hext Hneq)) Hw' Hw)).
+      subst w'.
+
+      destruct (find_tag_cons_inv Hft) as [[-> ->] | [Hft' Hneq]].
+      + (* the first branch is taken *)
+        destruct (He θ bdr Rs ω ex eq_refl Hescθ Hbdr Hω eq_refl Hex i ρ1 ρ2 HG n1 r1 I' ltac:(lia) Hstep1)
+          as [j2 [r2 [Hrun HR]]].
+        exists (S j2), r2; split.
+        * apply CbstepF_Step.
+          -- eapply Cbstep_case; [exact Hgetx2 | apply find_tag_hd | exact Hw | exact Hw' | exact Hrun].
+          -- destruct ex; [eapply cbstep_fuel_to_exposed_cres; eauto | exact I].
+        * eapply R_mono; [exact HR | lia].
+      + (* a later branch is taken: run as the remaining branches do *)
+        assert (Hstep' : An.cbstep_fuel (θ c) c bdr ρ1 (Ecase x l cl) (S n1) Rs r1
+                           (((c', l'), (c, l)) |: I')).
+        { apply An.CbstepF_Step; [| exact Hres | exact Hint | exact Hok | exact Hbd].
+          eapply An.Cbstep_case; [exact Hgetx1 | exact Hft' | exact Hext | exact Hstep1]. }
+        destruct (Hcl θ bdr Rs ω ex eq_refl Hescθ Hbdr Hω eq_refl Hex i ρ1 ρ2 HG (S n1) r1 _ Hj1 Hstep')
+          as [j2 [r2 [Hrun HR]]].
+        exists j2, r2; split; [| exact HR].
+        eapply cbstep_fuel_case_cons; [| exact Hrun].
+        intros l'' W'' t'' vs'' Hget2.
+        unfold clval in *.
+        rewrite Hgetx2 in Hget2.
+        unfold CTag in Hget2; inv Hget2.
+        exact Hneq.
+  Qed.
+
   Lemma fundamental_property {A c W Γ e}:
     web_map_well_scoped W Γ e ->
     well_annotated A c W Γ e.
@@ -1625,14 +1947,13 @@ Section Compat.
         destruct (proj1 (web_map_well_scoped_inv _ _ _) H0) as [Hlab Hscope].
       + eapply well_scoped_inv; eauto.
       + exact Hlab.
-    - (* eapply app_compat; eauto. *)
+    - eapply app_compat; eauto.
+    - (* letapp *)
       admit.
-    - admit.
-    - admit.
-    - admit.
-    - (* eapply case_nil_compat; eauto. *)
-      admit.
-    - admit.
+    - eapply constr_compat; eauto.
+    - eapply proj_compat; eauto.
+    - eapply case_nil_compat; eauto.
+    - eapply case_cons_compat; eauto.
   Admitted.
 
 End Compat.
@@ -2399,49 +2720,106 @@ Section BehaviorRefinement.
 
   (* Behavioral Refinement *)
   Inductive val_ref : An.clval -> clval -> Prop :=
-  | Ref_Vfun :
-    forall l f ρ1 xs e A c ρ2 W,
-      val_ref (An.CTag A c l (An.CVfun f ρ1 xs e)) (CTag l W (CVfun f ρ2 xs e))
+  | Ref_TAG :
+    forall A c l v1 W v2,
+      val_ref' v1 v2 ->
+      val_ref (An.CTag A c l v1) (CTag l W v2)
 
-              (*
+  with val_ref' : An.cval -> cval -> Prop :=
+  | Ref_Vfun :
+    forall f ρ1 xs e ρ2,
+      val_ref' (An.CVfun f ρ1 xs e) (CVfun f ρ2 xs e)
+
   | Ref_Vconstr_nil :
-    forall c l0,
-      val_ref_ (A0.Vconstr c []) (Tag l0 (A1.Vconstr c []))
+    forall t,
+      val_ref' (An.CVconstr t []) (CVconstr t [])
 
   | Ref_Vconstr_cons :
-    forall c v1 v2 l0 vs1 vs2,
-      val_ref_ v1 v2 ->
-      val_ref_ (A0.Vconstr c vs1) (Tag l0 (A1.Vconstr c vs2)) ->
-      val_ref_ (A0.Vconstr c (v1 :: vs1)) (Tag l0 (A1.Vconstr c (v2 :: vs2)))
-               *) .
+    forall t v1 v2 vs1 vs2,
+      val_ref v1 v2 ->
+      val_ref' (An.CVconstr t vs1) (CVconstr t vs2) ->
+      val_ref' (An.CVconstr t (v1 :: vs1)) (CVconstr t (v2 :: vs2)).
 
   Hint Constructors val_ref : core.
+  Hint Constructors val_ref' : core.
 
-  (*
-  Lemma val_ref_Vconstr c l0 vs1 vs2 :
+  Scheme val_ref_mut := Induction for val_ref Sort Prop
+  with val_ref'_mut := Induction for val_ref' Sort Prop.
+
+  Lemma val_ref_Vconstr A c l W t vs1 vs2 :
     Forall2 val_ref vs1 vs2 ->
-    val_ref (A0.Vconstr c vs1) (Tag l0 (A1.Vconstr c vs2)).
+    val_ref (An.CTag A c l (An.CVconstr t vs1)) (CTag l W (CVconstr t vs2)).
   Proof.
-    intros.
-    induction H; simpl; auto.
+    intros Hvs.
+    apply Ref_TAG.
+    induction Hvs as [| v1 v2 vs1' vs2' Hv Hvs' IHvs'].
+    - apply Ref_Vconstr_nil.
+    - apply Ref_Vconstr_cons; assumption.
   Qed.
-*)
 
-  Lemma V_top_val_ref_aux {θ ω v1 v2} :
+  (* Related values agree on their shape: labels, code, and constructor tags. *)
+  Lemma V_val_ref_aux {θ ω v1} :
     An.wf_cval θ v1 ->
-    (forall i, V_top θ ω i v1 v2) ->
+    forall v2, (forall i, V θ ω i v1 v2) -> val_ref v1 v2.
+  Proof.
+    intros Hwf.
+    induction Hwf as [A c l v HA Hv IHv
+                     | f ρ xs e Hρ IHρ
+                     | t
+                     | t v vs Hv IHv Hvs IHvs
+                     | ρ Hget IHget]
+      using An.wf_cval_mut
+      with (P0 := fun w _ =>
+                    forall t vs1,
+                      w = An.CVconstr t vs1 ->
+                      forall vs2,
+                        (forall i, Forall2 (V θ ω i) vs1 vs2) ->
+                        Forall2 val_ref vs1 vs2)
+           (P1 := fun _ _ => True).
+    - (* WF_TAG *)
+      intros v2 HV.
+      destruct v2 as [l2 W2 w2].
+      pose proof (HV 0) as HV0; simpl in HV0.
+      destruct HV0 as [_ [_ [<- [_ [w [_ HV0]]]]]].
+      destruct v as [f1 ρ1 xs1 e1 | t1 vs1];
+        destruct w2 as [f2 ρ2 xs2 e2 | t2 vs2];
+        simpl in HV0; try contradiction.
+      + destruct HV0 as [<- [<- [<- _]]].
+        apply Ref_TAG; apply Ref_Vfun.
+      + destruct HV0 as [<- _].
+        apply val_ref_Vconstr.
+        apply (IHv t1 vs1 eq_refl).
+        intros i.
+        destruct (V_Vconstr_inv θ ω (HV (S i))) as [w' [vs2' [Heq [_ HVs]]]].
+        unfold CTag in Heq; inversion Heq; subst.
+        exact HVs.
+    - (* WF_CVfun *)
+      intros t vs1 Heq; discriminate Heq.
+    - (* WF_CVconstr_nil *)
+      intros t' vs1 Heq vs2 HVs.
+      injection Heq as <- <-.
+      destruct vs2 as [| v2 vs2']; [constructor |].
+      specialize (HVs 0); fcrush.
+    - (* WF_CVconstr *)
+      intros t' vs1 Heq vs2 HVs.
+      injection Heq as <- <-.
+      destruct vs2 as [| v2 vs2'].
+      + specialize (HVs 0); fcrush.
+      + constructor.
+        * apply IHv; intros i.
+          pose proof (HVs i) as HVi; inversion HVi; assumption.
+        * apply (IHvs t vs eq_refl); intros i.
+          pose proof (HVs i) as HVi; inversion HVi; assumption.
+    - (* WF_cenv *)
+      exact I.
+  Qed.
+
+  Theorem V_val_ref {θ ω v1 v2} :
+    (forall i, V θ ω i v1 v2) ->
     val_ref v1 v2.
   Proof.
-    intros _ HV.
-    specialize (HV 0); unfold V_top in HV.
-    destruct HV as [HV _].
-    destruct HV as [_ [_ HV]].
-    destruct v1; destruct v2; destruct c; simpl in HV.
-    destruct HV as [-> [-> HV]].
-    destruct HV as [W2 [HeqW2 HV]].
-    destruct c0; destruct c1; try contradiction.
-    destruct HV as [-> [-> [-> _]]].
-    constructor.
+    intros H.
+    eapply V_val_ref_aux; [eapply V_wf_cval_l; exact (H 0) | exact H].
   Qed.
 
   Theorem V_top_val_ref {θ ω v1 v2} :
@@ -2449,11 +2827,8 @@ Section BehaviorRefinement.
     val_ref v1 v2.
   Proof.
     intros H.
-    eapply V_top_val_ref_aux; eauto.
-    specialize (H 0).
-    unfold V_top in H.
-    inv H.
-    eapply V_wf_cval_l; eauto.
+    apply (@V_val_ref θ ω).
+    intros i; exact (proj1 (H i)).
   Qed.
 
 End BehaviorRefinement.

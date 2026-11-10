@@ -1323,6 +1323,7 @@ Inductive cbstep (A : analysis_result) (c : color) (bdr : bool) (ρ : cenv) : ex
     (* the arguments flow to the parameters *)
     get_list xs ρ = Some vs ->
     Forall2 (cbinding c A) xs' vs ->
+
     set_lists xs' vs (M.set f' (CTag A c l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
 
     (* the body returns into `ai_ret A l'` *)
@@ -1334,6 +1335,8 @@ Inductive cbstep (A : analysis_result) (c : color) (bdr : bool) (ρ : cenv) : ex
 | Cbstep_constr :
   forall {x l t ys k vs i Rs r I},
     get_list ys ρ = Some vs ->
+    (* the fields flow into the field set of the site *)
+    Forall (cflows c A (ai_fld A l)) vs ->
     cbstep_fuel A c bdr (M.set x (CTag A c l (CVconstr t vs)) ρ) k i Rs r I ->
     (AVconstr l t \in ai_env A x) ->
     cbstep A c bdr ρ (Econstr x l t ys k) i Rs r I
@@ -1346,6 +1349,8 @@ Inductive cbstep (A : analysis_result) (c : color) (bdr : bool) (ρ : cenv) : ex
     M.get y ρ = Some (CTag A' c' l' (CVconstr t vs)) ->
     nth_error vs n = Some v ->
     (c' <> c -> (AVconstr l' t \in ai_esc A') /\ ((l', l_top_elim) \in ai_int A')) ->
+    cescaped c v ->
+    cbinding c A x v ->
     cbstep_fuel A c bdr (M.set x v ρ) k i Rs r I ->
     cbstep A c bdr ρ (Eproj x l n y k) i Rs r (((c', l'), (c, l)) |: I)
 
@@ -3092,7 +3097,7 @@ Section Compat.
         as [j2 [r2 [I2 [Hrun HR]]]].
       exists (S j2), r2, I2; split.
       + apply CbstepF_Step.
-        * eapply Cbstep_constr; [exact Hgl2 | exact Hrun | exact Hx].
+        * eapply Cbstep_constr; [exact Hgl2 | exact (cflows_fields Hbind_ys Hfld) | exact Hrun | exact Hx].
         * eapply cbstep_fuel_approx_res; eauto.
         * eapply cbstep_fuel_approx_int; eauto.
         * eapply cbstep_fuel_cresult; eauto.
@@ -3170,7 +3175,8 @@ Section Compat.
         as [j2 [r2 [I2 [Hrun HR]]]].
       exists (S j2), r2, (((c', w), (c, l)) |: I2); split.
       + apply CbstepF_Step.
-        * eapply Cbstep_proj; [exact Hgety2 | exact Hnth2 | exact Hsem_y | exact Hrun].
+        * eapply Cbstep_proj;
+          [exact Hgety2 | exact Hnth2 | exact Hsem_y | exact Hesc_x | exact Hbind_x | exact Hrun].
         * eapply cbstep_fuel_approx_res; eauto.
         * apply approx_int_add; [exact Hint_y | eapply cbstep_fuel_approx_int; eauto].
         * eapply cbstep_fuel_cresult; eauto.
