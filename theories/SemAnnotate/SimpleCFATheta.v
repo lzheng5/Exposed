@@ -1,0 +1,4011 @@
+From Coq Require Import ZArith.ZArith Sets.Ensembles Lists.List.
+From compcert.lib Require Export Maps.
+From CertiCoq.LambdaANF Require Import Ensembles_util map_util set_util List_util tactics.
+From CertiCoq.Libraries Require Import maps_util.
+Import ListNotations.
+Require Import Lia.
+From Hammer Require Import Hammer Tactics Reflect.
+
+From Common Require Import Util.
+From SemAnnotate Require Import LabeledANF.
+
+(* A Simple Value Set Analysis *)
+(* A variant of `SimpleCFA` in which the analysis context `θ` (a map from
+   colors to analysis results) is a top-level parameter of the checking
+   semantics, rather than being carried around in the tags of run-time values.
+   Values only record their colored introduction label; the analysis result a
+   value is checked against is always `θ c` for the color `c` of its tag.
+   Consequently, no well-formedness invariant tying value tags to `θ` is
+   needed, and the compositional correctness results (`top`,
+   `preserves_linking`, adequacy) are stated over the semantics `cbstep θ`
+   and `cbstep_top θ`. *)
+(* Please note that everything related to the analysis is *static*. *)
+
+(* --------------------------------------------------------------- *)
+(* The Unknown/Foreign Side                                          *)
+(* --------------------------------------------------------------- *)
+
+(* Everything the analysis does not see is summarised by two dedicated labels:
+     - [l_top_intro]: *every* value that originates outside the analysed unit
+     - [l_top_elim]: *every* elimination performed outside the analysed unit *)
+Parameter l_top_intro l_top_elim : label.
+
+(* Interaction Set *)
+(* Each pair has the format (l_intro, l_elim). *)
+Definition ainteraction : Type := (label * label).
+Definition ainteractions := Ensemble ainteraction.
+
+(* Internal Label Set *)
+Definition internals : Type := labels.
+
+(* Reachable labels for the (uncolored) statically predicted interactions *)
+(* `areachable I l` is the set of labels connected to `l` by a chain of
+   interactions in I, in either direction. *)
+Inductive areachable (I : ainteractions) (l : label) : labels :=
+| AReachable_refl :
+  areachable I l l
+
+| AReachable_interact_l :
+  forall l',
+    (l, l') \in I ->
+    areachable I l l'
+
+| AReachable_interact_r :
+  forall l',
+    (l', l) \in I ->
+    areachable I l l'
+
+| AReachable_step :
+  forall l' l'',
+    areachable I l l' ->
+    areachable I l' l'' ->
+    areachable I l l''.
+
+Hint Constructors areachable : core.
+
+(* `l` is internal if it never interacts with the unknown side, i.e. neither
+   `l_top_intro` nor `l_top_elim` is reachable from it. *)
+Definition ainternal (I : ainteractions) (l : label) : Prop :=
+  ~ (l_top_intro \in areachable I l) /\ ~ (l_top_elim \in areachable I l).
+
+(* All the internal labels in `I` *)
+Definition ainternals_of (I : ainteractions) : internals :=
+  fun l => ainternal I l.
+
+(* Closure Property *)
+(* `U` is closed under reachable interactions `I` *)
+Definition ainternals_closed (U : internals) (I : ainteractions) : Prop :=
+  forall l l',
+    (l \in U) ->
+    (l' \in (areachable I l)) ->
+    (l' \in U).
+
+Lemma ainternals_of_closed I :
+  ainternals_closed (ainternals_of I) I.
+Proof.
+  unfold ainternals_closed, ainternals_of, ainternal, Ensembles.In.
+  intros l l' [Hintro Helim] Hreach.
+  (* anything reachable from `l'` is also reachable from `l` *)
+  split.
+  - intros Hintro'.
+    apply Hintro.
+    eapply AReachable_step; [exact Hreach | exact Hintro'].
+  - intros Helim'.
+    apply Helim.
+    eapply AReachable_step; [exact Hreach | exact Helim'].
+Qed.
+
+(* --------------------------------------------------------------- *)
+(* Abstract values                                                   *)
+(* --------------------------------------------------------------- *)
+
+(* An abstract value is an allocation site, summarised:
+     - a closure is its introduction label together with its (syntactic) code;
+     - a constructor is its introduction label together with its tag -- its
+       fields are read back through the field set [ai_fld] of that label,
+       which is what makes the domain finite;
+     - [AVtop] is the single abstract value standing for everything unknown:
+       any foreign value, and any of our values that has escaped to the
+       context.  Its introduction clabel is [l_top_intro]. *)
+Inductive aval : Type :=
+| AVtop : aval
+| AVfun : label -> var -> list var -> exp -> aval
+| AVconstr : label -> ctor_tag -> aval.
+
+Definition avals := Ensemble aval.
+
+Definition label_of (av : aval) : label :=
+  match av with
+  | AVtop => l_top_intro
+  | AVfun l _ _ _ => l
+  | AVconstr l _ => l
+  end.
+
+(* Abstract environment: one value set per variable (monovariant). *)
+Definition aenv := var -> avals.
+
+(* Abstract return sets, keyed by the closure's introduction label: a
+     function body is analysed once, at its definition site, and everything it
+     may return is collected in [aret] at that site. *)
+Definition aret := label -> avals.
+
+(* Abstract field sets, keyed by the constructor's introduction label: every
+     field of every constructor allocated at a site is collected in [afld] at
+     that site (field-insensitive). *)
+Definition afld := label -> avals.
+
+(* --------------------------------------------------------------- *)
+(* The analysis result                                             *)
+(* --------------------------------------------------------------- *)
+Record analysis_result : Type :=
+  mk_analysis_result {
+      ai_env : aenv;           (* value sets                                 *)
+      ai_ret : aret;           (* return sets                                *)
+      ai_fld : afld;           (* field sets                                 *)
+      ai_esc : avals;          (* values that may escape to the context      *)
+      ai_int : ainteractions   (* statically predicted interactions          *)
+    }.
+
+(* What the context may do with a value we handed it.  [ai_esc] has to be closed
+     under this: the context can eliminate an escaped value, call an escaped
+     closure with arbitrary (hence unknown) arguments and keep whatever it
+     returns, and project out of an escaped constructor. *)
+Definition escapes_ok (A : analysis_result) : Prop :=
+  (forall av,
+      (av \in ai_esc A) ->
+      ((label_of av, l_top_elim) \in ai_int A)) /\
+    (forall l f xs e,
+        (AVfun l f xs e \in ai_esc A) ->
+          (forall x, List.In x xs -> (AVtop \in ai_env A x)) /\
+          (ai_ret A l \subset ai_esc A)) /\
+    (forall l t,
+        (AVconstr l t \in ai_esc A) ->
+        (ai_fld A l \subset ai_esc A)).
+
+(* --------------------------------------------------------------- *)
+(* The Abstract Semantics                                            *)
+(* --------------------------------------------------------------- *)
+
+(* Interactions at Elimination Sites *)
+(* The call site `l` eliminates everything that reaches `f`; since `AVtop`
+   also stands for our own escaped closures, it eliminates each of them as
+   well. *)
+Definition aelim_fun_int (A : analysis_result) (f : var) (l : label) : Prop :=
+  (forall av, (av \in ai_env A f) -> ((label_of av, l) \in ai_int A)) /\
+    ((AVtop \in ai_env A f) ->
+     forall l' f' xs' e', (AVfun l' f' xs' e' \in ai_esc A) -> ((l', l) \in ai_int A)).
+
+(* The elimination site `l` of a constructor held in `y` (by a projection or
+   a case) eliminates everything that reaches `y`; since `AVtop` also stands
+   for our own escaped constructors, it eliminates each of them as well. *)
+Definition aelim_constr_int (A : analysis_result) (y : var) (l : label) : Prop :=
+  (forall av, (av \in ai_env A y) -> ((label_of av, l) \in ai_int A)) /\
+    ((AVtop \in ai_env A y) ->
+     forall l' t, (AVconstr l' t \in ai_esc A) -> ((l', l) \in ai_int A)).
+
+(* [acheck A e R] reads: the analysis result [A] is acceptable
+     for [e] and [R] over-approximates the values [e] may return.
+     This is the "abstract semantics": a declarative
+     constraint system rather than a fixpoint computation, so any solver that
+     produces an [analysis_result] may be plugged in and checked against it. *)
+Inductive acheck (A : analysis_result) : exp -> avals -> Prop :=
+| Acheck_ret :
+  forall {x R},
+    (ai_env A x \subset R) ->
+    acheck A (Eret x) R
+
+| Acheck_fun :
+  forall {f l xs e k R},
+    (* the closure introduced here flows into [f] *)
+    (AVfun l f xs e \in ai_env A f) ->
+    (* its body is analysed once, here, and returns into [ai_ret A l] *)
+    acheck A e (ai_ret A l) ->
+    acheck A k R ->
+    acheck A (Efun f l xs e k) R
+
+| Acheck_app :
+  forall {f l xs R},
+    (* the call site (c, l) eliminates everything that reaches [f] *)
+    aelim_fun_int A f l ->
+
+    (* internal call: arguments flow to parameters, results flow out *)
+    (forall l' f' xs' e',
+        (AVfun l' f' xs' e' \in ai_env A f) ->
+        length xs = length xs' /\
+          (AVfun l' f' xs' e' \in ai_env A f') /\
+          Forall2 (fun x x' => ai_env A x \subset ai_env A x') xs xs' /\
+          (ai_ret A l' \subset R)) ->
+
+    (* unknown callee: the arguments escape and the result is unknown; since
+       `AVtop` also stands for our own escaped closures, the callee may be any
+       of them, which is then called as a known callee *)
+    ((AVtop \in ai_env A f) ->
+       Forall (fun x => ai_env A x \subset ai_esc A) xs /\ (* each argument can escape *)
+       (AVtop \in R) /\ (* result is unknown *)
+       (forall l' f' xs' e',
+           (AVfun l' f' xs' e' \in ai_esc A) ->
+             length xs = length xs' /\
+             (AVfun l' f' xs' e' \in ai_env A f') /\
+             Forall2 (fun x x' => ai_env A x \subset ai_env A x') xs xs' /\ (* call the escaping function with the current arguments *)
+             (ai_ret A l' \subset R))) -> (* what each escaping function may return can also be returned from this callsite *)
+
+    acheck A (Eapp f l xs) R
+
+| Acheck_constr :
+  forall {x l t ys k R},
+    (* the constructor introduced here flows into [x] *)
+    (AVconstr l t \in ai_env A x) ->
+    (* its fields flow into the field set of its site *)
+    Forall (fun y => ai_env A y \subset ai_fld A l) ys ->
+    acheck A k R ->
+    acheck A (Econstr x l t ys k) R
+
+| Acheck_proj :
+  forall {x l n y k R},
+    aelim_constr_int A y l ->
+    (* internal constructor: its fields flow into [x] *)
+    (forall l' t, (AVconstr l' t \in ai_env A y) -> ai_fld A l' \subset ai_env A x) ->
+    (* unknown constructor: the field is unknown; since `AVtop` also stands for
+       our own escaped constructors, their fields flow into [x] as well *)
+    ((AVtop \in ai_env A y) ->
+       (AVtop \in ai_env A x) /\
+         (forall l' t, (AVconstr l' t \in ai_esc A) -> ai_fld A l' \subset ai_env A x)) ->
+    acheck A k R ->
+    acheck A (Eproj x l n y k) R
+
+| Acheck_case_nil :
+  forall {x l R},
+    aelim_constr_int A x l ->
+    acheck A (Ecase x l []) R
+
+| Acheck_case_cons :
+  forall {x l t e cl R},
+    acheck A e R ->
+    acheck A (Ecase x l cl) R ->
+    acheck A (Ecase x l ((t, e) :: cl)) R.
+
+Hint Constructors acheck : core.
+
+Lemma acheck_constr_inv {A x l t ys k R} :
+  acheck A (Econstr x l t ys k) R ->
+  (AVconstr l t \in ai_env A x) /\
+    Forall (fun y => ai_env A y \subset ai_fld A l) ys /\
+    acheck A k R.
+Proof. intros H; inv H; split; [assumption | split; assumption]. Qed.
+
+Lemma acheck_proj_inv {A x l n y k R} :
+  acheck A (Eproj x l n y k) R ->
+  aelim_constr_int A y l /\
+    (forall l' t, (AVconstr l' t \in ai_env A y) -> ai_fld A l' \subset ai_env A x) /\
+    ((AVtop \in ai_env A y) ->
+       (AVtop \in ai_env A x) /\
+         (forall l' t, (AVconstr l' t \in ai_esc A) -> ai_fld A l' \subset ai_env A x)) /\
+    acheck A k R.
+Proof.
+  intros H; inv H.
+  split; [assumption | split; [assumption | split; assumption]].
+Qed.
+
+Lemma acheck_case_aelim_constr_int {A x l cl R} :
+  acheck A (Ecase x l cl) R ->
+  aelim_constr_int A x l.
+Proof.
+  induction cl as [| [t e] cl IH]; intros Hack; inv Hack.
+  - assumption.
+  - apply IH; assumption.
+Qed.
+
+Lemma acheck_case_cons_inv {A x l t e cl R} :
+  acheck A (Ecase x l ((t, e) :: cl)) R ->
+  acheck A e R /\ acheck A (Ecase x l cl) R.
+Proof. intros H; inv H; split; assumption. Qed.
+
+(* Checking Semantics With Respect to Colored Label Pair Set *)
+
+(* Color *)
+Definition color := nat.
+Definition colors := Ensemble nat.
+
+(* Colored Label *)
+Definition clabel : Type := (color * label).
+Definition clabels : Type := Ensemble clabel.
+
+(* Interaction Set *)
+(* Each pair has the format (l_intro, l_elim). *)
+Definition interaction : Type := (clabel * clabel).
+Definition interactions := Ensemble interaction.
+
+(* Reachable label pairs *)
+(* `reachable I cl` is the set of colored labels connected to `cl` by a chain of
+   interactions in I, in either direction (transitive closure of `cinteract`). *)
+Inductive reachable (I : interactions) (cl : clabel) : clabels :=
+| Reachable_refl :
+  reachable I cl cl
+
+| Reachable_interact_l :
+  forall cl',
+    (cl, cl') \in I ->
+    reachable I cl cl'
+
+| Reachable_interact_r :
+  forall cl',
+    (cl', cl) \in I ->
+    reachable I cl cl'
+
+| Reachable_step :
+  forall cl' cl'',
+    reachable I cl cl' ->
+    reachable I cl' cl'' ->
+    reachable I cl cl''.
+
+Hint Constructors reachable : core.
+
+Definition colors_of (L : clabels) : colors :=
+  fun c => exists l, (c, l) \in L.
+
+(* `cl` has only internal interaction if the set of reachable colors is exactly the empty set or the singleton set {c}. *)
+Definition internal (I : interactions) (cl : clabel) : Prop :=
+  match cl with
+  | (c, _) => (colors_of (reachable I cl)) \subset [ set c ]
+  end.
+
+(* `cl` has external interaction if it is not internal or it interacts with some other color. *)
+Definition external (I : interactions) (cl : clabel) : Prop :=
+  ~ internal I cl.
+
+(* All the internal labels in `I` with respect color `c` *)
+Definition internals_of (c : color) (I : interactions) : internals :=
+  fun l => internal I (c, l).
+
+(* Internal with respect to `U` paired with its corresponding color `c` *)
+Definition cinternal (U : internals) (c : color) (cl : clabel) : Prop :=
+  fst cl = c /\ (snd cl \in U).
+
+(* Closure Property *)
+(* `U` paired with `c` is closed under reachable interactions `I`.
+    Note that `U` is not necessarily the most precise internal events in `I`. *)
+Definition internals_closed (U : internals) (c : color) (I : interactions) : Prop :=
+  forall l cl',
+    (l \in U) ->
+    (cl' \in (reachable I (c, l))) ->
+    cinternal U c cl'.
+
+Lemma internals_of_closed c I :
+  internals_closed (internals_of c I) c I.
+Proof.
+  unfold internals_closed, cinternal, internals_of, internal, colors_of,
+    Ensembles.Included, Ensembles.In.
+  intros l [c' l'] Hint Hreach.
+  cbn in *.
+  (* `(c', l')` is reachable from `(c, l)`, so its color is `c` *)
+  pose proof (Hint c' (ex_intro _ l' Hreach)) as Hc'.
+  inv Hc'.
+  split; [reflexivity |].
+  (* anything reachable from `(c, l')` is also reachable from `(c, l)` *)
+  intros c'' [l'' Hreach'].
+  apply Hint.
+  exists l''.
+  eapply Reachable_step; [exact Hreach | exact Hreach'].
+Qed.
+
+Lemma empty_internals_closed c I :
+  internals_closed (Empty_set _) c I.
+Proof. unfold internals_closed. sfirstorder. Qed.
+
+Lemma internals_closed_empty U c :
+  internals_closed U c (Empty_set interaction).
+Proof.
+  unfold internals_closed, cinternal, Ensembles.In.
+  intros l cl' HclU Hreach.
+  assert (Heq : cl' = (c, l)).
+  { clear HclU.
+    induction Hreach as [| ? Hin | ? Hin | ? ? ? IH1 ? IH2]; sfirstorder. }
+  fcrush.
+Qed.
+
+Lemma internals_closed_equivalent U c I I' :
+  I <--> I' ->
+  (internals_closed U c I <-> internals_closed U c I').
+Proof.
+  intros [Hsub Hsub'].
+  assert (Hreach : forall (J J' : interactions),
+             (forall p, p \in J -> p \in J') ->
+             forall cl cl', cl' \in reachable J cl -> cl' \in reachable J' cl).
+  { intros J J' HJ cl cl' Hr.
+    induction Hr as [x | x y Hin | x y Hin | x y z H1 IH1 H2];
+      [ apply Reachable_refl
+      | apply Reachable_interact_l; apply HJ; exact Hin
+      | apply Reachable_interact_r; apply HJ; exact Hin
+      | eapply Reachable_step; eauto ]. }
+  unfold internals_closed, cinternal.
+  split; intros Hclosed l cl' HlU Hr.
+  - eapply Hclosed; [exact HlU |].
+    eapply (Hreach I' I); eauto.
+  - eapply Hclosed; [exact HlU |].
+    eapply (Hreach I I'); eauto.
+Qed.
+
+(* Edge-wise characterization of Closure *)
+(* `U` respects `I` when every *single* interaction of `I` joins two colored
+   labels that are either both internal to the unit wearing `c` or both not:
+   reachability can then never leave the unit.  This is the form that the
+   checking semantics produces one interaction at a time. *)
+Definition interactions_respect (U : internals) (c : color) (I : interactions) : Prop :=
+  forall cl_i cl_e,
+    ((cl_i, cl_e) \in I) ->
+    (cinternal U c cl_i <-> cinternal U c cl_e).
+
+Lemma interactions_respect_union U c I1 I2 :
+  interactions_respect U c I1 ->
+  interactions_respect U c I2 ->
+  interactions_respect U c (I1 :|: I2).
+Proof.
+  unfold interactions_respect.
+  intros H1 H2 cl_i cl_e Hin.
+  inv Hin.
+  - match goal with [HI : _ \in I1 |- _] => exact (H1 cl_i cl_e HI) end.
+  - match goal with [HI : _ \in I2 |- _] => exact (H2 cl_i cl_e HI) end.
+Qed.
+
+(* Reachability starting from an internal label never leaves the unit --- in particular it never changes color. *)
+Lemma interactions_respect_reachable {U c I} :
+  interactions_respect U c I ->
+  forall cl cl',
+    (cl' \in reachable I cl) ->
+    cinternal U c cl ->
+    cinternal U c cl'.
+Proof.
+  unfold interactions_respect.
+  intros Hres cl cl' Hreach.
+  induction Hreach as [x | x y Hin | x y Hin | x y z Hxy IHxy Hyz IHyz].
+  - intros Hx; exact Hx.
+  - intros Hx; exact (proj1 (Hres x y Hin) Hx).
+  - intros Hx; exact (proj2 (Hres y x Hin) Hx).
+  - intros Hx; apply IHyz, IHxy, Hx.
+Qed.
+
+Lemma interactions_respect_closed U c I :
+  interactions_respect U c I ->
+  internals_closed U c I.
+Proof.
+  unfold internals_closed, cinternal.
+  intros Hres l cl' HlU Hreach.
+  pose proof (interactions_respect_reachable Hres (c, l) cl' Hreach
+                (conj eq_refl HlU)) as [Hc Hl].
+  fcrush.
+Qed.
+
+Lemma internals_closed_respect U c I :
+  internals_closed U c I ->
+  interactions_respect U c I.
+Proof.
+  unfold internals_closed, interactions_respect, cinternal.
+  intros Hclosed cl_i cl_e Hin.
+  split; intros [Heq Hc].
+  - hauto lq: on use: surjective_pairing, Reachable_interact_l unfold: Ensembles.In, snd, clabel.
+  - qauto use: surjective_pairing, Reachable_interact_r unfold: Ensembles.In, snd, clabel.
+Qed.
+
+Theorem internals_closed_iff_respect U c I :
+  internals_closed U c I <-> interactions_respect U c I.
+Proof.
+  split; [exact (internals_closed_respect U c I)
+         | exact (interactions_respect_closed U c I)].
+Qed.
+
+Lemma internals_of_respect c I :
+  interactions_respect (internals_of c I) c I.
+Proof. eauto using internals_closed_respect, internals_of_closed. Qed.
+
+
+Lemma interactions_respect_internal {U c I} :
+  interactions_respect U c I ->
+  forall cl,
+    cinternal U c cl ->
+    internal I cl.
+Proof.
+  intros Hres cl Hcint.
+  destruct cl as [c0 l0].
+  destruct Hcint as [Hc Hl]; simpl in Hc, Hl; subst c0.
+  unfold internal, colors_of, Ensembles.Included, Ensembles.In.
+  intros x [l1 Hreach].
+  pose proof (interactions_respect_reachable Hres (c, l0) (x, l1) Hreach
+                (conj eq_refl Hl)) as [Hx Hl1].
+  simpl in Hx; subst x.
+  constructor.
+Qed.
+
+(* Soundness transfers along a single interaction, in either direction. *)
+Lemma internals_repsect_sound_l {U c I} :
+  interactions_respect U c I ->
+  forall cl cl',
+    ((cl, cl') \in I) ->
+    cinternal U c cl ->
+    internal I cl'.
+Proof.
+  intros Hres cl cl' Hin Hcint.
+  exact (interactions_respect_internal Hres cl' (proj1 (Hres cl cl' Hin) Hcint)).
+Qed.
+
+Lemma internals_repsect_sound_r {U c I} :
+  interactions_respect U c I ->
+  forall cl cl',
+    ((cl, cl') \in I) ->
+    cinternal U c cl' ->
+    internal I cl.
+Proof.
+  intros Hres cl cl' Hin Hcint.
+  exact (interactions_respect_internal Hres cl (proj2 (Hres cl cl' Hin) Hcint)).
+Qed.
+
+Lemma interactions_respect_empty U c :
+  interactions_respect U c (Empty_set interaction).
+Proof.
+  unfold interactions_respect, Ensembles.In.
+  intros cl_i cl_e Hin; destruct Hin.
+Qed.
+
+Lemma interactions_respect_add U c cl_i cl_e I :
+  (cinternal U c cl_i <-> cinternal U c cl_e) ->
+  interactions_respect U c I ->
+  interactions_respect U c ((cl_i, cl_e) |: I).
+Proof.
+  unfold interactions_respect.
+  intros Hiff Hres cl_i' cl_e' Hin.
+  inv Hin.
+  - match goal with [Hsing : _ \in [set _] |- _] => inv Hsing end.
+    assumption.
+  - match goal with [HI : _ \in I |- _] => exact (Hres cl_i' cl_e' HI) end.
+Qed.
+
+Lemma interactions_respect_Same_set U U' c I :
+  U <--> U' ->
+  interactions_respect U' c I ->
+  interactions_respect U c I.
+Proof.
+  unfold interactions_respect, cinternal, Ensembles.In.
+  intros [Hsub Hsub'] Hres cl_i cl_e Hin.
+  split; intros [Hc Hmem].
+  - destruct (proj1 (Hres cl_i cl_e Hin) (conj Hc (Hsub _ Hmem))) as [Hc' Hmem'].
+    exact (conj Hc' (Hsub' _ Hmem')).
+  - destruct (proj2 (Hres cl_i cl_e Hin) (conj Hc (Hsub _ Hmem))) as [Hc' Hmem'].
+    exact (conj Hc' (Hsub' _ Hmem')).
+Qed.
+
+(* `approx_int c AI I`: the static interactions `AI` of the unit wearing color
+   `c` over-approximate the collected interactions `I`, as seen from that unit.
+   `l_top_intro` and `l_top_elim` approximate all foreign interactions:
+   - an internal interaction is predicted as it is;
+   - one of our values eliminated by the context is predicted as eliminated
+     at `l_top_elim`;
+   - a foreign value eliminated by us is predicted as introduced at
+     `l_top_intro`;
+   - interactions between other units are not constrained. *)
+Definition approx_int (c : color) (AI : ainteractions) (I : interactions) : Prop :=
+  forall c1 l1 c2 l2,
+    (((c1, l1), (c2, l2)) \in I) ->
+    (c1 = c -> c2 = c -> (l1, l2) \in AI) /\
+    (c1 = c -> c2 <> c -> (l1, l_top_elim) \in AI) /\
+    (c1 <> c -> c2 = c -> (l_top_intro, l2) \in AI).
+
+Lemma approx_int_empty c AI :
+  approx_int c AI (Empty_set _).
+Proof. unfold approx_int, Ensembles.In. fcrush. Qed.
+
+Lemma approx_int_respect c AI I :
+  approx_int c AI I ->
+  interactions_respect (ainternals_of AI) c I.
+Proof.
+  unfold approx_int, interactions_respect, cinternal.
+  intros Happrox [c1 l1] [c2 l2] Hin.
+  pose proof (Happrox c1 l1 c2 l2 Hin) as [Hcc [Hce Hec]].
+  pose proof (ainternals_of_closed AI) as Hclosed.
+  unfold ainternals_closed in Hclosed.
+  split; intros [Hc HU].
+  - (* the introduction site is internal *)
+    destruct (Nat.eq_dec c2 c) as [Hc2 | Hc2].
+    + (* internal interaction: `l2` is reachable from `l1` *)
+      split; [exact Hc2 |].
+      eapply Hclosed; [exact HU |].
+      unfold Ensembles.In.
+      apply AReachable_interact_l.
+      exact (Hcc Hc Hc2).
+    + (* eliminated by the context: `l1` would reach `l_top_elim` *)
+      exfalso.
+      unfold ainternals_of, ainternal, Ensembles.In in HU.
+      destruct HU as [_ Helim].
+      apply Helim.
+      apply AReachable_interact_l.
+      exact (Hce Hc Hc2).
+  - (* the elimination site is internal *)
+    destruct (Nat.eq_dec c1 c) as [Hc1 | Hc1].
+    + (* internal interaction: `l1` is reachable from `l2` *)
+      split; [exact Hc1 |].
+      eapply Hclosed; [exact HU |].
+      unfold Ensembles.In.
+      apply AReachable_interact_r.
+      exact (Hcc Hc1 Hc).
+    + (* foreign value eliminated by us: `l2` would reach `l_top_intro` *)
+      exfalso.
+      unfold ainternals_of, ainternal, Ensembles.In in HU.
+      destruct HU as [Hintro _].
+      apply Hintro.
+      apply AReachable_interact_r.
+      exact (Hec Hc1 Hc).
+Qed.
+
+Corollary approx_int_closed c AI I :
+  approx_int c AI I ->
+  internals_closed (ainternals_of AI) c I.
+Proof. eauto using approx_int_respect, interactions_respect_closed. Qed.
+
+(* Adding an internal interaction of the unit `c` that its analysis predicts. *)
+Lemma approx_int_add_internal {c AI l1 l2 I} :
+  (l1, l2) \in AI ->
+  approx_int c AI I ->
+  approx_int c AI (((c, l1), (c, l2)) |: I).
+Proof.
+  unfold approx_int.
+  intros Hl HI c1 l1' c2 l2' Hin.
+  inv Hin.
+  - match goal with [Hs : _ \in [set _] |- _] => inv Hs end.
+    repeat split.
+    + intros _ _; exact Hl.
+    + intros _ Hneq; exfalso; apply Hneq; reflexivity.
+    + intros Hneq _; exfalso; apply Hneq; reflexivity.
+  - match goal with [HI' : _ \in I |- _] => exact (HI _ _ _ _ HI') end.
+Qed.
+
+Lemma approx_int_add {c AI cl I} :
+  approx_int c AI [set cl] ->
+  approx_int c AI I ->
+  approx_int c AI (cl |: I).
+Proof.
+  unfold approx_int.
+  intros H1 H2 c1 l1 c2 l2 Hin.
+  inv Hin; eauto.
+Qed.
+
+Lemma approx_int_singleton {c AI c1 l1 c2 l2} :
+  (c1 = c -> c2 = c -> (l1, l2) \in AI) ->
+  (c1 = c -> c2 <> c -> (l1, l_top_elim) \in AI) ->
+  (c1 <> c -> c2 = c -> (l_top_intro, l2) \in AI) ->
+  approx_int c AI [set ((c1, l1), (c2, l2))].
+Proof.
+  unfold approx_int.
+  intros H1 H2 H3 c1' l1' c2' l2' Hin.
+  inv Hin.
+  auto.
+Qed.
+
+Lemma approx_int_union {c AI I1 I2} :
+  approx_int c AI I1 ->
+  approx_int c AI I2 ->
+  approx_int c AI (I1 :|: I2).
+Proof.
+  unfold approx_int.
+  intros H1 H2 c1 l1 c2 l2 Hin.
+  inv Hin; eauto.
+Qed.
+
+
+(* Inversion Lemmas for the Abstract Semantics *)
+Lemma acheck_ret_inv {A x R} :
+  acheck A (Eret x) R ->
+  ai_env A x \subset R.
+Proof. intros H; inv H; assumption. Qed.
+
+Lemma acheck_fun_inv {A f l xs e k R} :
+  acheck A (Efun f l xs e k) R ->
+  (AVfun l f xs e \in ai_env A f) /\
+    acheck A e (ai_ret A l) /\
+    acheck A k R.
+Proof. intros H; inv H; split; [assumption | split; assumption]. Qed.
+
+Lemma acheck_app_inv {A f l xs R} :
+  acheck A (Eapp f l xs) R ->
+  aelim_fun_int A f l /\
+    (forall l' f' xs' e',
+        (AVfun l' f' xs' e' \in ai_env A f) ->
+        length xs = length xs' /\
+          (AVfun l' f' xs' e' \in ai_env A f') /\
+          Forall2 (fun x x' => ai_env A x \subset ai_env A x') xs xs' /\
+          (ai_ret A l' \subset R)) /\
+    ((AVtop \in ai_env A f) ->
+     Forall (fun x => ai_env A x \subset ai_esc A) xs /\
+       (AVtop \in R) /\
+       (forall l' f' xs' e',
+           (AVfun l' f' xs' e' \in ai_esc A) ->
+           length xs = length xs' /\
+             (AVfun l' f' xs' e' \in ai_env A f') /\
+             Forall2 (fun x x' => ai_env A x \subset ai_env A x') xs xs' /\
+             (ai_ret A l' \subset R))).
+Proof. intros H; inv H; split; [assumption | split; assumption]. Qed.
+
+(* Inversion Lemmas for the Source Semantics *)
+Lemma bstep_ret_inv {ρ x j r} :
+  bstep ρ (Eret x) j r ->
+  exists v, M.get x ρ = Some v /\ j = 0 /\ r = Res v.
+Proof. intros H; inv H; eexists; split; [eassumption | split; reflexivity]. Qed.
+
+Lemma bstep_fun_inv {ρ f l xs e k j r} :
+  bstep ρ (Efun f l xs e k) j r ->
+  bstep_fuel (M.set f (Tag l (Vfun f ρ xs e)) ρ) k j r.
+Proof. intros H; inv H; assumption. Qed.
+
+Lemma bstep_app_inv {ρ f l xs j r} :
+  bstep ρ (Eapp f l xs) j r ->
+  exists l' f' ρ' xs' e vs ρ'',
+    M.get f ρ = Some (Tag l' (Vfun f' ρ' xs' e)) /\
+      get_list xs ρ = Some vs /\
+      set_lists xs' vs (M.set f' (Tag l' (Vfun f' ρ' xs' e)) ρ') = Some ρ'' /\
+      bstep_fuel ρ'' e j r.
+Proof.
+  intros H; inv H.
+  do 7 eexists; split; [eassumption | split; [eassumption | split; eassumption]].
+Qed.
+
+(* --------------------------------------------------------------- *)
+(* Values                                                            *)
+(* --------------------------------------------------------------- *)
+
+(* Tagged Value *)
+(* A tag only records the colored introduction label of a value.  Unlike in
+   `SimpleCFA`, the analysis result a value is checked against is *not*
+   carried by the value: it is read off the analysis context `θ`, a parameter
+   of the checking semantics, at the color of the tag. *)
+Inductive ctag A : Type :=
+| CTAG : clabel -> A -> ctag A.
+
+Hint Constructors ctag : core.
+
+(* Value *)
+Inductive cval : Type :=
+| CVfun : var -> M.t (ctag cval) -> list var -> exp -> cval
+| CVconstr : ctor_tag -> list (ctag cval) -> cval.
+
+Hint Constructors cval : core.
+
+Definition clval := ctag cval.
+
+Definition CTag c l cv := CTAG cval (c, l) cv.
+
+(* Environment *)
+Definition cenv := M.t clval.
+
+(* Result *)
+Inductive cres : Type :=
+| COOT
+| CRes : clval -> cres.
+
+Hint Constructors cres : core.
+
+(* Free variables of a closure: those of its body, minus its parameters and
+   its own name. *)
+Definition fun_fv (f : var) (xs : list var) (e : exp) : vars :=
+  fun y => (y \in occurs_free e) /\ ~ List.In y xs /\ y <> f.
+
+(* The body of a closure only reads its parameters, its own name, and its free
+   variables. *)
+Lemma occurs_free_fun_fv f xs e :
+  occurs_free e \subset FromList xs :|: (f |: fun_fv f xs e).
+Proof.
+  intros y Hy.
+  destruct (in_dec M.elt_eq y xs) as [Hin | Hnin].
+  - apply Union_introl; exact Hin.
+  - apply Union_intror.
+    destruct (M.elt_eq y f) as [-> | Hneq].
+    + apply Union_introl; apply In_singleton.
+    + apply Union_intror; unfold fun_fv, Ensembles.In; auto.
+Qed.
+
+Lemma fun_fv_subset f xs e Γ :
+  occurs_free e \subset FromList xs :|: (f |: Γ) ->
+  fun_fv f xs e \subset Γ.
+Proof.
+  intros HS y [Hy [Hxs Hf]].
+  destruct (HS y Hy) as [y' Hy' | y' Hy'].
+  - contradiction.
+  - inv Hy'; [inv H; contradiction | assumption].
+Qed.
+
+(* --------------------------------------------------------------- *)
+(* Analysis Context                                                  *)
+(* --------------------------------------------------------------- *)
+
+(* The analysis context assigns to each color the analysis result of the unit
+   wearing it.  It is the *only* place where analysis results live at run
+   time: the checking semantics below is parameterised by it. *)
+Definition analysis_context := color -> analysis_result.
+
+(* Every unit's analysis result must be closed under what the context may do
+   with the values it hands out. *)
+Definition analysis_context_escape_ok (θ : analysis_context) : Prop :=
+  forall c, escapes_ok (θ c).
+
+Section Checking.
+
+  Variable θ : analysis_context.
+
+  (* Approximation *)
+  (* `approx_val av v`: the abstract value `av` over-approximates the concrete
+     value `v`, with respect to the analysis result that `θ` assigns to the
+     color of `v`.
+     - [AVtop] stands for everything unknown, so it approximates any value;
+     - otherwise `av` must share the introduction label of `v` and approximate
+       the untagged value under the analysis result of its unit. *)
+  Inductive approx_val : aval -> clval -> Prop :=
+  | Approx_top :
+    forall v,
+      approx_val AVtop v
+
+  | Approx_TAG :
+    forall c l av v,
+      label_of av = l ->
+      approx_val' (θ c) av v ->
+      approx_val av (CTag c l v)
+
+  (* A closure is approximated by its own allocation site, provided that its
+     captured environment is approximated by the abstract environment of `A` at
+     the free variables of the closure. *)
+  with approx_val' : analysis_result -> aval -> cval -> Prop :=
+  | Approx_CVfun :
+    forall A l f ρ xs e,
+      approx_env (ai_env A) (fun_fv f xs e) ρ ->
+      approx_val' A (AVfun l f xs e) (CVfun f ρ xs e)
+
+  (* A constructor is approximated by its own allocation site.  Its fields are
+     approximated by the field set of that site, which the logical relation
+     records for every constructor it relates. *)
+  | Approx_CVconstr :
+    forall A l t vs,
+      approx_val' A (AVconstr l t) (CVconstr t vs)
+
+  (* Every value bound in `ρ` at a variable of `Γ` is approximated by some
+     abstract value in the value set of its variable. *)
+  with approx_env : aenv -> vars -> cenv -> Prop :=
+  | Approx_env :
+    forall aenv Γ ρ,
+      (forall x v,
+          (x \in Γ) ->
+          ρ ! x = Some v ->
+          exists av, (av \in aenv x) /\ approx_val av v) ->
+      approx_env aenv Γ ρ.
+
+  Hint Constructors approx_val : core.
+  Hint Constructors approx_val' : core.
+  Hint Constructors approx_env : core.
+
+  (* `v` is approximated by some abstract value in `avs`. *)
+  Definition approx_vals (avs : avals) (v : clval) : Prop :=
+    exists av, (av \in avs) /\ approx_val av v.
+
+  Lemma approx_vals_subset {AE x' v} {x : var}:
+    approx_vals (AE x) v ->
+    (AE x) \subset (AE x') ->
+    approx_vals (AE x') v.
+  Proof. unfold approx_vals. fcrush. Qed.
+
+  Lemma approx_vals_subset_list {AE xs vs2} :
+    Forall2 (fun (x : var) (v : clval) => approx_vals (AE x) v) xs vs2 ->
+    forall xs',
+      Forall2 (fun x x' : var => AE x \subset AE x') xs xs' ->
+      Forall2 (fun (x : var) (v1 : clval) => approx_vals (AE x) v1) xs' vs2.
+  Proof.
+    intro H.
+    induction H; intros; simpl.
+    - inv H; auto.
+    - inv H1.
+      constructor; auto.
+      eapply approx_vals_subset; eauto.
+  Qed.
+
+  Lemma set_lists_approx_top {AE xs vs ρ ρ'} :
+    (forall x, List.In x xs -> AVtop \in AE x) ->
+    set_lists xs vs ρ = Some ρ' ->
+    Forall2 (fun x v => approx_vals (AE x) v) xs vs.
+  Proof.
+    intros Htop.
+    revert vs ρ ρ' Htop.
+    induction xs as [| x xs IHxs]; intros vs ρ ρ' Htop Hset.
+    - destruct vs as [| v vs]; [constructor | discriminate Hset].
+    - destruct vs as [| v vs]; [discriminate Hset |].
+      simpl in Hset.
+      destruct (set_lists xs vs ρ) as [ρ'' |] eqn:Heq; [| discriminate Hset].
+      constructor.
+      + (* `AVtop` approximates every value *)
+        exists AVtop; split; [apply Htop; left; reflexivity | constructor].
+      + eapply IHxs; [| exact Heq].
+        intros y Hy; apply Htop; right; exact Hy.
+  Qed.
+
+  Lemma approx_env_get {AE Γ ρ x v} :
+    approx_env AE Γ ρ ->
+    (x \in Γ) ->
+    ρ ! x = Some v ->
+    approx_vals (AE x) v.
+  Proof. intros Henv Hx Hget; inv Henv; unfold approx_vals; eauto. Qed.
+
+  Lemma approx_env_subset {AE Γ Γ' ρ} :
+    approx_env AE Γ ρ ->
+    Γ' \subset Γ ->
+    approx_env AE Γ' ρ.
+  Proof. intros Henv Hsub; inv Henv; constructor; eauto. Qed.
+
+  Lemma approx_env_set {AE Γ ρ} x v :
+    approx_env AE Γ ρ ->
+    approx_vals (AE x) v ->
+    approx_env AE (x |: Γ) (M.set x v ρ).
+  Proof.
+    intros Henv Hv.
+    inv Henv.
+    constructor; intros y w Hy Hget.
+    destruct (M.elt_eq x y); subst.
+    - rewrite M.gss in Hget; inv Hget; exact Hv.
+    - rewrite M.gso in Hget by auto.
+      inv Hy; [inv H0; contradiction | eauto].
+  Qed.
+
+  Lemma approx_env_get_list {AE Γ ρ} :
+    approx_env AE Γ ρ ->
+    forall xs vs,
+      FromList xs \subset Γ ->
+      get_list xs ρ = Some vs ->
+      Forall2 (fun x v => approx_vals (AE x) v) xs vs.
+  Proof.
+    intros Henv xs.
+    induction xs as [| x xs IHxs]; simpl; intros vs Hxs Hget.
+    - inv Hget; constructor.
+    - destruct (M.get x ρ) as [v |] eqn:Hx; [| discriminate Hget].
+      destruct (get_list xs ρ) as [vs' |] eqn:Hxs'; [| discriminate Hget].
+      inv Hget.
+      constructor.
+      + eapply approx_env_get; eauto.
+        apply Hxs; left; reflexivity.
+      + eapply IHxs; eauto.
+        intros y Hy; apply Hxs; right; exact Hy.
+  Qed.
+
+  Lemma approx_env_set_lists {AE Γ ρ} :
+    approx_env AE Γ ρ ->
+    forall xs vs ρ',
+      Forall2 (fun x v => approx_vals (AE x) v) xs vs ->
+      set_lists xs vs ρ = Some ρ' ->
+      approx_env AE (FromList xs :|: Γ) ρ'.
+  Proof.
+    intros Henv xs.
+    induction xs as [| x xs IHxs]; intros vs ρ' Hall Hset; simpl in Hset.
+    - destruct vs as [| v vs]; [| discriminate Hset].
+      inv Hset.
+      eapply approx_env_subset; [exact Henv |].
+      intros y Hy; inv Hy; [inv H | exact H].
+    - destruct vs as [| v vs]; [discriminate Hset |].
+      destruct (set_lists xs vs ρ) as [ρ'' |] eqn:Heq; [| discriminate Hset].
+      inv Hset.
+      inv Hall.
+      apply (approx_env_subset (Γ := x |: (FromList xs :|: Γ))).
+      + apply approx_env_set; [eapply IHxs; eauto | eassumption].
+      + intros y Hy.
+        inv Hy.
+        * destruct H as [-> | Hin].
+          -- apply Union_introl; apply In_singleton.
+          -- apply Union_intror; apply Union_introl; exact Hin.
+        * apply Union_intror; apply Union_intror; exact H.
+  Qed.
+
+  (* A result is approximated by `R` if it is out of time, or returns a value
+     approximated by some abstract value in `R`. *)
+  Inductive approx_res : avals -> cres -> Prop :=
+  | Approx_OOT :
+    forall R,
+      approx_res R COOT
+
+  | Approx_res :
+    forall R av v,
+      (av \in R) ->
+      approx_val av v ->
+      approx_res R (CRes v).
+
+  Hint Constructors approx_res : core.
+
+  Lemma approx_res_subset Rs Rs' r :
+    approx_res Rs r ->
+    Rs \subset Rs' ->
+    approx_res Rs' r.
+  Proof. intros. inv H; fcrush. Qed.
+
+  (* Invariants for Escaped Values *)
+  (* A value held by the unit wearing `c` that belongs to another unit must have
+     escaped from that unit with its own allocation site: an `AVtop` in
+     `ai_esc` would not constrain anything.  The escape set is the one `θ`
+     assigns to the owner of the value. *)
+  Definition cescaped (c : color) (v : clval) : Prop :=
+    match v with
+    | CTAG _ (c', l) (CVfun f _ xs e) => c' <> c -> AVfun l f xs e \in ai_esc (θ c')
+    | CTAG _ (c', l) (CVconstr t _) => c' <> c -> AVconstr l t \in ai_esc (θ c')
+    end.
+
+  Lemma cescaped_defining c l v :
+    cescaped c (CTag c l v).
+  Proof.
+    unfold cescaped; destruct v; simpl;
+      intros Hneq; exfalso; apply Hneq; reflexivity.
+  Qed.
+
+  Definition cescaped_env (c : color) (Γ : vars) (ρ : cenv) : Prop :=
+    forall x v, (x \in Γ) -> ρ ! x = Some v -> cescaped c v.
+
+  Lemma cescaped_env_subset {c Γ Γ' ρ} :
+    cescaped_env c Γ ρ ->
+    Γ' \subset Γ ->
+    cescaped_env c Γ' ρ.
+  Proof. unfold cescaped_env; eauto. Qed.
+
+  Lemma cescaped_env_set {c Γ ρ} x v :
+    cescaped_env c Γ ρ ->
+    cescaped c v ->
+    cescaped_env c (x |: Γ) (M.set x v ρ).
+  Proof.
+    unfold cescaped_env.
+    intros Hesc Hv y w Hy Hget.
+    destruct (M.elt_eq x y); subst.
+    - rewrite M.gss in Hget; inv Hget; exact Hv.
+    - rewrite M.gso in Hget by auto.
+      inv Hy; [inv H; contradiction | eauto].
+  Qed.
+
+  Lemma cescaped_env_get {c Γ ρ} x v :
+    cescaped_env c Γ ρ ->
+    (x \in Γ) ->
+    ρ ! x = Some v ->
+    cescaped c v.
+  Proof. unfold cescaped_env; eauto. Qed.
+
+  Lemma cescaped_env_get_list {c Γ ρ} :
+    cescaped_env c Γ ρ ->
+    forall xs vs,
+      FromList xs \subset Γ ->
+      get_list xs ρ = Some vs ->
+      Forall (cescaped c) vs.
+  Proof.
+    intros Hesc xs.
+    induction xs as [| x xs IHxs]; simpl; intros vs Hxs Hget.
+    - inv Hget; constructor.
+    - destruct (M.get x ρ) as [v |] eqn:Hx; [| discriminate Hget].
+      destruct (get_list xs ρ) as [vs' |] eqn:Hxs'; [| discriminate Hget].
+      inv Hget.
+      constructor.
+      + eapply cescaped_env_get; eauto.
+        apply Hxs; left; reflexivity.
+      + eapply IHxs; eauto.
+        intros y Hy; apply Hxs; right; exact Hy.
+  Qed.
+
+  Lemma cescaped_env_set_lists {c Γ ρ} :
+    cescaped_env c Γ ρ ->
+    forall xs vs ρ',
+      Forall (cescaped c) vs ->
+      set_lists xs vs ρ = Some ρ' ->
+      cescaped_env c (FromList xs :|: Γ) ρ'.
+  Proof.
+    intros Hesc xs.
+    induction xs as [| x xs IHxs]; intros vs ρ' Hall Hset; simpl in Hset.
+    - destruct vs as [| v vs]; [| discriminate Hset].
+      inv Hset.
+      eapply cescaped_env_subset; [exact Hesc |].
+      intros y Hy; inv Hy; [inv H | exact H].
+    - destruct vs as [| v vs]; [discriminate Hset |].
+      destruct (set_lists xs vs ρ) as [ρ'' |] eqn:Heq; [| discriminate Hset].
+      inv Hset.
+      inv Hall.
+      apply (cescaped_env_subset (Γ := x |: (FromList xs :|: Γ))).
+      + apply cescaped_env_set; [eapply IHxs; eauto | eassumption].
+      + intros y Hy.
+        inv Hy.
+        * destruct H as [-> | Hin].
+          -- apply Union_introl; apply In_singleton.
+          -- apply Union_intror; apply Union_introl; exact Hin.
+        * apply Union_intror; apply Union_intror; exact H.
+  Qed.
+
+  (* Invariants for Variable Binding *)
+  (* How a value held by the unit wearing `c` is approximated at variable `x`,
+     with respect to the analysis result `θ c` of that unit:
+     - a value of the unit itself is approximated by its own allocation site,
+       not merely by `AVtop` -- unless it has already *escaped*, in which case
+       `AVtop` stands for it.  This is what lets its exact site reach
+       `ai_esc (θ c)` when it escapes, and what makes eliminating it a
+       (statically) known elimination;
+     - a foreign value is approximated by `AVtop`, so that eliminating it is
+       treated as an unknown elimination. *)
+  Definition cbinding (c : color) (x : var) (v : clval) : Prop :=
+    match v with
+    | CTAG _ (c', l) (CVfun f _ xs e) =>
+        (c' = c -> (* c is the defining unit *)
+         (AVfun l f xs e \in ai_env (θ c) x) \/ (* internal closure *)
+           ((AVfun l f xs e \in ai_esc (θ c)) /\ (AVtop \in ai_env (θ c) x))) /\ (* unknown closure *)
+          (c' <> c -> AVtop \in ai_env (θ c) x) (* c is not the defining unit *)
+    | CTAG _ (c', l) (CVconstr t _) =>
+        (c' = c -> (* c is the defining unit *)
+         (AVconstr l t \in ai_env (θ c) x) \/ (* internal constructor *)
+           ((AVconstr l t \in ai_esc (θ c)) /\ (AVtop \in ai_env (θ c) x))) /\ (* unknown constructor *)
+          (c' <> c -> AVtop \in ai_env (θ c) x) (* c is not the defining unit *)
+    end.
+
+  Definition cbinding_env (c : color) (Γ : vars) (ρ : cenv) : Prop :=
+    forall x v, (x \in Γ) -> ρ ! x = Some v -> cbinding c x v.
+
+  Lemma cbinding_env_subset {c Γ Γ' ρ} :
+    cbinding_env c Γ ρ ->
+    Γ' \subset Γ ->
+    cbinding_env c Γ' ρ.
+  Proof. unfold cbinding_env; eauto. Qed.
+
+  Lemma cbinding_env_set {c Γ ρ} x v :
+    cbinding_env c Γ ρ ->
+    cbinding c x v ->
+    cbinding_env c (x |: Γ) (M.set x v ρ).
+  Proof.
+    unfold cbinding_env.
+    intros Hex Hv y w Hy Hget.
+    destruct (M.elt_eq x y); subst.
+    - rewrite M.gss in Hget; inv Hget; exact Hv.
+    - rewrite M.gso in Hget by auto.
+      inv Hy; [inv H; contradiction | eauto].
+  Qed.
+
+  Lemma cbinding_env_get {c Γ ρ} x v :
+    cbinding_env c Γ ρ ->
+    (x \in Γ) ->
+    ρ ! x = Some v ->
+    cbinding c x v.
+  Proof. unfold cbinding_env; eauto. Qed.
+
+  Lemma cbinding_env_get_list {c Γ ρ} :
+    cbinding_env c Γ ρ ->
+    forall xs vs,
+      FromList xs \subset Γ ->
+      get_list xs ρ = Some vs ->
+      Forall2 (cbinding c) xs vs.
+  Proof.
+    intros Hloc xs.
+    induction xs as [| x xs IHxs]; simpl; intros vs Hxs Hget.
+    - inv Hget; constructor.
+    - destruct (M.get x ρ) as [v |] eqn:Hx; [| discriminate Hget].
+      destruct (get_list xs ρ) as [vs' |] eqn:Hxs'; [| discriminate Hget].
+      inv Hget.
+      constructor.
+      + eapply cbinding_env_get; eauto.
+        apply Hxs; left; reflexivity.
+      + eapply IHxs; eauto.
+        intros y Hy; apply Hxs; right; exact Hy.
+  Qed.
+
+  Lemma cbinding_env_set_lists {c Γ ρ} :
+    cbinding_env c Γ ρ ->
+    forall xs vs ρ',
+      Forall2 (cbinding c) xs vs ->
+      set_lists xs vs ρ = Some ρ' ->
+      cbinding_env c (FromList xs :|: Γ) ρ'.
+  Proof.
+    intros Hloc xs.
+    induction xs as [| x xs IHxs]; intros vs ρ' Hall Hset; simpl in Hset.
+    - destruct vs as [| v vs]; [| discriminate Hset].
+      inv Hset.
+      eapply cbinding_env_subset; [exact Hloc |].
+      intros y Hy; inv Hy; [inv H | exact H].
+    - destruct vs as [| v vs]; [discriminate Hset |].
+      destruct (set_lists xs vs ρ) as [ρ'' |] eqn:Heq; [| discriminate Hset].
+      inv Hset.
+      inv Hall.
+      apply (cbinding_env_subset (Γ := x |: (FromList xs :|: Γ))).
+      + apply cbinding_env_set; [eapply IHxs; eauto | eassumption].
+      + intros y Hy.
+        inv Hy.
+        * destruct H as [-> | Hin].
+          -- apply Union_introl; apply In_singleton.
+          -- apply Union_intror; apply Union_introl; exact Hin.
+        * apply Union_intror; apply Union_intror; exact H.
+  Qed.
+
+  (* `cbinding` is preserved when the value flows into a variable whose value
+     set includes that of the original one. *)
+  Lemma cbinding_subset {c x x' v} :
+    cbinding c x v ->
+    ai_env (θ c) x \subset ai_env (θ c) x' ->
+    cbinding c x' v.
+  Proof.
+    intros Hb Hsub.
+    destruct v as [[c' l'] w].
+    destruct w as [f ρ xs e | t vs]; unfold cbinding in *.
+    - destruct Hb as [Hown Hforeign].
+      split.
+      + intros Heq.
+        destruct (Hown Heq) as [Hin | [Hesc Htop]].
+        * left; apply Hsub; exact Hin.
+        * right; split; [exact Hesc | apply Hsub; exact Htop].
+      + intros Hneq; apply Hsub; exact (Hforeign Hneq).
+    - destruct Hb as [Hown Hforeign].
+      split.
+      + intros Heq.
+        destruct (Hown Heq) as [Hin | [Hesc Htop]].
+        * left; apply Hsub; exact Hin.
+        * right; split; [exact Hesc | apply Hsub; exact Htop].
+      + intros Hneq; apply Hsub; exact (Hforeign Hneq).
+  Qed.
+
+  Lemma cbinding_subset_list {c xs xs' vs} :
+    Forall2 (cbinding c) xs vs ->
+    Forall2 (fun x x' => ai_env (θ c) x \subset ai_env (θ c) x') xs xs' ->
+    Forall2 (cbinding c) xs' vs.
+  Proof.
+    intros Hb.
+    revert xs'.
+    induction Hb as [| x v xs vs Hx Hb IH]; intros xs' Hsub; inv Hsub.
+    - constructor.
+    - constructor; [eapply cbinding_subset; eauto | eapply IH; eauto].
+  Qed.
+
+  (* Invariants for Value Flow *)
+  (* `cbinding` generalised from the value set of a variable to an arbitrary
+     value set `avs`, e.g. the return set of an expression: how a value held by
+     the unit wearing `c` is approximated in `avs`. *)
+  Definition cflows (c : color) (avs : avals) (v : clval) : Prop :=
+    match v with
+    | CTAG _ (c', l) (CVfun f _ xs e) =>
+        (c' = c -> (* c is the defining unit *)
+         (AVfun l f xs e \in avs) \/ (* internal closure *)
+           ((AVfun l f xs e \in ai_esc (θ c)) /\ (AVtop \in avs))) /\ (* unknown closure *)
+          (c' <> c -> AVtop \in avs) (* c is not the defining unit *)
+    | CTAG _ (c', l) (CVconstr t _) =>
+        (c' = c -> (* c is the defining unit *)
+         (AVconstr l t \in avs) \/ (* internal constructor *)
+           ((AVconstr l t \in ai_esc (θ c)) /\ (AVtop \in avs))) /\ (* unknown constructor *)
+          (c' <> c -> AVtop \in avs) (* c is not the defining unit *)
+    end.
+
+  Lemma cbinding_cflows {c x v} :
+    cbinding c x v ->
+    cflows c (ai_env (θ c) x) v.
+  Proof. intros H; exact H. Qed.
+
+  Lemma cflows_cbinding {c x v} :
+    cflows c (ai_env (θ c) x) v ->
+    cbinding c x v.
+  Proof. intros H; exact H. Qed.
+
+  Lemma cflows_subset {c avs avs' v} :
+    cflows c avs v ->
+    avs \subset avs' ->
+    cflows c avs' v.
+  Proof.
+    intros Hb Hsub.
+    destruct v as [[c' l'] w].
+    destruct w as [f ρ xs e | t vs]; unfold cflows in *.
+    - destruct Hb as [Hown Hforeign].
+      split.
+      + intros Heq.
+        destruct (Hown Heq) as [Hin | [Hesc Htop]].
+        * left; apply Hsub; exact Hin.
+        * right; split; [exact Hesc | apply Hsub; exact Htop].
+      + intros Hneq; apply Hsub; exact (Hforeign Hneq).
+    - destruct Hb as [Hown Hforeign].
+      split.
+      + intros Heq.
+        destruct (Hown Heq) as [Hin | [Hesc Htop]].
+        * left; apply Hsub; exact Hin.
+        * right; split; [exact Hesc | apply Hsub; exact Htop].
+      + intros Hneq; apply Hsub; exact (Hforeign Hneq).
+  Qed.
+
+  (* The fields of a constructor, read from the variables `xs`, flow into a
+     value set `avs` that includes the value sets of all the variables. *)
+  Lemma approx_vals_fields {AE : afld} {xs vs avs} :
+    Forall2 (fun x v => approx_vals (AE x) v) xs vs ->
+    Forall (fun x => AE x \subset avs) xs ->
+    Forall (approx_vals avs) vs.
+  Proof.
+    intros H; induction H as [| x v xs vs Hv Hvs IH]; intros Hsub; constructor.
+    - destruct Hv as [av [Hin Hav]].
+      exists av; split; [exact (Forall_inv Hsub av Hin) | exact Hav].
+    - exact (IH (Forall_inv_tail Hsub)).
+  Qed.
+
+  Lemma cflows_fields {c xs vs avs} :
+    Forall2 (cbinding c) xs vs ->
+    Forall (fun x => ai_env (θ c) x \subset avs) xs ->
+    Forall (cflows c avs) vs.
+  Proof.
+    intros H; induction H as [| x v xs vs Hv Hvs IH]; intros Hsub; constructor.
+    - eapply cflows_subset; [eapply cbinding_cflows; exact Hv | exact (Forall_inv Hsub)].
+    - exact (IH (Forall_inv_tail Hsub)).
+  Qed.
+
+  (* Invariants for Results *)
+  (* A result returned by the unit wearing `c` into the return set `Rs` keeps
+     the invariants of a binding: a foreign value has escaped, and a closure of
+     the unit itself is approximated in `Rs` by its own allocation site, unless
+     it has escaped already.  Unlike `approx_res`, this survives `AVtop ∈ Rs`. *)
+  Definition cresult (c : color) (Rs : avals) (r : cres) : Prop :=
+    match r with
+    | COOT => True
+    | CRes v => cescaped c v /\ cflows c Rs v
+    end.
+
+  Lemma cresult_subset {c Rs Rs' r} :
+    cresult c Rs r ->
+    Rs \subset Rs' ->
+    cresult c Rs' r.
+  Proof.
+    intros Hok Hsub.
+    destruct r as [| v]; [exact I |].
+    destruct Hok as [Hesc Hfl].
+    split; [exact Hesc | eapply cflows_subset; eauto].
+  Qed.
+
+  (* A value that crosses the program boundary: a value that has escaped
+     from its unit with its own allocation site. *)
+  Definition cboundary (cv : clval) : Prop :=
+    match cv with
+    | CTAG _ (c, l) (CVfun f _ xs e) => AVfun l f xs e \in ai_esc (θ c)
+    | CTAG _ (c, l) (CVconstr t _) => AVconstr l t \in ai_esc (θ c)
+    end.
+
+  (* A result that crosses the program boundary. *)
+  Definition cboundary_res (r : cres) : Prop :=
+    match r with
+    | COOT => True
+    | CRes v => cboundary v
+    end.
+
+  (* Checking Semantics based on the Collecting Semantics *)
+  (* This semantics dynamically validates the analysis context `θ`: the code
+     of the unit wearing `c` is validated against `θ c`.  Since `θ` is a
+     parameter of the semantics, values do not need to carry analysis results:
+     a foreign callee wearing `c'` is simply validated against `θ c'`.
+     The collected interactions are validated against `ai_int (θ c)` once, in
+     `CbstepF_Step`, which covers every interaction produced underneath it,
+     including the call edge added by `Cbstep_app_*`. *)
+  Inductive cbstep (c : color) (bdr : bool) (ρ : cenv) : exp -> fuel -> avals -> cres -> interactions -> Prop :=
+  | Cbstep_ret :
+    forall {x v Rs},
+      M.get x ρ = Some v ->
+      cbstep c bdr ρ (Eret x) 0 Rs (CRes v) (Empty_set _)
+
+  | Cbstep_fun :
+    forall {f l xs e k i Rs r I},
+      cbstep_fuel c bdr (M.set f (CTag c l (CVfun f ρ xs e)) ρ) k i Rs r I ->
+      (AVfun l f xs e \in ai_env (θ c) f) ->
+      cbstep c bdr ρ (Efun f l xs e k) i Rs r I
+
+  (* Foreign call: dynamic counterpart of the unknown-callee branch of
+     `Acheck_app`, validated from both sides.  The caller (`θ c`) sees an
+     unknown value being eliminated and its arguments escaping; the callee
+     (`θ c'`) sees one of its escaped closures being eliminated by the
+     context. *)
+  | Cbstep_app_External :
+    forall Rs {f f' c' l l' xs ρ' xs' e vs ρ'' i r I},
+      M.get f ρ = Some (CTag c' l' (CVfun f' ρ' xs' e)) ->
+      c <> c' ->
+
+      (* callee side: the closure has escaped and is eliminated by the context
+         (the caller side, `(l_top_intro, l)`, is checked by `CbstepF_Step`) *)
+      (AVfun l' f' xs' e \in ai_esc (θ c')) ->
+      ((l', l_top_elim) \in ai_int (θ c')) ->
+
+      (* caller side: the arguments escape to the callee's unit *)
+      get_list xs ρ = Some vs ->
+      Forall (cescaped c') vs ->
+
+      (* callee side: the (unknown) arguments flow to the parameters *)
+      set_lists xs' vs (M.set f' (CTag c' l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
+      approx_env (ai_env (θ c')) (occurs_free e) ρ'' ->
+
+      (* the body is validated against the callee's own analysis result and
+         returns into `ai_ret (θ c') l'` *)
+      cbstep_fuel c' true ρ'' e i (ai_ret (θ c') l') r I ->
+
+      cbstep c bdr ρ (Eapp f l xs) i Rs r (((c', l'), (c, l)) |: I)
+
+  (* Internal call: dynamic counterpart of the known-callee branch of
+     `Acheck_app`.  The callee wears the caller's color, so it belongs to the
+     same unit and is validated against the same analysis result `θ c`. *)
+  | Cbstep_app_Internal :
+    forall Rs { f f' l l' xs ρ' xs' e vs ρ'' i r I },
+      M.get f ρ = Some (CTag c l' (CVfun f' ρ' xs' e)) ->
+
+      (* the arguments flow to the parameters *)
+      get_list xs ρ = Some vs ->
+      Forall2 (cbinding c) xs' vs ->
+
+      set_lists xs' vs (M.set f' (CTag c l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
+
+      (* the body returns into `ai_ret (θ c) l'` *)
+      cbstep_fuel c false ρ'' e i (ai_ret (θ c) l') r I ->
+
+      cbstep c bdr ρ (Eapp f l xs) i Rs r (((c, l'), (c, l)) |: I)
+
+  (* Constructor: dynamic counterpart of `Acheck_constr`. *)
+  | Cbstep_constr :
+    forall {x l t ys k vs i Rs r I},
+      get_list ys ρ = Some vs ->
+      (* the fields flow into the field set of the site *)
+      Forall (cflows c (ai_fld (θ c) l)) vs ->
+      cbstep_fuel c bdr (M.set x (CTag c l (CVconstr t vs)) ρ) k i Rs r I ->
+      (AVconstr l t \in ai_env (θ c) x) ->
+      cbstep c bdr ρ (Econstr x l t ys k) i Rs r I
+
+  (* Projection: eliminates the constructor held in `y`.  If the constructor is
+     foreign, it is validated from the side of its own unit (`θ c'`) as well: it
+     has escaped and is eliminated by the context. *)
+  | Cbstep_proj :
+    forall {c' x l l' n y t vs v k i Rs r I},
+      M.get y ρ = Some (CTag c' l' (CVconstr t vs)) ->
+      nth_error vs n = Some v ->
+      (c' <> c -> (AVconstr l' t \in ai_esc (θ c')) /\ ((l', l_top_elim) \in ai_int (θ c'))) ->
+      cescaped c v ->
+      cbinding c x v ->
+      cbstep_fuel c bdr (M.set x v ρ) k i Rs r I ->
+      cbstep c bdr ρ (Eproj x l n y k) i Rs r (((c', l'), (c, l)) |: I)
+
+  (* Case analysis: eliminates the constructor held in `x`, validated as for
+     `Cbstep_proj`. *)
+  | Cbstep_case :
+    forall {c' x l l' cl t vs e i Rs r I},
+      M.get x ρ = Some (CTag c' l' (CVconstr t vs)) ->
+      find_tag cl t e ->
+      (c' <> c -> (AVconstr l' t \in ai_esc (θ c')) /\ ((l', l_top_elim) \in ai_int (θ c'))) ->
+      cbstep_fuel c bdr ρ e i Rs r I ->
+      cbstep c bdr ρ (Ecase x l cl) i Rs r (((c', l'), (c, l)) |: I)
+
+  with cbstep_fuel (c : color) (bdr : bool) (ρ : cenv) : exp -> fuel -> avals -> cres -> interactions -> Prop :=
+  | CbstepF_OOT :
+    forall {e Rs},
+      cbstep_fuel c bdr ρ e 0 Rs COOT (Empty_set _)
+
+  | CbstepF_Step :
+    forall {e i Rs r I},
+      cbstep c bdr ρ e i Rs r I ->
+      approx_res Rs r ->
+      approx_int c (ai_int (θ c)) I ->
+      cresult c Rs r ->
+      (if bdr then cboundary_res r else True) ->
+      cbstep_fuel c bdr ρ e (S i) Rs r I.
+
+  Hint Constructors cbstep : core.
+  Hint Constructors cbstep_fuel : core.
+
+  Scheme cbstep_ind' := Minimality for cbstep Sort Prop
+  with cbstep_fuel_ind' := Minimality for cbstep_fuel Sort Prop.
+
+  Lemma cbstep_deterministic_aux v v' {I I' c bdr ρ e i i' Rs r r'}:
+    cbstep c bdr ρ e i Rs r I ->
+    cbstep c bdr ρ e i' Rs r' I' ->
+    r = CRes v ->
+    r' = CRes v' ->
+    (v = v' /\ i = i' /\ I <--> I').
+  Proof.
+    intros H.
+    generalize dependent v'.
+    generalize dependent r'.
+    generalize dependent i'.
+    generalize dependent v.
+    generalize dependent I'.
+    induction H using cbstep_ind' with (P := fun c bdr ρ e i Rs r I =>
+                                               forall I' v i' r' v',
+                                                 cbstep c bdr ρ e i' Rs r' I' ->
+                                                 r = CRes v -> r' = CRes v' ->
+                                                 v = v' /\ i = i' /\ I <--> I')
+                                       (P0 := fun c bdr ρ e i Rs r I =>
+                                                forall I' v i' r' v',
+                                                  cbstep_fuel c bdr ρ e i' Rs r' I' ->
+                                                  r = CRes v -> r' = CRes v' ->
+                                                  v = v' /\ i = i' /\ I <--> I');
+      intros; subst.
+    - inv H0; inv H1; invc; fcrush.
+    - inv H1.
+      edestruct IHcbstep; eauto; subst.
+    - (* Cbstep_app_External *)
+      match goal with [Hc : cbstep _ _ _ (Eapp _ _ _) _ _ _ _ |- _] => inv Hc end;
+        match goal with
+        | [H1 : M.get ?f ?ρ = Some _, H2 : M.get ?f ?ρ = Some _ |- _] =>
+            rewrite H1 in H2; unfold CTag in H2; inv H2
+        end; [| contradiction].
+      match goal with
+      | [H1 : get_list ?xs ?ρ = Some _, H2 : get_list ?xs ?ρ = Some _ |- _] =>
+          rewrite H1 in H2; inv H2
+      end.
+      match goal with
+      | [H1 : set_lists ?xs ?vs ?ρ = Some _, H2 : set_lists ?xs ?vs ?ρ = Some _ |- _] =>
+          rewrite H1 in H2; inv H2
+      end.
+      edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto; subst.
+      split; [reflexivity | split; [reflexivity |]].
+      apply Same_set_Union_compat; [split; intros z Hz; exact Hz | exact HeqI].
+    - (* Cbstep_app_Internal *)
+      match goal with [Hc : cbstep _ _ _ (Eapp _ _ _) _ _ _ _ |- _] => inv Hc end;
+        match goal with
+        | [H1 : M.get ?f ?ρ = Some _, H2 : M.get ?f ?ρ = Some _ |- _] =>
+            rewrite H1 in H2; unfold CTag in H2; inv H2
+        end; [contradiction |].
+      match goal with
+      | [H1 : get_list ?xs ?ρ = Some _, H2 : get_list ?xs ?ρ = Some _ |- _] =>
+          rewrite H1 in H2; inv H2
+      end.
+      match goal with
+      | [H1 : set_lists ?xs ?vs ?ρ = Some _, H2 : set_lists ?xs ?vs ?ρ = Some _ |- _] =>
+          rewrite H1 in H2; inv H2
+      end.
+      edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto; subst.
+      split; [reflexivity | split; [reflexivity |]].
+      apply Same_set_Union_compat; [split; intros z Hz; exact Hz | exact HeqI].
+    - (* Cbstep_constr *)
+      match goal with [Hc : cbstep _ _ _ (Econstr _ _ _ _ _) _ _ _ _ |- _] => inv Hc end.
+      match goal with
+      | [H1 : get_list ?ys ?ρ = Some _, H2 : get_list ?ys ?ρ = Some _ |- _] =>
+          rewrite H1 in H2; inv H2
+      end.
+      edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto.
+    - (* Cbstep_proj *)
+      match goal with [Hc : cbstep _ _ _ (Eproj _ _ _ _ _) _ _ _ _ |- _] => inv Hc end.
+      match goal with
+      | [H1 : M.get ?y ?ρ = Some _, H2 : M.get ?y ?ρ = Some _ |- _] =>
+          rewrite H1 in H2; unfold CTag in H2; inv H2
+      end.
+      match goal with
+      | [H1 : nth_error ?vs ?n = Some _, H2 : nth_error ?vs ?n = Some _ |- _] =>
+          rewrite H1 in H2; inv H2
+      end.
+      edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto; subst.
+      split; [reflexivity | split; [reflexivity |]].
+      apply Same_set_Union_compat; [split; intros z Hz; exact Hz | exact HeqI].
+    - (* Cbstep_case *)
+      match goal with [Hc : cbstep _ _ _ (Ecase _ _ _) _ _ _ _ |- _] => inv Hc end.
+      match goal with
+      | [H1 : M.get ?x ?ρ = Some _, H2 : M.get ?x ?ρ = Some _ |- _] =>
+          rewrite H1 in H2; unfold CTag in H2; inv H2
+      end.
+      match goal with
+      | [H1 : find_tag ?cl ?t _, H2 : find_tag ?cl ?t _ |- _] =>
+          pose proof (find_tag_deterministic H1 H2) as Heqe; subst
+      end.
+      edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto; subst.
+      split; [reflexivity | split; [reflexivity |]].
+      apply Same_set_Union_compat; [split; intros z Hz; exact Hz | exact HeqI].
+    - fcrush.
+    - match goal with [Hf : cbstep_fuel _ _ _ _ _ _ _ _ |- _] => inv Hf end;
+        edestruct IHcbstep as [Heqv [Heqi HeqI]]; eauto.
+  Qed.
+
+  Lemma cbstep_fuel_deterministic_aux v v' {I I' c bdr ρ e i i' Rs r r'}:
+    cbstep_fuel c bdr ρ e i Rs r I ->
+    cbstep_fuel c bdr ρ e i' Rs r' I' ->
+    r = CRes v ->
+    r' = CRes v' ->
+    (v = v' /\ i = i' /\ I <--> I').
+  Proof.
+    intros Hstep Hstep' Heqr Heqr'; subst.
+    inv Hstep; inv Hstep'.
+    match goal with
+    | [Hcb : cbstep _ _ _ _ _ _ (CRes v) _,
+       Hcb' : cbstep _ _ _ _ _ _ (CRes v') _ |- _] =>
+        edestruct (cbstep_deterministic_aux v v' Hcb Hcb') as [Heqv [Heqi HeqI]];
+        subst; eauto
+    end.
+  Qed.
+
+  Theorem cbstep_deterministic v v' {I I' c bdr ρ e Rs i i'}:
+    cbstep c bdr ρ e i Rs (CRes v) I ->
+    cbstep c bdr ρ e i' Rs (CRes v') I' ->
+    (v = v' /\ i = i' /\ I <--> I').
+  Proof. srun eauto using cbstep_deterministic_aux. Qed.
+
+  Theorem cbstep_fuel_deterministic v v' {I I' c bdr ρ e Rs i i'}:
+    cbstep_fuel c bdr ρ e i Rs (CRes v) I ->
+    cbstep_fuel c bdr ρ e i' Rs (CRes v') I' ->
+    (v = v' /\ i = i' /\ I <--> I').
+  Proof. srun eauto using cbstep_fuel_deterministic_aux. Qed.
+
+  (* A case analysis that does not take its first branch runs as the remaining
+     branches do. *)
+  Lemma cbstep_fuel_case_cons {c bdr ρ x l t e cl i Rs r I} :
+    (forall c' l' t' vs, M.get x ρ = Some (CTag c' l' (CVconstr t' vs)) -> t <> t') ->
+    cbstep_fuel c bdr ρ (Ecase x l cl) i Rs r I ->
+    cbstep_fuel c bdr ρ (Ecase x l ((t, e) :: cl)) i Rs r I.
+  Proof.
+    intros Hneq Hstep.
+    inv Hstep.
+    - apply CbstepF_OOT.
+    - apply CbstepF_Step; try assumption.
+      match goal with [Hc : cbstep _ _ _ (Ecase _ _ _) _ _ _ _ |- _] => inv Hc end.
+      match goal with
+      | [Hget : M.get x ρ = Some (CTag _ _ (CVconstr ?t' _)),
+         Hft : find_tag cl ?t' _ |- _] =>
+          eapply Cbstep_case;
+          [ exact Hget
+          | apply find_tag_tl; [exact Hft | exact (Hneq _ _ _ _ Hget)]
+          | assumption
+          | assumption ]
+      end.
+  Qed.
+
+  Lemma cbstep_fuel_cboundary_res c ρ e i Rs r I :
+    cbstep_fuel c true ρ e i Rs r I ->
+    cboundary_res r.
+  Proof. intros. inv H; fcrush. Qed.
+
+  Lemma cbstep_fuel_approx_res c bdr ρ e i Rs r I :
+    cbstep_fuel c bdr ρ e i Rs r I ->
+    approx_res Rs r.
+  Proof. intros H. inv H; eauto. Qed.
+
+  Lemma cbstep_fuel_cresult c bdr ρ e i Rs r I :
+    cbstep_fuel c bdr ρ e i Rs r I ->
+    cresult c Rs r.
+  Proof. intros Hstep. inv Hstep; [exact I | assumption]. Qed.
+
+  (* A result returned into a return set that escapes crosses the boundary:
+     - a value of the unit itself is either approximated in `Rs` by its own
+       allocation site, hence in `ai_esc`, or has escaped already;
+     - a foreign value has escaped from its own unit. *)
+  Lemma cresult_cboundary c Rs r :
+    cresult c Rs r ->
+    Rs \subset ai_esc (θ c) ->
+    cboundary_res r.
+  Proof.
+    intros Hok Hsub.
+    destruct r as [| v]; [exact I |].
+    destruct v as [[c' l'] w].
+    destruct w as [f ρ xs e | t vs];
+      destruct Hok as [Hesc [Hown _]];
+      (destruct (Nat.eq_dec c' c) as [Heq | Hneq];
+       [ subst c';
+         destruct (Hown eq_refl) as [Hin | [Hin _]];
+         [ exact (Hsub _ Hin) | exact Hin ]
+       | exact (Hesc Hneq) ]).
+  Qed.
+
+  Lemma cbstep_fuel_approx_int c bdr ρ e i Rs r I :
+    cbstep_fuel c bdr ρ e i Rs r I ->
+    approx_int c (ai_int (θ c)) I.
+  Proof.
+    intros H. inv H; eauto.
+    eapply approx_int_empty; eauto.
+  Qed.
+
+  Lemma cbstep_fuel_closed c bdr ρ e i Rs r I :
+    cbstep_fuel c bdr ρ e i Rs r I ->
+    internals_closed (ainternals_of (ai_int (θ c))) c I.
+  Proof.
+    intros.
+    inv H.
+    - eapply internals_closed_empty; eauto.
+    - eapply approx_int_closed; eauto.
+  Qed.
+
+  (* Interactions collected under a unit are approximated from the point of view
+     of every *other* unit: an interaction in which another unit `c'` takes part
+     is either produced by a foreign call into one of its closures, whose callee
+     side is checked by `Cbstep_app_External`, or by code of `c'` itself, which
+     is checked by the `CbstepF_Step` of the nested run under `c'`.
+     Since every unit is checked against `θ`, no well-formedness invariant
+     relating values to `θ` is needed. *)
+  Lemma cbstep_approx_int_handover_aux :
+    forall c bdr ρ e i Rs r I,
+      cbstep c bdr ρ e i Rs r I ->
+      forall c', c' <> c -> approx_int c' (ai_int (θ c')) I.
+  Proof.
+    intros c bdr ρ e i Rs r I Hstep.
+    induction Hstep using cbstep_ind' with
+      (P := fun c bdr ρ e i Rs r I =>
+              forall c', c' <> c -> approx_int c' (ai_int (θ c')) I)
+      (P0 := fun c bdr ρ e i Rs r I =>
+               forall c', approx_int c' (ai_int (θ c')) I).
+    - (* Cbstep_ret *)
+      intros c' _; apply approx_int_empty.
+    - (* Cbstep_fun *)
+      intros c' _; apply IHHstep.
+    - (* Cbstep_app_External: the edge is checked on the callee's side *)
+      intros c'' Hc''.
+      apply approx_int_add; [apply approx_int_singleton | apply IHHstep].
+      + intros _ Heq; exfalso; apply Hc''; symmetry; exact Heq.
+      + intros Heq _; subst c''; assumption.
+      + intros _ Heq; exfalso; apply Hc''; symmetry; exact Heq.
+    - (* Cbstep_app_Internal: the edge does not involve other units *)
+      intros c'' Hc''.
+      apply approx_int_add; [apply approx_int_singleton | apply IHHstep].
+      + intros Heq _; exfalso; apply Hc''; symmetry; exact Heq.
+      + intros Heq _; exfalso; apply Hc''; symmetry; exact Heq.
+      + intros _ Heq; exfalso; apply Hc''; symmetry; exact Heq.
+    - (* Cbstep_constr *)
+      intros c'' _; apply IHHstep.
+    - (* Cbstep_proj: the edge is checked on the side of the constructor's unit *)
+      intros c'' Hc''.
+      match goal with
+      | [Hext : ?c' <> _ -> _ |- approx_int _ _ (((?c', _), _) |: _)] =>
+          apply approx_int_add;
+          [ apply approx_int_singleton;
+            [ intros _ Heq; exfalso; apply Hc''; symmetry; exact Heq
+            | intros Heq _; subst c''; exact (proj2 (Hext Hc''))
+            | intros _ Heq; exfalso; apply Hc''; symmetry; exact Heq ]
+          | apply IHHstep ]
+      end.
+    - (* Cbstep_case: the edge is checked on the side of the constructor's unit *)
+      intros c'' Hc''.
+      match goal with
+      | [Hext : ?c' <> _ -> _ |- approx_int _ _ (((?c', _), _) |: _)] =>
+          apply approx_int_add;
+          [ apply approx_int_singleton;
+            [ intros _ Heq; exfalso; apply Hc''; symmetry; exact Heq
+            | intros Heq _; subst c''; exact (proj2 (Hext Hc''))
+            | intros _ Heq; exfalso; apply Hc''; symmetry; exact Heq ]
+          | apply IHHstep ]
+      end.
+    - (* CbstepF_OOT *)
+      intros c'; apply approx_int_empty.
+    - (* CbstepF_Step: the unit itself checks its own view *)
+      intros c'.
+      destruct (Nat.eq_dec c' c) as [Heq | Hneq].
+      + subst c'; assumption.
+      + apply IHHstep; exact Hneq.
+  Qed.
+
+  Lemma cbstep_fuel_approx_int_handover c bdr ρ e i Rs r I :
+    cbstep_fuel c bdr ρ e i Rs r I ->
+    forall c', approx_int c' (ai_int (θ c')) I.
+  Proof.
+    intros Hstep c'.
+    destruct Hstep as [e' Rs' | e' i' Rs' r' I' Hcb _ Hint].
+    - apply approx_int_empty.
+    - destruct (Nat.eq_dec c' c) as [Heq | Hneq].
+      + subst c'; exact Hint.
+      + eapply cbstep_approx_int_handover_aux; eauto.
+  Qed.
+
+
+  (* Cross-semantics Logical Relations *)
+  (* The relations are parameterised by the same analysis context `θ` as the
+     checking semantics.  Since values do not carry analysis results, there is
+     no well-formedness invariant tying the tags of values to `θ`. *)
+  Section LRBase.
+
+    Definition R' (P : nat -> wval -> clval -> Prop) (i : nat) (r1 : res) (r2 : cres) :=
+      match r1, r2 with
+      | OOT, COOT => True
+      | Res v1, CRes v2 => P i v1 v2
+      | _, _ => False
+      end.
+
+    Definition E' (P : nat -> wval -> clval -> Prop) (c : color) (bdr : bool) (i : nat) (ρ1 : env) (ρ2 : cenv) (e : exp) (Rs : avals) : Prop :=
+      forall j1 r1,
+        j1 <= i ->
+        bstep_fuel ρ1 e j1 r1 ->
+        exists j2 r2 I2,
+          cbstep_fuel c bdr ρ2 e j2 Rs r2 I2 /\
+            R' P (i - j1) r1 r2.
+
+    Fixpoint V (i : nat) (wv : wval) (cv : clval) {struct i} : Prop :=
+      wf_val wv /\
+        match wv, cv with
+        | TAG _ l1 v1, CTAG _ (c2, l2) v2 =>
+            l1 = l2 /\
+              match v1, v2 with
+              | Vconstr t1 vs1, CVconstr t2 vs2 =>
+                  t1 = t2 /\
+                    length vs1 = length vs2 /\
+
+                    (* the fields invariants, w.r.t. the defining unit *)
+                    Forall (approx_vals (ai_fld (θ c2) l2)) vs2 /\
+                    Forall (cescaped c2) vs2 /\
+                    Forall (cflows c2 (ai_fld (θ c2) l2)) vs2 /\
+
+                    match i with
+                    | 0 => True
+                    | S i0 => Forall2 (V i0) vs1 vs2
+                    end
+
+              | Vfun f1 ρ1 xs1 e1, CVfun f2 ρ2 xs2 e2 =>
+                  f1 = f2 /\ xs1 = xs2 /\ e1 = e2 /\
+                    approx_vals (ai_env (θ c2) f2) cv /\
+
+                    (* the closure is recorded at its defining unit *)
+                    (AVfun l2 f2 xs2 e2 \in ai_env (θ c2) f2) /\
+                    approx_env (ai_env (θ c2)) (fun_fv f2 xs2 e2) ρ2 /\
+
+                    (* the closure environment invariants, at its free variables *)
+                    cescaped_env c2 (fun_fv f2 xs2 e2) ρ2 /\
+                    cbinding_env c2 (fun_fv f2 xs2 e2) ρ2 /\
+
+                    match i with
+                    | 0 => True
+                    | S i0 =>
+                        forall (bdr : bool) j c vs1 vs2 ρ3 ρ4,
+                          j <= i0 ->
+                          Forall2 (V (i0 - (i0 - j))) vs1 vs2 ->
+                          set_lists xs1 vs1 (M.set f1 (Tag l1 (Vfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
+                          set_lists xs2 vs2 (M.set f2 (CTag c2 l2 (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
+
+                          (* invariants for escaped values and variable bindings *)
+                          Forall (cescaped c2) vs2 ->
+                          Forall2 (cbinding c2) xs2 vs2 ->
+
+                          (* invariants for coloring *)
+                          (* internal call: the arguments flow to the parameters should be internal *)
+                          (c2 = c -> Forall2 (fun x v => approx_vals (ai_env (θ c2) x) v) xs2 vs2) ->
+                          (* foreign call: the closure has escaped its unit *)
+                          (c2 <> c -> AVfun l2 f2 xs2 e2 \in ai_esc (θ c2)) ->
+
+                          (* invariants for closures that may cross the program boundary *)
+                          (if bdr then AVfun l2 f2 xs2 e2 \in ai_esc (θ c2) else True) ->
+
+                          E' V c2 bdr (i0 - (i0 - j)) ρ3 ρ4 e1 (ai_ret (θ c2) l2)
+                    end
+
+              | _, _ => False
+              end
+        end.
+
+    Definition R := (R' V).
+
+    Definition E := (E' V).
+
+    (* Lemmas about [wf_val] and [wf_res] *)
+    Lemma V_wf_val_l {i v1 v2}:
+      V i v1 v2 ->
+      wf_val v1.
+    Proof. intros; destruct i; simpl in *; fcrush. Qed.
+
+    Lemma V_wf_val_Forall_l {i vs1 vs2} :
+      Forall2 (V i) vs1 vs2 ->
+      Forall wf_val vs1.
+    Proof. intros H. induction H; eauto using V_wf_val_l. Qed.
+
+    Lemma V_wf_res_l {i v1 v2}:
+      V i v1 v2 ->
+      wf_res (Res v1).
+    Proof. intros; eauto using V_wf_val_l; eauto. Qed.
+
+    Lemma R_wf_res_l {i r1 r2} :
+      R i r1 r2 ->
+      wf_res r1.
+    Proof.
+      unfold R.
+      intros.
+      destruct r1; destruct r2; try contradiction;
+        eauto using V_wf_val_l.
+    Qed.
+
+    (* Inversion Lemmas *)
+    Lemma R_res_inv_l i v1 r2 :
+      R i (Res v1) r2 ->
+      exists v2, r2 = CRes v2 /\ V i v1 v2.
+    Proof. intros. fcrush. Qed.
+
+    Lemma R_res_inv_l_V v1 r2 :
+      (forall k, R k (Res v1) r2) ->
+      exists v2, r2 = CRes v2 /\ (forall k, V k v1 v2).
+    Proof. intros. hauto. Qed.
+
+    (* Environment Relation *)
+    (* Relates the environments of the unit wearing `c`: besides the pointwise
+       value relation, the target environment is approximated by the abstract
+       environment of `θ c`, every foreign value in it has escaped, and every
+       closure of the unit itself is approximated by its own allocation site. *)
+    Definition G c i Γ1 ρ1 ρ2 :=
+      wf_env Γ1 ρ1 /\
+        approx_env (ai_env (θ c)) Γ1 ρ2 /\
+        cescaped_env c Γ1 ρ2 /\
+        cbinding_env c Γ1 ρ2 /\
+        forall x,
+          (x \in Γ1) ->
+          exists v1 v2,
+            M.get x ρ1 = Some v1 /\
+              M.get x ρ2 = Some v2 /\
+              V i v1 v2.
+
+    (* Environment Lemmas *)
+    Lemma G_subset Γ1 Γ2 {c i ρ1 ρ2}:
+      G c i Γ1 ρ1 ρ2 ->
+      Γ2 \subset Γ1 ->
+      G c i Γ2 ρ1 ρ2.
+    Proof.
+      unfold G.
+      intros [Hwf1 [Happ [Hesc [Hbind HG]]]] Hsub.
+      split; [| split; [| split; [| split]]].
+      - eapply wf_env_subset; eauto.
+      - eapply approx_env_subset; eauto.
+      - eapply cescaped_env_subset; eauto.
+      - eapply cbinding_env_subset; eauto.
+      - intros x Hx; apply HG; apply Hsub; exact Hx.
+    Qed.
+
+    Lemma G_wf_env_l {c i Γ1 ρ1 ρ2}:
+      G c i Γ1 ρ1 ρ2 ->
+      wf_env Γ1 ρ1.
+    Proof. unfold G. fcrush. Qed.
+
+    Lemma G_approx_env {c i Γ1 ρ1 ρ2}:
+      G c i Γ1 ρ1 ρ2 ->
+      approx_env (ai_env (θ c)) Γ1 ρ2.
+    Proof. unfold G. intros [_ [Haenv _]]. exact Haenv. Qed.
+
+    Lemma G_cescaped_env {c i Γ1 ρ1 ρ2}:
+      G c i Γ1 ρ1 ρ2 ->
+      cescaped_env c Γ1 ρ2.
+    Proof. unfold G. intros [_ [_ [Hesc _]]]. exact Hesc. Qed.
+
+    Lemma G_cbinding_env {c i Γ1 ρ1 ρ2}:
+      G c i Γ1 ρ1 ρ2 ->
+      cbinding_env c Γ1 ρ2.
+    Proof. unfold G. intros [_ [_ [_ [Hex _]]]]. exact Hex. Qed.
+
+    Lemma G_get {c Γ1 i ρ1 ρ2}:
+      G c i Γ1 ρ1 ρ2 ->
+      forall x v1,
+        (x \in Γ1) ->
+        M.get x ρ1 = Some v1 ->
+        exists v2,
+          M.get x ρ2 = Some v2 /\
+            V i v1 v2.
+    Proof.
+      unfold G.
+      intros [_ [_ [_ [_ HG]]]] x v1 Hx Hget1.
+      destruct (HG x Hx) as [v1' [v2 [Heqv1 [Heqv2 HV]]]].
+      rewrite Hget1 in Heqv1; inv Heqv1.
+      exists v2; split; assumption.
+    Qed.
+
+    Lemma G_get_list {c i Γ1 ρ1 ρ2} :
+      G c i Γ1 ρ1 ρ2 ->
+      forall xs vs1,
+        (FromList xs) \subset Γ1 ->
+        get_list xs ρ1 = Some vs1 ->
+        exists vs2,
+          get_list xs ρ2 = Some vs2 /\
+            Forall2 (V i) vs1 vs2.
+    Proof.
+      intros HG xs.
+      induction xs; simpl; intros.
+      - fcrush.
+      - destruct (ρ1 ! a) eqn:Heq1; try discriminate.
+        destruct (get_list xs ρ1) eqn:Heq3; try discriminate.
+        inv H0.
+        unfold Ensembles.Included, Ensembles.In in *.
+        edestruct (G_get HG) as [v2 [Heqv2 HV]]; eauto.
+        eapply (H a); fcrush.
+        edestruct IHxs as [vs2 [Heqvs2 Vvs]]; eauto; fcrush.
+    Qed.
+
+    Lemma G_set {c i Γ1 ρ1 ρ2}:
+      G c i Γ1 ρ1 ρ2 ->
+      forall {x v1 v2},
+        V i v1 v2 ->
+        approx_vals (ai_env (θ c) x) v2 ->
+        cescaped c v2 ->
+        cbinding c x v2 ->
+        G c i (x |: Γ1) (M.set x v1 ρ1) (M.set x v2 ρ2).
+    Proof.
+      unfold G.
+      intros [Hwf [Haenv [Hesc [Hex HG]]]] x v1 v2 HV Happ Hescv Hbind.
+      split; [eapply wf_env_set; [exact Hwf | eapply V_wf_val_l; exact HV] |].
+      split; [eapply approx_env_set; eauto |].
+      split; [eapply cescaped_env_set; eauto |].
+      split; [eapply cbinding_env_set; eauto |].
+      intros y Hy.
+      destruct (M.elt_eq y x); subst.
+      - repeat rewrite M.gss.
+        exists v1, v2; auto.
+      - repeat (rewrite M.gso by auto).
+        inv Hy; [match goal with [Hs : _ \in [set _] |- _] => inv Hs end; contradiction | auto].
+    Qed.
+
+    (* Binding a variable that is not in [Γ1] on the source side only
+       preserves the environment relation. *)
+    Lemma G_set_unused {c i Γ1 ρ1 ρ2} y v :
+      G c i Γ1 ρ1 ρ2 ->
+      ~ (y \in Γ1) ->
+      wf_val v ->
+      G c i Γ1 (M.set y v ρ1) ρ2.
+    Proof.
+      unfold G.
+      intros HG Hy Hv.
+      destruct HG as [Hwf1 [Haenv [Hesc [Hex HGv]]]].
+      split; [| split; [| split; [| split ]]].
+      - eapply wf_env_subset.
+        + eapply wf_env_set; eassumption.
+        + unfold Ensembles.Included, Ensembles.In.
+          intros z Hz. right. assumption.
+      - exact Haenv.
+      - exact Hesc.
+      - exact Hex.
+      - intros z Hz.
+        destruct (HGv z Hz) as [v1 [v2 [Hg1 [Hg2 HV]]]].
+        exists v1, v2.
+        rewrite M.gso by (intros Heq; subst; contradiction).
+        split; [ exact Hg1 | split; [ exact Hg2 | exact HV ] ].
+    Qed.
+
+    Lemma G_set_lists {c i Γ1 ρ1 ρ2}:
+      G c i Γ1 ρ1 ρ2 ->
+      forall {xs vs1 vs2 ρ3 ρ4},
+        Forall2 (V i) vs1 vs2 ->
+        Forall2 (fun x v => approx_vals (ai_env (θ c) x) v) xs vs2 ->
+        Forall (cescaped c) vs2 ->
+        Forall2 (cbinding c) xs vs2 ->
+        set_lists xs vs1 ρ1 = Some ρ3 ->
+        set_lists xs vs2 ρ2 = Some ρ4 ->
+        G c i (FromList xs :|: Γ1) ρ3 ρ4.
+    Proof.
+      intros HG xs.
+      induction xs; simpl; intros.
+      - destruct vs1; try discriminate.
+        destruct vs2; try discriminate.
+        inv H3; inv H4.
+        eapply G_subset; eauto; normalize_sets;
+          rewrite Union_Empty_set_neut_l; eauto;
+          apply Included_refl.
+      - destruct vs1; try discriminate.
+        destruct vs2; try discriminate.
+        destruct (set_lists xs vs1 ρ1) eqn:Heq1; try discriminate.
+        destruct (set_lists xs vs2 ρ2) eqn:Heq2; try discriminate.
+        inv H; inv H0; inv H1; inv H2; inv H3; inv H4.
+        eapply G_subset with (Γ1 := (a |: (FromList xs :|: Γ1))); eauto;
+          try (normalize_sets;
+               rewrite Union_assoc;
+               apply Included_refl).
+        eapply G_set; eauto.
+    Qed.
+
+    (* Monotonicity Lemmas *)
+    Lemma V_mono_Forall_aux :
+      forall i j (V : nat -> wval -> clval -> Prop) vs1 vs2,
+        (forall k : nat,
+            k < S i ->
+            forall (j : nat) v1 v2, V k v1 v2 -> j <= k -> V j v1 v2) ->
+        Forall2 (V i) vs1 vs2 ->
+        j <= i ->
+        Forall2 (V j) vs1 vs2.
+    Proof.
+      intros.
+      revert vs2 H0.
+      induction vs1; intros; inv H0; auto.
+      rename l' into vs2.
+      constructor; auto.
+      eapply H; eauto; lia.
+    Qed.
+
+    Lemma V_mono i :
+      forall {j v1 v2},
+        V i v1 v2 ->
+        j <= i ->
+        V j v1 v2.
+    Proof.
+      induction i as [i IH] using lt_wf_rec; intros j v1 v2 HV Hj.
+      destruct (Nat.eq_dec j i) as [-> | Hneq]; [exact HV |].
+      destruct i as [| i]; [lia |].
+      destruct v1 as [l1 w1]; destruct v2 as [[c2 l2] w2].
+      simpl in HV.
+      destruct HV as [Hwf1 [Hl HV]].
+      destruct w1 as [f1 ρ1 xs1 e1 | t1 vs1];
+        destruct w2 as [f2 ρ2 xs2 e2 | t2 vs2];
+        simpl in HV; try contradiction;
+        destruct j as [| j]; simpl;
+        refine (conj Hwf1 (conj Hl _)).
+      - (* closure, down to 0 *)
+        destruct HV as [Hf [Hxs [He [Havs [Hsite [Haenv [Hesc [Hloc _]]]]]]]].
+        exact (conj Hf (conj Hxs (conj He (conj Havs (conj Hsite (conj Haenv (conj Hesc (conj Hloc I)))))))).
+      - (* closure *)
+        destruct HV as [Hf [Hxs [He [Havs [Hsite [Haenv [Hesc [Hloc HV]]]]]]]].
+        refine (conj Hf (conj Hxs (conj He (conj Havs (conj Hsite (conj Haenv (conj Hesc (conj Hloc _)))))))).
+        intros bdr j0 c vs1 vs2 ρ3 ρ4 Hj0.
+        rewrite (normalize_step j j0 Hj0).
+        specialize (HV bdr j0 c vs1 vs2 ρ3 ρ4 ltac:(lia)).
+        rewrite (normalize_step i j0 ltac:(lia)) in HV.
+        exact HV.
+      - (* constructor, down to 0 *)
+        destruct HV as [Ht [Hlen [Happ [Hesc [Hfl _]]]]].
+        exact (conj Ht (conj Hlen (conj Happ (conj Hesc (conj Hfl I))))).
+      - (* constructor *)
+        destruct HV as [Ht [Hlen [Happ [Hesc [Hfl HVs]]]]].
+        refine (conj Ht (conj Hlen (conj Happ (conj Hesc (conj Hfl _))))).
+        eapply V_mono_Forall_aux; [exact IH | exact HVs | lia].
+    Qed.
+
+    Lemma V_mono_Forall {vs1 vs2} i j :
+      Forall2 (V i) vs1 vs2 ->
+      j <= i ->
+      Forall2 (V j) vs1 vs2.
+    Proof.
+      intros H.
+      revert j.
+      induction H; simpl; intros; auto.
+      constructor; eauto.
+      eapply V_mono; eauto.
+    Qed.
+
+    (* Constructor Lemmas *)
+    Lemma Vconstr_V {i c l t vs1 vs2} :
+      Forall2 (V i) vs1 vs2 ->
+      Forall (approx_vals (ai_fld (θ c) l)) vs2 ->
+      Forall (cescaped c) vs2 ->
+      Forall (cflows c (ai_fld (θ c) l)) vs2 ->
+      V i (Tag l (Vconstr t vs1)) (CTag c l (CVconstr t vs2)).
+    Proof.
+      intros HVs Happ Hesc Hfl.
+      assert (Hwf1 : wf_val (Tag l (Vconstr t vs1)))
+        by (apply wf_val_Vconstr; eapply V_wf_val_Forall_l; eauto).
+      assert (Hlen : length vs1 = length vs2) by (eapply Forall2_length; eauto).
+      destruct i as [| i]; simpl.
+      - exact (conj Hwf1 (conj eq_refl (conj eq_refl (conj Hlen (conj Happ (conj Hesc (conj Hfl I))))))).
+      - refine (conj Hwf1 (conj eq_refl (conj eq_refl (conj Hlen (conj Happ (conj Hesc (conj Hfl _))))))).
+        eapply V_mono_Forall; [exact HVs | lia].
+    Qed.
+
+    Lemma V_Vconstr_inv {i l t vs1 v2} :
+      V i (Tag l (Vconstr t vs1)) v2 ->
+      exists c2 vs2,
+        v2 = CTag c2 l (CVconstr t vs2) /\
+          Forall (approx_vals (ai_fld (θ c2) l)) vs2 /\
+          Forall (cescaped c2) vs2 /\
+          Forall (cflows c2 (ai_fld (θ c2) l)) vs2 /\
+          match i with
+          | 0 => True
+          | S i0 => Forall2 (V i0) vs1 vs2
+          end.
+    Proof.
+      intros HV.
+      destruct v2 as [[c2 l2] w2].
+      destruct i as [| i]; simpl in HV;
+        destruct HV as [_ [Hl HV]]; subst l2;
+        destruct w2 as [f2 ρ2 xs2 e2 | t2 vs2]; simpl in HV; try contradiction;
+        destruct HV as [Ht [_ [Happ [Hesc [Hfl HVs]]]]]; subst t2;
+        exact (ex_intro _ c2 (ex_intro _ vs2 (conj eq_refl (conj Happ (conj Hesc (conj Hfl HVs)))))).
+    Qed.
+
+    Lemma R_mono {r1 r2} i j :
+      R i r1 r2 ->
+      j <= i ->
+      R j r1 r2.
+    Proof.
+      unfold R.
+      intros.
+      destruct r1; auto.
+      destruct r2; auto.
+      eapply V_mono; eauto.
+    Qed.
+
+    Lemma E_mono {Rs c bdr ρ1 ρ2 e} i j:
+      E c bdr i ρ1 ρ2 e Rs ->
+      j <= i ->
+      E c bdr j ρ1 ρ2 e Rs.
+    Proof.
+      unfold E, R, E', R'.
+      intros.
+      destruct (H j1 r1) as [j2 [r2 [I2 [Hr2 HR]]]]; auto; try lia.
+      exists j2, r2, I2; split; eauto.
+      apply R_mono with (i - j1); try lia; auto.
+    Qed.
+
+    Lemma G_mono {c Γ1 ρ1 ρ2} i j:
+      G c i Γ1 ρ1 ρ2 ->
+      j <= i ->
+      G c j Γ1 ρ1 ρ2.
+    Proof.
+      unfold G.
+      intros [Hwf1 [Haenv [Hesc [Hex HG]]]] Hj.
+      split; [exact Hwf1 | split; [exact Haenv | split; [exact Hesc | split; [exact Hex |]]]].
+      intros x Hx.
+      destruct (HG x Hx) as [v1 [v2 [Heqv1 [Heqv2 HV]]]].
+      exists v1, v2; split; [exact Heqv1 | split; [exact Heqv2 | eapply V_mono; eauto]].
+    Qed.
+
+  End LRBase.
+
+  Section Compat.
+
+    (* Every unit's analysis result is closed under what the context may do
+       with the values it hands out. *)
+    Hypothesis θ_escape_ok : analysis_context_escape_ok θ.
+
+    (* Compatibility Lemmas *)
+
+    (* `Rs` is quantified inside as function bodies are checked against other
+       return sets.  The unit `c` is checked against `θ c`; there is no separate
+       analysis result to keep in sync with `θ`. *)
+    Definition well_annotated c Γ e : Prop :=
+      forall (bdr : bool) Rs,
+        acheck (θ c) e Rs ->
+        (if bdr then (Rs \subset (ai_esc (θ c))) else True) ->
+        forall i ρ1 ρ2,
+          G c i Γ ρ1 ρ2 ->
+          E c bdr i ρ1 ρ2 e Rs.
+
+    Lemma ret_compat c Γ x :
+      (x \in Γ) ->
+      well_annotated c Γ (Eret x).
+    Proof.
+      unfold well_annotated, E, E'.
+      intros Hx bdr Rs Hack Hbdr i ρ1 ρ2 HG j1 r1 Hj1 Hstep.
+      destruct (bstep_fuel_inv Hstep) as [[-> ->] | [n1 [-> Hb]]].
+      - exists 0, COOT, (Empty_set _); split; [apply CbstepF_OOT | exact I].
+      - destruct (bstep_ret_inv Hb) as [v1 [Hget1 [-> ->]]].
+        pose proof (acheck_ret_inv Hack) as HxRs.
+        destruct (G_get HG x v1 Hx Hget1) as [v2 [Hget2 HV]].
+        destruct (approx_env_get (G_approx_env HG) Hx Hget2) as [av [Hav Happrox]].
+        assert (Hcres : cresult c Rs (CRes v2)).
+        { split.
+          - eapply cescaped_env_get; [eapply G_cescaped_env; eauto | exact Hx | exact Hget2].
+          - eapply cflows_subset; [| exact HxRs].
+            eapply cbinding_cflows.
+            eapply cbinding_env_get; [eapply G_cbinding_env; eauto | exact Hx | exact Hget2]. }
+        exists 1, (CRes v2), (Empty_set _); split.
+        + apply CbstepF_Step.
+          * apply Cbstep_ret; exact Hget2.
+          * econstructor; [apply HxRs; exact Hav | exact Happrox].
+          * apply approx_int_empty.
+          * exact Hcres.
+          * destruct bdr; [eapply cresult_cboundary; eauto | exact I].
+        + simpl. eapply V_mono; [exact HV | lia].
+    Qed.
+
+    Lemma Vfun_V Γ f l c xs e :
+      occurs_free e \subset FromList xs :|: (f |: Γ) ->
+      well_annotated c (FromList xs :|: (f |: Γ)) e ->
+      acheck (θ c) e (ai_ret (θ c) l) ->
+      forall {i ρ1 ρ2},
+        wf_val (Tag l (Vfun f ρ1 xs e)) ->
+        (AVfun l f xs e) \in (ai_env (θ c) f) ->
+        approx_vals (ai_env (θ c) f) (CTag c l (CVfun f ρ2 xs e)) ->
+        G c i Γ ρ1 ρ2 ->
+        V i (Tag l (Vfun f ρ1 xs e)) (CTag c l (CVfun f ρ2 xs e)).
+    Proof.
+      intros HS He Hack i.
+      induction i as [| i IHi]; intros ρ1 ρ2 Hwf Hsite Happrox HG;
+        (* the closure environment invariants, at the free variables of the closure *)
+        assert (Haenv : approx_env (ai_env (θ c)) (fun_fv f xs e) ρ2)
+          by (eapply approx_env_subset; [eapply G_approx_env; eauto | eapply fun_fv_subset; eauto]);
+        assert (Hesc_env : cescaped_env c (fun_fv f xs e) ρ2)
+          by (eapply cescaped_env_subset; [eapply G_cescaped_env; eauto | eapply fun_fv_subset; eauto]);
+        assert (Hloc_env : cbinding_env c (fun_fv f xs e) ρ2)
+          by (eapply cbinding_env_subset; [eapply G_cbinding_env; eauto | eapply fun_fv_subset; eauto]);
+        simpl.
+      - exact (conj Hwf (conj eq_refl (conj eq_refl (conj eq_refl (conj eq_refl
+                 (conj Happrox (conj Hsite (conj Haenv (conj Hesc_env (conj Hloc_env I)))))))))).
+      - refine (conj Hwf (conj eq_refl (conj eq_refl (conj eq_refl (conj eq_refl
+                  (conj Happrox (conj Hsite (conj Haenv (conj Hesc_env (conj Hloc_env _)))))))))).
+        intros bdr j c0 vs1 vs2 ρ3 ρ4 Hj HVs Hset1 Hset2 Hescs Hbinds Hint Hext Hbdr.
+        (* the closure itself, at the remaining index *)
+        assert (HVf : V (i - (i - j)) (Tag l (Vfun f ρ1 xs e)) (CTag c l (CVfun f ρ2 xs e))).
+        { apply (V_mono i); [| lia].
+          apply IHi; [exact Hwf | exact Hsite | exact Happrox | eapply G_mono; [exact HG | lia]]. }
+        (* the arguments are approximated at the parameters *)
+        assert (Happ_args : Forall2 (fun x v => approx_vals (ai_env (θ c) x) v) xs vs2).
+        { destruct (Nat.eq_dec c c0) as [Heq | Hneq]; [exact (Hint Heq) |].
+          eapply set_lists_approx_top; [| exact Hset2].
+          destruct (θ_escape_ok c) as [_ [Hesc_fun _]].
+          exact (proj1 (Hesc_fun _ _ _ _ (Hext Hneq))). }
+        assert (Hbdr' : if bdr then ai_ret (θ c) l \subset ai_esc (θ c) else True).
+        { destruct bdr; [| exact I].
+          destruct (θ_escape_ok c) as [_ [Hesc_fun _]].
+          exact (proj2 (Hesc_fun _ _ _ _ Hbdr)). }
+        eapply (He bdr _ Hack Hbdr').
+        eapply G_set_lists; [| exact HVs | exact Happ_args | exact Hescs | exact Hbinds | exact Hset1 | exact Hset2].
+        eapply G_set.
+        + eapply G_mono; [exact HG | lia].
+        + exact HVf.
+        + exact Happrox.
+        + apply cescaped_defining.
+        + unfold cbinding, CTag.
+          split; [intros _; left; exact Hsite | intros Hneq; exfalso; apply Hneq; reflexivity].
+    Qed.
+
+    Lemma fun_compat c Γ e k f l xs :
+      occurs_free e \subset FromList xs :|: (f |: Γ) ->
+      well_annotated c (FromList xs :|: (f |: Γ)) e ->
+      well_annotated c (f |: Γ) k ->
+      well_annotated c Γ (Efun f l xs e k).
+    Proof.
+      intros HS He Hk bdr Rs Hack Hbdr i ρ1 ρ2 HG.
+      destruct (acheck_fun_inv Hack) as [Hsite [Hack_e Hack_k]].
+      unfold E, E'.
+      intros j1 r1 Hj1 Hstep.
+      destruct (bstep_fuel_inv Hstep) as [[-> ->] | [n1 [-> Hb]]].
+      - exists 0, COOT, (Empty_set _); split; [apply CbstepF_OOT | exact I].
+      - pose proof (bstep_fun_inv Hb) as Hstep1.
+        assert (Happrox : approx_vals (ai_env (θ c) f) (CTag c l (CVfun f ρ2 xs e))).
+        { exists (AVfun l f xs e); split; [exact Hsite |].
+          apply Approx_TAG; [reflexivity |].
+          apply Approx_CVfun.
+          (* the captured environment, at the free variables of the closure *)
+          eapply approx_env_subset; [eapply G_approx_env; eauto | eapply fun_fv_subset; eauto]. }
+        assert (Hwf : wf_val (Tag l (Vfun f ρ1 xs e))).
+        { apply WF_TAG; eapply WF_Vfun; [eapply G_wf_env_l; eauto | exact HS]. }
+        assert (HG' : G c (i - 1) (f |: Γ)
+                        (M.set f (Tag l (Vfun f ρ1 xs e)) ρ1)
+                        (M.set f (CTag c l (CVfun f ρ2 xs e)) ρ2)).
+        { eapply G_set.
+          - eapply G_mono; [exact HG | lia].
+          - eapply Vfun_V; eauto.
+            eapply G_mono; [exact HG | lia].
+          - exact Happrox.
+          - apply cescaped_defining.
+          - unfold cbinding, CTag.
+            split; [intros _; left; exact Hsite | intros Hneq; exfalso; apply Hneq; reflexivity]. }
+        destruct (Hk bdr Rs Hack_k Hbdr (i - 1) _ _ HG' n1 r1 ltac:(lia) Hstep1)
+          as [j2 [r2 [I2 [Hrun HR]]]].
+        exists (S j2), r2, I2; split.
+        + apply CbstepF_Step.
+          * eapply Cbstep_fun; [exact Hrun | exact Hsite].
+          * eapply cbstep_fuel_approx_res; eauto.
+          * eapply cbstep_fuel_approx_int; eauto.
+          * eapply cbstep_fuel_cresult; eauto.
+          * destruct bdr; [eapply cbstep_fuel_cboundary_res; eauto | exact I].
+        + eapply R_mono; [exact HR | lia].
+    Qed.
+
+    (* A value that the unit `c` hands over to another unit `c1`, through a
+       value set that escapes, has escaped from its own unit:
+       - if it belongs to `c1`, there is nothing to show;
+       - if it belongs to `c`, its exact site is in the value set, hence in
+         `ai_esc (θ c)`, unless it had escaped already;
+       - if it belongs to a third unit, it had escaped already. *)
+    Lemma cescaped_handover {c avs v} :
+      cescaped c v ->
+      cflows c avs v ->
+      avs \subset ai_esc (θ c) ->
+      forall c1, cescaped c1 v.
+    Proof.
+      intros Hesc Hfl Hsub c1.
+      destruct v as [[c' l'] w].
+      destruct (Nat.eq_dec c' c1) as [Heq1 | Hneq1].
+      - (* c1 is the defining unit *)
+        subst c'.
+        apply cescaped_defining.
+      - destruct (Nat.eq_dec c' c) as [Heqc | Hneqc].
+        + (* c is the defining unit: the value flows through `avs`, which escapes *)
+          subst c'.
+          unfold cflows in Hfl; unfold cescaped.
+          destruct w as [f' ρ' xs' e' | t vs]; intros _;
+            destruct Hfl as [Hown _];
+            (destruct (Hown eq_refl) as [Hin | [Hin _]]; [exact (Hsub _ Hin) | exact Hin]).
+        + (* the value belongs to a third unit: it had escaped already *)
+          unfold cescaped in *.
+          destruct w; intros _; apply Hesc; exact Hneqc.
+    Qed.
+
+    Lemma cescaped_handover_list {c c1 Γ ρ xs vs} :
+      cescaped_env c Γ ρ ->
+      cbinding_env c Γ ρ ->
+      FromList xs \subset Γ ->
+      Forall (fun x => ai_env (θ c) x \subset ai_esc (θ c)) xs ->
+      get_list xs ρ = Some vs ->
+      Forall (cescaped c1) vs.
+    Proof.
+      intros Hesc Hbind HΓ Hsub.
+      revert vs HΓ.
+      induction Hsub as [| x xs Hxsub Hsub IH]; simpl; intros vs HΓ Hget.
+      - inv Hget; constructor.
+      - destruct (M.get x ρ) as [v |] eqn:Hx; [| discriminate Hget].
+        destruct (get_list xs ρ) as [vs' |] eqn:Hxs; [| discriminate Hget].
+        inv Hget.
+        assert (HxΓ : x \in Γ) by (apply HΓ; left; reflexivity).
+        constructor.
+        + eapply (@cescaped_handover c).
+          * eapply cescaped_env_get; [exact Hesc | exact HxΓ | exact Hx].
+          * eapply cbinding_cflows.
+            eapply cbinding_env_get; [exact Hbind | exact HxΓ | exact Hx].
+          * exact Hxsub.
+        + eapply IH; eauto.
+          intros y Hy; apply HΓ; right; exact Hy.
+    Qed.
+
+    Lemma G_cescaped_handover_list {c c1 i Γ ρ1 ρ2 xs vs} :
+      G c i Γ ρ1 ρ2 ->
+      FromList xs \subset Γ ->
+      Forall (fun x => ai_env (θ c) x \subset ai_esc (θ c)) xs ->
+      get_list xs ρ2 = Some vs ->
+      Forall (cescaped c1) vs.
+    Proof.
+      intros HG.
+      eapply cescaped_handover_list;
+        [ eapply G_cescaped_env | eapply G_cbinding_env ]; eauto.
+    Qed.
+
+    (* A value handed over by the unit `c` to another unit `c1`, into a value
+       set holding `AVtop`, flows as `cflows` requires:
+       - a value of `c1` itself comes back from the context, so it has escaped
+         from `c1` and `AVtop` stands for it;
+       - any other value is foreign to `c1`, hence approximated by `AVtop`. *)
+    Lemma cflows_handover {c c1 avs v} :
+      c1 <> c ->
+      cescaped c v ->
+      AVtop \in avs ->
+      cflows c1 avs v.
+    Proof.
+      intros Hneq Hesc Htop.
+      destruct v as [[c' l'] w].
+      destruct w as [f ρ xs e | t vs]; unfold cflows, cescaped in *;
+        (split;
+         [ intros Heq; subst c';
+           right; split; [apply Hesc; exact Hneq | exact Htop]
+         | intros _; exact Htop ]).
+    Qed.
+
+    Lemma cbinding_handover {c c1 x v} :
+      c1 <> c ->
+      cescaped c v ->
+      AVtop \in ai_env (θ c1) x ->
+      cbinding c1 x v.
+    Proof.
+      intros Hneq Hesc Htop.
+      eapply cflows_cbinding.
+      eapply cflows_handover; eauto.
+    Qed.
+
+    Lemma cbinding_handover_list {c c1 xs vs ρ ρ'} :
+      c1 <> c ->
+      Forall (cescaped c) vs ->
+      (forall x, List.In x xs -> AVtop \in ai_env (θ c1) x) ->
+      set_lists xs vs ρ = Some ρ' ->
+      Forall2 (cbinding c1) xs vs.
+    Proof.
+      intros Hneq Hesc Htop Hset.
+      revert vs ρ' Hesc Htop Hset.
+      induction xs as [| x xs IH]; intros vs ρ' Hesc Htop Hset; simpl in Hset.
+      - destruct vs as [| v vs]; [constructor | discriminate Hset].
+      - destruct vs as [| v vs]; [discriminate Hset |].
+        destruct (set_lists xs vs ρ) as [ρ'' |] eqn:Heq; [| discriminate Hset].
+        inv Hesc.
+        constructor.
+        + eapply cbinding_handover;
+            [exact Hneq | assumption | apply Htop; left; reflexivity].
+        + eapply IH; [eassumption | | exact Heq].
+          intros y Hy; apply Htop; right; exact Hy.
+    Qed.
+
+    (* A result returned by the unit `c` into an escaping return set `Rs1` is
+       handed over to the unit `c1`, which receives it into `Rs` as an unknown
+       value (`AVtop ∈ Rs`). *)
+    Lemma cresult_handover {c c1 Rs1 Rs r} :
+      c1 <> c ->
+      cresult c Rs1 r ->
+      Rs1 \subset ai_esc (θ c) ->
+      AVtop \in Rs ->
+      cresult c1 Rs r.
+    Proof.
+      intros Hneq Hok Hsub Htop.
+      destruct r as [| v]; [exact I |].
+      destruct Hok as [Hesc Hfl].
+      split.
+      - exact (cescaped_handover Hesc Hfl Hsub c1).
+      - exact (cflows_handover Hneq Hesc Htop).
+    Qed.
+
+    Lemma app_compat Γ xs f l c :
+      (f \in Γ) ->
+      (FromList xs \subset Γ) ->
+      well_annotated c Γ (Eapp f l xs).
+    Proof.
+      intros Hf Hxs bdr Rs Hack Hbdr i ρ1 ρ2 HG.
+      destruct (acheck_app_inv Hack) as [Helim [Hknown Hunknown]].
+      unfold E, E'.
+      intros j1 r1 Hj1 Hstep.
+      destruct (bstep_fuel_inv Hstep) as [[-> ->] | [n1 [-> Hb]]].
+      - exists 0, COOT, (Empty_set _); split; [apply CbstepF_OOT | exact I].
+      - destruct (bstep_app_inv Hb)
+          as [l1 [f' [ρ1' [xs' [e [vs1 [ρ3 [Hgetf1 [Hgl1 [Hset1 Hstep1]]]]]]]]]].
+        destruct i as [| i]; [lia |].
+        (* the callee is a related closure *)
+        destruct (G_get HG f _ Hf Hgetf1) as [fv2 [Hgetf2 HVf]].
+        destruct fv2 as [[c1 l2] w2].
+        simpl in HVf.
+        destruct HVf as [_ [Heql HVf]]; subst l2.
+        destruct w2 as [f2 ρ2' xs2 e2 | t2 vs2]; [| contradiction].
+        destruct HVf as [Heqf [Heqxs [Heqe [Havs [Hsite [Haenv [_ [_ HVf]]]]]]]].
+        subst f2 xs2 e2.
+        (* so are the arguments *)
+        destruct (G_get_list HG xs vs1 Hxs Hgl1) as [vs2 [Hgl2 HVs]].
+        destruct (set_lists_length3 (M.set f' (CTag c1 l1 (CVfun f' ρ2' xs' e)) ρ2') xs' vs2)
+          as [ρ4 Hset2].
+        { rewrite (set_lists_length_eq _ _ _ _ Hset1). eapply Forall2_length; eauto. }
+        pose proof (cescaped_env_get f _ (G_cescaped_env HG) Hf Hgetf2) as Hesc_f.
+        pose proof (cbinding_env_get f _ (G_cbinding_env HG) Hf Hgetf2) as Hb_f.
+        unfold cescaped in Hesc_f; unfold cbinding in Hb_f.
+        destruct Hb_f as [Hown_f Hforeign_f].
+        destruct (Nat.eq_dec c1 c) as [-> | Hneq].
+
+        + (* internal call: the callee belongs to the caller's unit *)
+          (* the callee is predicted at the call site, either by its own site or,
+             once escaped, by `AVtop` *)
+          assert (Hcall : Forall2 (fun x x' => ai_env (θ c) x \subset ai_env (θ c) x') xs xs' /\
+                            ai_ret (θ c) l1 \subset Rs /\
+                            (l1, l) \in ai_int (θ c)).
+          { destruct (Hown_f eq_refl) as [Hin | [Hesc Htop]].
+            - destruct (Hknown _ _ _ _ Hin) as [_ [_ [Hsub Hret]]].
+              exact (conj Hsub (conj Hret (proj1 Helim _ Hin))).
+            - destruct (Hunknown Htop) as [_ [_ Hesc_fun]].
+              destruct (Hesc_fun _ _ _ _ Hesc) as [_ [_ [Hsub Hret]]].
+              exact (conj Hsub (conj Hret (proj2 Helim Htop _ _ _ _ Hesc))). }
+          destruct Hcall as [Hsub [Hret Hedge]].
+          (* the arguments are bound at the parameters *)
+          pose proof (cbinding_subset_list
+                        (cbinding_env_get_list (G_cbinding_env HG) _ _ Hxs Hgl2) Hsub)
+            as Hbind_args.
+          pose proof (cescaped_env_get_list (G_cescaped_env HG) _ _ Hxs Hgl2) as Hesc_args.
+          pose proof (approx_vals_subset_list
+                        (approx_env_get_list (G_approx_env HG) _ _ Hxs Hgl2) xs' Hsub)
+            as Happ_args.
+          specialize (HVf false i c vs1 vs2 ρ3 ρ4 (le_n i)).
+          rewrite (normalize_step i i (le_n i)) in HVf.
+          assert (HE : E c false i ρ3 ρ4 e (ai_ret (θ c) l1)).
+          { apply HVf;
+              [ eapply V_mono_Forall; [exact HVs | lia]
+              | exact Hset1 | exact Hset2 | exact Hesc_args | exact Hbind_args
+              | intros _; exact Happ_args
+              | intros Hcc; exfalso; apply Hcc; reflexivity
+              | exact I ]. }
+          destruct (HE n1 r1 ltac:(lia) Hstep1) as [j2 [r2 [I2 [Hrun HR]]]].
+          assert (Hok : cresult c Rs r2)
+            by (eapply cresult_subset; [eapply cbstep_fuel_cresult; eauto | exact Hret]).
+          exists (S j2), r2, (((c, l1), (c, l)) |: I2); split.
+          * apply CbstepF_Step.
+            -- eapply Cbstep_app_Internal; [exact Hgetf2 | exact Hgl2 | exact Hbind_args | exact Hset2 | exact Hrun].
+            -- eapply approx_res_subset; [eapply cbstep_fuel_approx_res; eauto | exact Hret].
+            -- apply approx_int_add_internal; [exact Hedge | eapply cbstep_fuel_approx_int; eauto].
+            -- exact Hok.
+            -- (* the result crosses the boundary if `Rs` escapes *)
+               destruct bdr; [eapply cresult_cboundary; eauto | exact I].
+          * eapply R_mono; [exact HR | lia].
+
+        + (* foreign call: the caller approximates the callee by `AVtop` *)
+          pose proof (Hforeign_f Hneq) as Htop.
+          pose proof (Hesc_f Hneq) as Hfesc.
+          destruct (Hunknown Htop) as [Hargs [HRs _]].
+          (* the arguments escape to the callee's unit *)
+          pose proof (G_cescaped_handover_list (c1 := c1) HG Hxs Hargs Hgl2) as Hesc_args.
+          (* the parameters belong to the callee's unit: its closure has escaped,
+             so by `escapes_ok` every parameter holds `AVtop` *)
+          destruct (θ_escape_ok c1) as [Helim1 [Hesc_fun1 _]].
+          destruct (Hesc_fun1 _ _ _ _ Hfesc) as [Hparams Hret_esc].
+          pose proof (cbinding_handover_list Hneq
+                        (cescaped_env_get_list (G_cescaped_env HG) _ _ Hxs Hgl2)
+                        Hparams Hset2) as Hbind_args.
+          specialize (HVf true i c vs1 vs2 ρ3 ρ4 (le_n i)).
+          rewrite (normalize_step i i (le_n i)) in HVf.
+          assert (HE : E c1 true i ρ3 ρ4 e (ai_ret (θ c1) l1)).
+          { apply HVf;
+              [ eapply V_mono_Forall; [exact HVs | lia]
+              | exact Hset1 | exact Hset2 | exact Hesc_args | exact Hbind_args
+              | intros Hcc; contradiction
+              | intros _; exact Hfesc
+              | exact Hfesc ]. }
+          destruct (HE n1 r1 ltac:(lia) Hstep1) as [j2 [r2 [I2 [Hrun HR]]]].
+          (* the callee returns into `ai_ret (θ c1) l1`, which escapes from
+             `c1`, and the caller receives the result as unknown *)
+          assert (Hok : cresult c Rs r2).
+          { eapply (cresult_handover (not_eq_sym Hneq));
+              [ eapply cbstep_fuel_cresult; eauto | exact Hret_esc | exact HRs ]. }
+          exists (S j2), r2, (((c1, l1), (c, l)) |: I2); split.
+          * apply CbstepF_Step.
+            -- eapply Cbstep_app_External;
+                 [ exact Hgetf2 | exact (not_eq_sym Hneq) | exact Hfesc
+                 | exact (Helim1 _ Hfesc) | exact Hgl2 | exact Hesc_args
+                 | exact Hset2 | | exact Hrun ].
+               (* the callee's environment, at the free variables of its body *)
+               assert (Happrox : approx_env (ai_env (θ c1)) (f' |: fun_fv f' xs' e)
+                                   (M.set f' (CTag c1 l1 (CVfun f' ρ2' xs' e)) ρ2'))
+                 by (apply approx_env_set; eauto).
+               eapply approx_env_subset; [| apply occurs_free_fun_fv].
+               eapply (approx_env_set_lists Happrox xs' vs2); [| exact Hset2].
+               eapply set_lists_approx_top; eauto.
+            -- (* the result of a foreign call is unknown to the caller: `AVtop ∈ Rs` *)
+               destruct r2 as [| v2]; [constructor | econstructor; [exact HRs | constructor]].
+            -- apply approx_int_add.
+               ++ apply approx_int_singleton.
+                  ** intros Heq _; exfalso; exact (Hneq Heq).
+                  ** intros Heq _; exfalso; exact (Hneq Heq).
+                  ** intros _ _; exact (proj1 Helim AVtop Htop).
+               ++ (* the interactions collected by the callee, as seen by our unit *)
+                  eapply cbstep_fuel_approx_int_handover; eauto.
+            -- exact Hok.
+            -- (* the result crosses the boundary if `Rs` escapes *)
+               destruct bdr; [eapply cresult_cboundary; eauto | exact I].
+          * eapply R_mono; [exact HR | lia].
+    Qed.
+
+    (* Eliminating a constructor, held by the unit `c` in `y`, at the site `l`
+       is predicted by the analysis of `c`:
+       - an internal constructor is approximated at `y` by its own allocation
+         site, or has escaped and is stood for by `AVtop`;
+       - a foreign constructor is stood for by `AVtop`, and has escaped from its
+         own unit, which then sees it eliminated by the context. *)
+    Lemma V_elim_constr {c y l c' l' t vs} :
+      cescaped c (CTag c' l' (CVconstr t vs)) ->
+      cbinding c y (CTag c' l' (CVconstr t vs)) ->
+      aelim_constr_int (θ c) y l ->
+      approx_int c (ai_int (θ c)) [set ((c', l'), (c, l))] /\
+        (c' <> c -> (AVconstr l' t \in ai_esc (θ c')) /\ ((l', l_top_elim) \in ai_int (θ c'))).
+    Proof.
+      intros He Hb [Helim Htop].
+      unfold cbinding in Hb; unfold cescaped in He; simpl in Hb, He.
+      destruct Hb as [Hown Hforeign].
+      split.
+      - apply approx_int_singleton.
+        + intros Heq _; subst c'.
+          destruct (Hown eq_refl) as [Hin | [Hesc Hy_top]].
+          * exact (Helim _ Hin).
+          * exact (Htop Hy_top _ _ Hesc).
+        + intros _ Hneq; exfalso; apply Hneq; reflexivity.
+        + intros Hneq _.
+          exact (Helim _ (Hforeign Hneq)).
+      - intros Hneq.
+        pose proof (He Hneq) as Hsite.
+        split; [exact Hsite |].
+        destruct (θ_escape_ok c') as [Helim' _].
+        exact (Helim' _ Hsite).
+    Qed.
+
+    Lemma constr_compat c Γ x l t ys k :
+      (FromList ys \subset Γ) ->
+      well_annotated c (x |: Γ) k ->
+      well_annotated c Γ (Econstr x l t ys k).
+    Proof.
+      intros Hys Hk bdr Rs Hack Hbdr i ρ1 ρ2 HG.
+      destruct (acheck_constr_inv Hack) as [Hx [Hfld Hack_k]].
+      unfold E, E' in *.
+      intros j1 r1 Hj1 Hstep.
+      destruct (bstep_fuel_inv Hstep) as [[-> ->] | [n1 [-> Hb]]].
+      - exists 0, COOT, (Empty_set _); split; [apply CbstepF_OOT | exact I].
+      - destruct (bstep_constr_inv Hb) as [vs1 [Hgl1 Hstep1]].
+        destruct (G_get_list HG ys vs1 Hys Hgl1) as [vs2 [Hgl2 HVs]].
+        pose proof (approx_env_get_list (G_approx_env HG) _ _ Hys Hgl2) as Happ_ys.
+        pose proof (cescaped_env_get_list (G_cescaped_env HG) _ _ Hys Hgl2) as Hesc_vs.
+        pose proof (cbinding_env_get_list (G_cbinding_env HG) _ _ Hys Hgl2) as Hbind_ys.
+
+        (* the new constructor is related at the remaining index *)
+        assert (HV : V (i - 1) (Tag l (Vconstr t vs1)) (CTag c l (CVconstr t vs2))).
+        { apply Vconstr_V.
+          - eapply V_mono_Forall; [exact HVs | lia].
+          - exact (approx_vals_fields Happ_ys Hfld).
+          - exact Hesc_vs.
+          - exact (cflows_fields Hbind_ys Hfld). }
+
+        assert (HG' : G c (i - 1) (x |: Γ)
+                        (M.set x (Tag l (Vconstr t vs1)) ρ1)
+                        (M.set x (CTag c l (CVconstr t vs2)) ρ2)).
+        { eapply G_set.
+          - eapply G_mono; [exact HG | lia].
+          - exact HV.
+          - unfold approx_vals.
+            exists (AVconstr l t); split; [exact Hx |].
+            apply Approx_TAG; [reflexivity | apply Approx_CVconstr].
+          - apply cescaped_defining.
+          - unfold cbinding, CTag.
+            split; [intros _; left; exact Hx | intros Hneq; exfalso; apply Hneq; reflexivity]. }
+
+        destruct (Hk bdr Rs Hack_k Hbdr (i - 1) _ _ HG' n1 r1 ltac:(lia) Hstep1)
+          as [j2 [r2 [I2 [Hrun HR]]]].
+        exists (S j2), r2, I2; split.
+        + apply CbstepF_Step.
+          * eapply Cbstep_constr; [exact Hgl2 | exact (cflows_fields Hbind_ys Hfld) | exact Hrun | exact Hx].
+          * eapply cbstep_fuel_approx_res; eauto.
+          * eapply cbstep_fuel_approx_int; eauto.
+          * eapply cbstep_fuel_cresult; eauto.
+          * destruct bdr; [eapply cbstep_fuel_cboundary_res; eauto | exact I].
+        + eapply R_mono; [exact HR | lia].
+    Qed.
+
+    Lemma proj_compat c Γ x l n y k :
+      (y \in Γ) ->
+      well_annotated c (x |: Γ) k ->
+      well_annotated c Γ (Eproj x l n y k).
+    Proof.
+      intros Hy Hk bdr Rs Hack Hbdr i ρ1 ρ2 HG.
+      destruct (acheck_proj_inv Hack) as [Haelim [Hfld [Htopx Hack_k]]].
+      unfold E, E' in *.
+      intros j1 r1 Hj1 Hstep.
+      destruct (bstep_fuel_inv Hstep) as [[-> ->] | [n1 [-> Hb]]].
+      - exists 0, COOT, (Empty_set _); split; [apply CbstepF_OOT | exact I].
+      - destruct (bstep_proj_inv Hb) as [w [t [vs1 [v1 [Hgety1 [Hnth1 Hstep1]]]]]].
+        destruct i as [| i]; [lia |].
+        destruct (G_get HG y _ Hy Hgety1) as [v2y [Hgety2 HVy]].
+        destruct (V_Vconstr_inv HVy) as [c' [vs2 [-> [Happf [Hescf [Hflf HVs]]]]]].
+        simpl in HVs.
+        pose proof (cescaped_env_get y _ (G_cescaped_env HG) Hy Hgety2) as Hesc_y.
+        pose proof (cbinding_env_get y _ (G_cbinding_env HG) Hy Hgety2) as Hb_y.
+        destruct (V_elim_constr Hesc_y Hb_y Haelim) as [Hint_y Hsem_y].
+        destruct (Forall2_nth_error Hnth1 HVs) as [v2 [Hnth2 HV]].
+        pose proof (Forall_nth_error Hnth2 Happf) as Happ_v.
+        pose proof (Forall_nth_error Hnth2 Hescf) as Hesc_v.
+        pose proof (Forall_nth_error Hnth2 Hflf) as Hfl_v.
+
+        (* the projected field is bound at `x` as the environment relation requires *)
+        assert (Hbind : approx_vals (ai_env (θ c) x) v2 /\ cescaped c v2 /\ cbinding c x v2).
+        { unfold cbinding in Hb_y; simpl in Hb_y.
+          destruct Hb_y as [Hown Hforeign].
+          destruct (Nat.eq_dec c' c) as [Heqc | Hneqc].
+          - (* internal: the fields flow from the field set of the site into `x` *)
+            subst c'.
+            assert (Hsub : ai_fld (θ c) w \subset ai_env (θ c) x).
+            { destruct (Hown eq_refl) as [Hin | [Hesc Htop]].
+              - exact (Hfld _ _ Hin).
+              - exact (proj2 (Htopx Htop) _ _ Hesc). }
+            split; [| split].
+            + unfold approx_vals in *.
+              destruct Happ_v as [av [Hav Hap]].
+              exists av; split; [apply Hsub; exact Hav | exact Hap].
+            + exact Hesc_v.
+            + apply cflows_cbinding.
+              eapply cflows_subset; [exact Hfl_v | exact Hsub].
+          - (* foreign: the constructor has escaped, and so have its fields *)
+            pose proof (Hforeign Hneqc) as Htop_y.
+            destruct (Htopx Htop_y) as [Htop_x _].
+            destruct (Hsem_y Hneqc) as [Hsite _].
+            destruct (θ_escape_ok c') as [_ [_ Hesc_constr]].
+            pose proof (Hesc_constr _ _ Hsite) as Hfld_esc.
+            split; [| split].
+            + unfold approx_vals.
+              exists AVtop; split; [exact Htop_x | constructor].
+            + exact (cescaped_handover Hesc_v Hfl_v Hfld_esc c).
+            + exact (cbinding_handover (not_eq_sym Hneqc) Hesc_v Htop_x). }
+        destruct Hbind as [Happ_x [Hesc_x Hbind_x]].
+
+        assert (HG' : G c i (x |: Γ) (M.set x v1 ρ1) (M.set x v2 ρ2)).
+        { eapply G_set;
+            [ eapply G_mono; [exact HG | lia]
+            | exact HV | exact Happ_x | exact Hesc_x | exact Hbind_x ]. }
+
+        destruct (Hk bdr Rs Hack_k Hbdr i _ _ HG' n1 r1 ltac:(lia) Hstep1)
+          as [j2 [r2 [I2 [Hrun HR]]]].
+        exists (S j2), r2, (((c', w), (c, l)) |: I2); split.
+        + apply CbstepF_Step.
+          * eapply Cbstep_proj;
+              [exact Hgety2 | exact Hnth2 | exact Hsem_y | exact Hesc_x | exact Hbind_x | exact Hrun].
+          * eapply cbstep_fuel_approx_res; eauto.
+          * apply approx_int_add; [exact Hint_y | eapply cbstep_fuel_approx_int; eauto].
+          * eapply cbstep_fuel_cresult; eauto.
+          * destruct bdr; [eapply cbstep_fuel_cboundary_res; eauto | exact I].
+        + eapply R_mono; [exact HR | lia].
+    Qed.
+
+    Lemma case_nil_compat c Γ x l :
+      well_annotated c Γ (Ecase x l []).
+    Proof.
+      intros bdr Rs Hack Hbdr i ρ1 ρ2 HG.
+      unfold E, E'.
+      intros j1 r1 Hj1 Hstep.
+      destruct (bstep_fuel_inv Hstep) as [[-> ->] | [n1 [-> Hb]]].
+      - exists 0, COOT, (Empty_set _); split; [apply CbstepF_OOT | exact I].
+      - destruct (bstep_case_inv Hb) as [w [t' [vs1 [e' [_ [Hft _]]]]]].
+        inv Hft.
+    Qed.
+
+    Lemma case_cons_compat c Γ x l t e cl :
+      (x \in Γ) ->
+      well_annotated c Γ e ->
+      well_annotated c Γ (Ecase x l cl) ->
+      well_annotated c Γ (Ecase x l ((t, e) :: cl)).
+    Proof.
+      intros Hx He Hcl bdr Rs Hack Hbdr i ρ1 ρ2 HG.
+      pose proof (acheck_case_aelim_constr_int Hack) as Haelim.
+      destruct (acheck_case_cons_inv Hack) as [Hack_e Hack_cl].
+      unfold E, E' in *.
+      intros j1 r1 Hj1 Hstep.
+      destruct (bstep_fuel_inv Hstep) as [[-> ->] | [n1 [-> Hb]]].
+      - exists 0, COOT, (Empty_set _); split; [apply CbstepF_OOT | exact I].
+      - destruct (bstep_case_inv Hb) as [w [t' [vs1 [e' [Hgetx1 [Hft Hstep1]]]]]].
+        destruct (G_get HG x _ Hx Hgetx1) as [v2x [Hgetx2 HVx]].
+        destruct (V_Vconstr_inv HVx) as [c' [vs2 [-> _]]].
+        destruct (find_tag_cons_inv Hft) as [[-> ->] | [Hft' Hneq]].
+        + (* the first branch is taken *)
+          pose proof (cescaped_env_get x _ (G_cescaped_env HG) Hx Hgetx2) as Hesc_x.
+          pose proof (cbinding_env_get x _ (G_cbinding_env HG) Hx Hgetx2) as Hb_x.
+          destruct (V_elim_constr Hesc_x Hb_x Haelim) as [Hint_x Hsem_x].
+          destruct (He bdr Rs Hack_e Hbdr i ρ1 ρ2 HG n1 r1 ltac:(lia) Hstep1)
+            as [j2 [r2 [I2 [Hrun HR]]]].
+          exists (S j2), r2, (((c', w), (c, l)) |: I2); split.
+          * apply CbstepF_Step.
+            -- eapply Cbstep_case; [exact Hgetx2 | apply find_tag_hd | exact Hsem_x | exact Hrun].
+            -- eapply cbstep_fuel_approx_res; eauto.
+            -- apply approx_int_add; [exact Hint_x | eapply cbstep_fuel_approx_int; eauto].
+            -- eapply cbstep_fuel_cresult; eauto.
+            -- destruct bdr; [eapply cbstep_fuel_cboundary_res; eauto | exact I].
+          * eapply R_mono; [exact HR | lia].
+        + (* a later branch is taken: run as the remaining branches do *)
+          assert (Hstep' : bstep_fuel ρ1 (Ecase x l cl) (S n1) r1)
+            by (apply BStepF_Step; eapply BStep_case; eauto).
+          destruct (Hcl bdr Rs Hack_cl Hbdr i ρ1 ρ2 HG (S n1) r1 Hj1 Hstep')
+            as [j2 [r2 [I2 [Hrun HR]]]].
+          exists j2, r2, I2; split; [| exact HR].
+          eapply cbstep_fuel_case_cons; [| exact Hrun].
+          intros c'' l'' t'' vs'' Hget2.
+          unfold clval in *; rewrite Hgetx2 in Hget2; unfold CTag in Hget2; inv Hget2.
+          exact Hneq.
+    Qed.
+
+    Lemma fundamental_property {c Γ e}:
+      well_scoped Γ e ->
+      well_annotated c Γ e.
+    Proof using θ_escape_ok.
+      intros H.
+      induction H.
+      - eapply ret_compat; eauto.
+      - eapply fun_compat; eauto.
+        eapply well_scoped_inv; eauto.
+      - eapply app_compat; eauto.
+      - (* letapp *)
+        admit.
+      - eapply constr_compat; eauto.
+      - eapply proj_compat; eauto.
+      - eapply case_nil_compat; eauto.
+      - eapply case_cons_compat; eauto.
+    Admitted.
+
+  End Compat.
+
+End Checking.
+
+Hint Constructors approx_val : core.
+Hint Constructors approx_val' : core.
+Hint Constructors approx_env : core.
+Hint Constructors approx_res : core.
+Hint Constructors cbstep : core.
+Hint Constructors cbstep_fuel : core.
+
+(* Top Level *)
+(* The top-level consists of two phases: coloring and running. *)
+
+(* Top-level Compilation Unit & Linking *)
+(* This is what an analysis should annotate the compilation unit with *)
+Inductive cexp : Type :=
+| CEunit : analysis_result -> avals -> exp -> cexp
+| CElink : var -> cexp -> cexp -> cexp.
+
+Hint Constructors cexp : core.
+
+(* Linking *)
+Definition clink x e1 e2 : cexp := CElink x e1 e2.
+
+(* `A` is the analysis result of one of the units of `ce`. *)
+Inductive has_cunit : cexp -> analysis_result -> Prop :=
+| Has_cunit_unit :
+  forall A Rs e,
+    has_cunit (CEunit A Rs e) A
+
+| Has_cunit_link1 :
+  forall x ce1 ce2 A,
+    has_cunit ce1 A ->
+    has_cunit (CElink x ce1 ce2) A
+
+| Has_cunit_link2 :
+  forall x ce1 ce2 A,
+    has_cunit ce2 A ->
+    has_cunit (CElink x ce1 ce2) A.
+
+Hint Constructors has_cunit : core.
+
+Inductive occurs_free_top : cexp -> vars :=
+| Free_cexp :
+  forall e A Rs x,
+    occurs_free e x ->
+    occurs_free_top (CEunit A Rs e) x
+
+| Free_clink1 :
+  forall v x e1 e2,
+    occurs_free_top e1 x ->
+    occurs_free_top (CElink v e1 e2) x
+
+| Free_clink2 :
+  forall v x e1 e2,
+    v <> x ->
+    occurs_free_top e2 x ->
+    occurs_free_top (CElink v e1 e2) x.
+
+Hint Constructors occurs_free_top : core.
+
+Lemma occurs_free_top_cexp A Rs e :
+  (occurs_free_top (CEunit A Rs e)) <--> (occurs_free e).
+Proof. split; unfold Ensembles.Included, Ensembles.In; fcrush. Qed.
+
+(* Phase 1: Coloring *)
+(* Colored Linking Tree *)
+(* The result of the preprocessing step.  A `cexp` is colorless: a unit only
+   declares the internal labels it claims.  Colors are artificial names handed
+   out once, at link time, so that the *dynamic* semantics can tell two units
+   apart; nothing in a unit's own source mentions them. *)
+Inductive ccexp : Type :=
+| CCunit : color -> analysis_result -> avals -> exp -> ccexp
+| CClink : var -> ccexp -> ccexp -> ccexp.
+
+Hint Constructors ccexp : core.
+
+(* `coloring c1 ce c2 cce` hands the colors `c1, c1+1, ..., c2-1` to the units
+   of `ce`, left to right.  The counter is the whole point: it makes the
+   assignment *injective*, which is exactly what `interaction_sound` leans on
+   when it concludes, from two labels sharing a color, that they are governed
+   by one and the same internal set. *)
+Inductive coloring : color -> cexp -> color -> ccexp -> Prop :=
+| Coloring_unit :
+  forall c A Rs e,
+    coloring c (CEunit A Rs e) (S c) (CCunit c A Rs e)
+
+| Coloring_link :
+  forall c1 c2 c3 x e1 e2 cce1 cce2,
+    coloring c1 e1 c2 cce1 ->
+    coloring c2 e2 c3 cce2 ->
+    coloring c1 (CElink x e1 e2) c3 (CClink x cce1 cce2).
+
+Hint Constructors coloring : core.
+
+(* `(c, A)` is one of the units of `cce`. *)
+Inductive has_unit : ccexp -> color -> analysis_result -> Prop :=
+| Has_unit_unit :
+  forall A Rs c e,
+    has_unit (CCunit c A Rs e) c A
+
+| Has_unit_link1 :
+  forall x cce1 cce2 c A,
+    has_unit cce1 c A ->
+    has_unit (CClink x cce1 cce2) c A
+
+| Has_unit_link2 :
+  forall x cce1 cce2 c A,
+    has_unit cce2 c A ->
+    has_unit (CClink x cce1 cce2) c A.
+
+Hint Constructors has_unit : core.
+
+Lemma coloring_mono {c1 ce c2 cce} :
+  coloring c1 ce c2 cce ->
+  c1 <= c2.
+Proof. intros Hcol; induction Hcol; lia. Qed.
+
+Lemma coloring_range {c1 ce c2 cce} :
+  coloring c1 ce c2 cce ->
+  forall c A, has_unit cce c A -> c1 <= c < c2.
+Proof.
+  intros Hcol.
+  induction Hcol as [c A e | c1 c2 c3 x e1 e2 cce1 cce2 Hc1 IH1 Hc2 IH2];
+    intros c0 A0 Hunit.
+  - inv Hunit; lia.
+  - inv Hunit.
+    + match goal with
+      | [Hu : has_unit cce1 c0 A0 |- _] => destruct (IH1 c0 A0 Hu) as [Hlo Hhi]
+      end.
+      pose proof (coloring_mono Hc2) as Hm; lia.
+    + match goal with
+      | [Hu : has_unit cce2 c0 A0 |- _] => destruct (IH2 c0 A0 Hu) as [Hlo Hhi]
+      end.
+      pose proof (coloring_mono Hc1) as Hm; lia.
+Qed.
+
+(* Distinct units get distinct colors, so a color names at most one unit. *)
+Lemma coloring_unique {c1 ce c2 cce} :
+  coloring c1 ce c2 cce ->
+  forall c A A',
+    has_unit cce c A ->
+    has_unit cce c A' ->
+    A = A'.
+Proof.
+  intros Hcol.
+  induction Hcol as [c A e | c1 c2 c3 x e1 e2 cce1 cce2 Hc1 IH1 Hc2 IH2];
+    intros c0 A0 A0' Hu Hu'.
+  - inv Hu; inv Hu'; reflexivity.
+  - inv Hu; inv Hu'.
+    + match goal with
+      | [Ha : has_unit cce1 c0 A0, Hb : has_unit cce1 c0 A0' |- _] =>
+          exact (IH1 c0 A0 A0' Ha Hb)
+      end.
+    + exfalso.
+      match goal with
+      | [Ha : has_unit cce1 c0 A0, Hb : has_unit cce2 c0 A0' |- _] =>
+          destruct (coloring_range Hc1 c0 A0 Ha) as [Hlo Hhi];
+          destruct (coloring_range Hc2 c0 A0' Hb) as [Hlo' Hhi']
+      end; lia.
+    + exfalso.
+      match goal with
+      | [Ha : has_unit cce2 c0 A0, Hb : has_unit cce1 c0 A0' |- _] =>
+          destruct (coloring_range Hc2 c0 A0 Ha) as [Hlo Hhi];
+          destruct (coloring_range Hc1 c0 A0' Hb) as [Hlo' Hhi']
+      end; lia.
+    + match goal with
+      | [Ha : has_unit cce2 c0 A0, Hb : has_unit cce2 c0 A0' |- _] =>
+          exact (IH2 c0 A0 A0' Ha Hb)
+      end.
+Qed.
+
+(* `Θ` agrees with the coloring of `cce`. *)
+Definition analysis_context_of (Θ : analysis_context) (cce : ccexp) : Prop :=
+  forall c A, has_unit cce c A -> A = Θ c.
+
+(* Every colorless unit tree can be colored, starting from any color. *)
+Lemma coloring_exists c1 ce :
+  exists c2 cce, coloring c1 ce c2 cce.
+Proof.
+  revert c1.
+  induction ce as [A Rs e | x ce1 IH1 ce2 IH2]; intros c1.
+  - exists (S c1), (CCunit c1 A Rs e); constructor.
+  - destruct (IH1 c1) as [c2 [cce1 Hc1]].
+    destruct (IH2 c2) as [c3 [cce2 Hc2]].
+    exists c3, (CClink x cce1 cce2); econstructor; eassumption.
+Qed.
+
+Lemma cexp_has_cunit ce :
+  exists A, has_cunit ce A.
+Proof.
+  induction ce as [A Rs e | x ce1 IH1 ce2 IH2].
+  - exists A; constructor.
+  - destruct IH1 as [A HA]; exists A; apply Has_cunit_link1; exact HA.
+Qed.
+
+(* A context agreeing with the coloring, falling back to `d` on colors that
+   name no unit. *)
+Lemma coloring_context {c1 ce c2 cce} :
+  coloring c1 ce c2 cce ->
+  forall d,
+    escapes_ok d ->
+    (forall A, has_cunit ce A -> escapes_ok A) ->
+    exists θ,
+      analysis_context_of θ cce /\
+      analysis_context_escape_ok θ.
+Proof.
+  intros Hcol.
+  induction Hcol as [c A Rs e | c1 c2 c3 x e1 e2 cce1 cce2 Hc1 IH1 Hc2 IH2];
+    intros d Hd Hesc.
+  - exists (fun c' => if Nat.eqb c' c then A else d); split.
+    + intros c' A' Hu; inv Hu.
+      cbn beta; rewrite Nat.eqb_refl; reflexivity.
+    + intros c'; cbn beta.
+      destruct (Nat.eqb c' c); [apply Hesc; constructor | exact Hd].
+  - destruct (IH1 d Hd (fun A HA => Hesc A (Has_cunit_link1 x e1 e2 A HA)))
+      as [θ1 [Hof1 Hok1]].
+    destruct (IH2 d Hd (fun A HA => Hesc A (Has_cunit_link2 x e1 e2 A HA)))
+      as [θ2 [Hof2 Hok2]].
+    exists (fun c' => if Nat.ltb c' c2 then θ1 c' else θ2 c'); split.
+    + intros c' A' Hu; inv Hu; cbn beta.
+      * match goal with
+        | [Hu1 : has_unit cce1 c' A' |- _] =>
+            destruct (coloring_range Hc1 c' A' Hu1) as [_ Hhi];
+            destruct (Nat.ltb c' c2) eqn:Hb;
+            [exact (Hof1 c' A' Hu1)
+            | exfalso; pose proof (proj1 (Nat.ltb_ge c' c2) Hb); lia]
+        end.
+      * match goal with
+        | [Hu2 : has_unit cce2 c' A' |- _] =>
+            destruct (coloring_range Hc2 c' A' Hu2) as [Hlo _];
+            destruct (Nat.ltb c' c2) eqn:Hb;
+            [exfalso; pose proof (proj1 (Nat.ltb_lt c' c2) Hb); lia
+            | exact (Hof2 c' A' Hu2)]
+        end.
+    + intros c'; cbn beta.
+      destruct (Nat.ltb c' c2); [apply Hok1 | apply Hok2].
+Qed.
+
+Lemma coloring_closed ce :
+  occurs_free_top ce \subset (Empty_set _) ->
+  (forall A, has_cunit ce A -> escapes_ok A) ->
+  exists cce c1 c2 θ,
+    coloring c1 ce c2 cce /\
+    analysis_context_of θ cce /\
+    analysis_context_escape_ok θ.
+Proof.
+  intros Hclose Hesc.
+  destruct (coloring_exists 0 ce) as [c2 [cce Hcol]].
+  destruct (cexp_has_cunit ce) as [d Hd].
+  destruct (coloring_context Hcol d (Hesc d Hd) Hesc) as [θ [Hof Hok]].
+  exists cce, 0, c2, θ; auto.
+Qed.
+
+
+(* `analysis_context_of` reads off a single unit, and restricts to subtrees. *)
+Lemma analysis_context_of_unit {Θ Rs A c e} :
+  analysis_context_of Θ (CCunit c A Rs e) ->
+  A = Θ c.
+Proof. intros HΘ; exact (HΘ c A (Has_unit_unit A Rs c e)). Qed.
+
+Lemma analysis_context_of_link1 {Θ x cce1 cce2} :
+  analysis_context_of Θ (CClink x cce1 cce2) ->
+  analysis_context_of Θ cce1.
+Proof.
+  intros HΘ c A Hunit.
+  exact (HΘ c A (Has_unit_link1 x cce1 cce2 c A Hunit)).
+Qed.
+
+Lemma analysis_context_of_link2 {Θ x cce1 cce2} :
+  analysis_context_of Θ (CClink x cce1 cce2) ->
+  analysis_context_of Θ cce2.
+Proof.
+  intros HΘ c A Hunit.
+  exact (HΘ c A (Has_unit_link2 x cce1 cce2 c A Hunit)).
+Qed.
+
+(* `A` imports every free variable of the unit as an unknown value. *)
+Definition imports_unknown (A : analysis_result) (Γ : vars) : Prop :=
+  forall x,
+    (x \in Γ) ->
+    AVtop \in ai_env A x.
+
+(* Phase 2: Running *)
+(* The top-level checking semantics is parameterised by the same analysis
+   context `θ` as the per-unit checking semantics. *)
+Section TopLevel.
+
+  Variable θ : analysis_context.
+
+  (* A value crossing the boundary has escaped, whoever holds it. *)
+  Lemma cboundary_cescaped {c v} :
+    cboundary θ v ->
+    cescaped θ c v.
+  Proof.
+    intros Htop.
+    destruct v as [[c' l'] w].
+    destruct w as [f ρ xs e | t vs]; unfold cboundary in Htop;
+      unfold cescaped; intros _; exact Htop.
+  Qed.
+
+  Lemma cboundary_cescaped_list {c vs} :
+    Forall (cboundary θ) vs ->
+    Forall (cescaped θ c) vs.
+  Proof. intros H; induction H; constructor; eauto using cboundary_cescaped. Qed.
+
+  (* A value crossing the boundary is bound as `cbinding` requires at a
+     variable holding `AVtop`: foreign values are stood for by `AVtop`, and the
+     unit's own values coming back have escaped. *)
+  Lemma cboundary_cbinding {c x v} :
+    cboundary θ v ->
+    (AVtop \in ai_env (θ c) x) ->
+    cbinding θ c x v.
+  Proof.
+    intros Htop Hx.
+    destruct v as [[c' l'] w].
+    destruct w as [f ρ xs e | t vs];
+      unfold cboundary in Htop; unfold cbinding;
+      (split; [intros Heq; subst c'; right; split; assumption | intros _; exact Hx]).
+  Qed.
+
+  Lemma cboundary_cbinding_list {c xs vs ρ ρ'} :
+    Forall (cboundary θ) vs ->
+    (forall x, List.In x xs -> AVtop \in ai_env (θ c) x) ->
+    set_lists xs vs ρ = Some ρ' ->
+    Forall2 (cbinding θ c) xs vs.
+  Proof.
+    intros Htop Hx Hset.
+    revert vs ρ' Htop Hx Hset.
+    induction xs as [| x xs IH]; intros vs ρ' Htop Hx Hset; simpl in Hset.
+    - destruct vs as [| v vs]; [constructor | discriminate Hset].
+    - destruct vs as [| v vs]; [discriminate Hset |].
+      destruct (set_lists xs vs ρ) as [ρ'' |] eqn:Heq; [| discriminate Hset].
+      inv Htop.
+      constructor.
+      + apply cboundary_cbinding; [assumption | apply Hx; left; reflexivity].
+      + eapply IH; [eassumption | | exact Heq].
+        intros y Hy; apply Hx; right; exact Hy.
+  Qed.
+
+  (* Top-level Checking Semantics for the *Colored* Top-level Expression *)
+  (* The colors are already in the tree: the top-level semantics runs each unit
+     at the color preprocessing gave it, checks it against `θ` at that color,
+     and unions the interactions the units record. *)
+  Inductive cbstep_top (ρ : cenv) : ccexp -> fuel -> cres -> interactions -> Prop :=
+  | CbstepT_link_Res :
+    forall {x cce1 cce2 i1 i2 v r I1 I2},
+      cbstep_top_fuel ρ cce1 i1 (CRes v) I1 ->
+      cbstep_top_fuel (M.set x v ρ) cce2 i2 r I2 ->
+      cbstep_top ρ (CClink x cce1 cce2) (S (i1 + i2)) r (I1 :|: I2)
+
+  | CbstepT_link_OOT :
+    forall {x cce1 cce2 i I1},
+      cbstep_top_fuel ρ cce1 i COOT I1 ->
+      cbstep_top ρ (CClink x cce1 cce2) (S i) COOT I1
+
+  with cbstep_top_fuel (ρ : cenv) : ccexp -> fuel -> cres -> interactions -> Prop :=
+  | CbstepTF_unit :
+    forall {A c e i Rs r I},
+      (* the unit is annotated with the analysis result `θ` assigns to it *)
+      θ c = A ->
+      cbstep_fuel θ c true ρ e i Rs r I ->
+      cbstep_top_fuel ρ (CCunit c A Rs e) i r I
+
+  | CbstepTF_link_OOT :
+    forall {x cce1 cce2},
+      cbstep_top_fuel ρ (CClink x cce1 cce2) 0 COOT (Empty_set _)
+
+  | CbstepTF_link_Step :
+    forall {x cce1 cce2 i r I},
+      cbstep_top ρ (CClink x cce1 cce2) i r I ->
+      cbstep_top_fuel ρ (CClink x cce1 cce2) (S i) r I.
+
+  Hint Constructors cbstep_top : core.
+  Hint Constructors cbstep_top_fuel : core.
+
+  Scheme cbstep_top_ind' := Minimality for cbstep_top Sort Prop
+  with cbstep_top_fuel_ind' := Minimality for cbstep_top_fuel Sort Prop.
+
+  (* The step-index is aligned between the two semantics. *)
+  Lemma cbstep_fuel_cbstep_top_fuel A I c ρ e j Rs r:
+    θ c = A ->
+    cbstep_fuel θ c true ρ e j Rs r I ->
+    cbstep_top_fuel ρ (CCunit c A Rs e) j r I.
+  Proof. intros; eauto. Qed.
+
+  Lemma cbstep_top_fuel_cbstep_fuel A Rs c ρ e j r I:
+    cbstep_top_fuel ρ (CCunit c A Rs e) j r I ->
+    cbstep_fuel θ c true ρ e j Rs r I.
+  Proof. intros H; inv H; assumption. Qed.
+
+  (* The top-level semantics returns at most one value. *)
+  Lemma cbstep_top_fuel_deterministic_aux :
+    forall ρ cce i r I,
+      cbstep_top_fuel ρ cce i r I ->
+      forall i' r' I' v v',
+        cbstep_top_fuel ρ cce i' r' I' ->
+        r = CRes v ->
+        r' = CRes v' ->
+        (v = v' /\ i = i' /\ I <--> I').
+  Proof.
+    intros ρ cce i r I Hstep.
+    induction Hstep as
+      [ ρ x cce1 cce2 i1 i2 v r I1 I2 Hs1 IH1 Hs2 IH2
+      | ρ x cce1 cce2 i I1 Hs1 IH1
+      | ρ A c e i Rs r I HA Hs
+      | ρ x cce1 cce2
+      | ρ x cce1 cce2 i r I Htop IHtop ]
+      using cbstep_top_fuel_ind'
+      with (P := fun ρ cce i r I =>
+                   forall i' r' I' v v',
+                     cbstep_top ρ cce i' r' I' ->
+                     r = CRes v -> r' = CRes v' ->
+                     (v = v' /\ i = i' /\ I <--> I'))
+           (P0 := fun ρ cce i r I =>
+                    forall i' r' I' v v',
+                      cbstep_top_fuel ρ cce i' r' I' ->
+                      r = CRes v -> r' = CRes v' ->
+                      (v = v' /\ i = i' /\ I <--> I'));
+      intros i' r' I' v1 v1' Hs' Hr Hr'; subst.
+
+    - (* CbstepT_link_Res: both runs bind the same value, then run the second
+         component in the same environment *)
+      inversion Hs' as [ x' a b j1 j2 v' r'' J1 J2 Hs1' Hs2'
+                       | x' a b j J Hf ]; subst.
+      destruct (IH1 _ _ _ _ _ Hs1' eq_refl eq_refl) as [Heq1 [Hi1 HI1]].
+      subst v'.
+      destruct (IH2 _ _ _ _ _ Hs2' eq_refl eq_refl) as [Hv [Hi2 HI2]].
+      split; [exact Hv | split].
+      + subst; reflexivity.
+      + apply Same_set_Union_compat; assumption.
+
+    - (* CbstepT_link_OOT: no value is returned *)
+      discriminate.
+
+    - (* CbstepTF_unit *)
+      inversion Hs' as [ A' c' e' j' Rs' r'' I'' HA' Hx | x' a b | x' a b j' r'' I'' Hnew ];
+        subst.
+      exact (cbstep_fuel_deterministic θ v1 v1' Hs Hx).
+
+    - (* CbstepTF_link_OOT: no value is returned *)
+      discriminate.
+
+    - (* CbstepTF_link_Step *)
+      inversion Hs' as [ A' c' e' j' Rs' r'' I'' HA' Hx | x' a b | x' a b j' r'' I'' Hnew ];
+        subst.
+      destruct (IHtop _ _ _ _ _ Hnew eq_refl eq_refl) as [Hv [Hi HI]].
+      split; [exact Hv | split; [f_equal; exact Hi | exact HI]].
+  Qed.
+
+  Theorem cbstep_top_fuel_deterministic v v' {ρ cce i i' I I'} :
+    cbstep_top_fuel ρ cce i (CRes v) I ->
+    cbstep_top_fuel ρ cce i' (CRes v') I' ->
+    (v = v' /\ i = i' /\ I <--> I').
+  Proof.
+    intros H H'.
+    exact (cbstep_top_fuel_deterministic_aux ρ cce i (CRes v) I H i' (CRes v') I' v v' H' eq_refl eq_refl).
+  Qed.
+
+  (* Every result of the top-level semantics crosses the program boundary. *)
+  Lemma cbstep_top_cboundary_res :
+    forall ρ cce i r I,
+      cbstep_top ρ cce i r I ->
+      cboundary_res θ r.
+  Proof.
+    intros ρ cce i r I Hstep.
+    induction Hstep using cbstep_top_ind'
+      with (P := fun ρ cce i r I => cboundary_res θ r)
+           (P0 := fun ρ cce i r I => cboundary_res θ r);
+      simpl; auto.
+    eapply cbstep_fuel_cboundary_res; eauto.
+  Qed.
+
+  Lemma cbstep_top_fuel_cboundary_res ρ cce i r I :
+    cbstep_top_fuel ρ cce i r I ->
+    cboundary_res θ r.
+  Proof.
+    intros Hstep.
+    inv Hstep; simpl; eauto using cbstep_top_cboundary_res, cbstep_fuel_cboundary_res.
+  Qed.
+
+  (* Top-level Closure Property *)
+  (* Each unit of the linked program respects *every* unit's internal set: the
+     per-unit theorem applies at each `CCunit`, and linking only unions what the
+     two sides recorded.  Since `θ` is a parameter of the semantics, this holds
+     for every run, without any side condition relating the program, or the
+     values it is linked with, to `θ`. *)
+  Lemma cbstep_top_approx_int :
+    forall ρ cce i r I,
+      cbstep_top ρ cce i r I ->
+      forall c0, approx_int c0 (ai_int (θ c0)) I.
+  Proof.
+    intros ρ cce i r I Hstep.
+    induction Hstep as
+      [ ρ x cce1 cce2 i1 i2 v r I1 I2 Hfuel1 IH1 Hfuel2 IH2
+      | ρ x cce1 cce2 i I1 Hfuel1 IH1
+      | ρ A c e i Rs r I HA Hfuel
+      | ρ x cce1 cce2
+      | ρ x cce1 cce2 i r I Htop IHtop ]
+      using cbstep_top_ind'
+      with (P := fun ρ cce i r I => forall c0, approx_int c0 (ai_int (θ c0)) I)
+           (P0 := fun ρ cce i r I => forall c0, approx_int c0 (ai_int (θ c0)) I);
+      intros c0.
+    - (* CbstepT_link_Res *)
+      apply approx_int_union; [exact (IH1 c0) | exact (IH2 c0)].
+    - (* CbstepT_link_OOT: only the first unit ran *)
+      exact (IH1 c0).
+    - (* CbstepTF_unit: hand off to the per-unit theorem *)
+      eapply cbstep_fuel_approx_int_handover; eauto.
+    - (* CbstepTF_link_OOT: nothing is recorded *)
+      apply approx_int_empty.
+    - (* CbstepTF_link_Step *)
+      exact (IHtop c0).
+  Qed.
+
+  Lemma cbstep_top_fuel_approx_int ρ cce i r I :
+    cbstep_top_fuel ρ cce i r I ->
+    forall c0, approx_int c0 (ai_int (θ c0)) I.
+  Proof.
+    intros Hstep c0.
+    inv Hstep.
+    - eapply cbstep_fuel_approx_int_handover; eauto.
+    - apply approx_int_empty.
+    - eapply cbstep_top_approx_int; eauto.
+  Qed.
+
+  Lemma cbstep_top_respect :
+    forall ρ cce i r I,
+      cbstep_top ρ cce i r I ->
+      forall c0, interactions_respect (ainternals_of (ai_int (θ c0))) c0 I.
+  Proof. intros; eauto using approx_int_respect, cbstep_top_approx_int. Qed.
+
+  Lemma cbstep_top_fuel_respect ρ cce i r I :
+    cbstep_top_fuel ρ cce i r I ->
+    forall c0, interactions_respect (ainternals_of (ai_int (θ c0))) c0 I.
+  Proof. intros; eauto using approx_int_respect, cbstep_top_fuel_approx_int. Qed.
+
+  (* Cross-language Logical Relations *)
+
+  Definition E_top' (P : nat -> wval -> clval -> Prop) (i : nat) (ρ1 : env) (e1 : exp) (ρ2 : cenv) (e2 : ccexp) : Prop :=
+    forall j1 r1,
+      j1 <= i ->
+      bstep_fuel ρ1 e1 j1 r1 ->
+      exists j2 r2 I2,
+        cbstep_top_fuel ρ2 e2 j2 r2 I2 /\
+        R' P (i - j1) r1 r2.
+
+  (* Related values that cross the program boundary. *)
+  Definition V_top i v1 v2 := V θ i v1 v2 /\ cboundary θ v2.
+
+  Definition R_top := R' V_top.
+  Definition E_top := E_top' V_top.
+
+  Lemma V_V_top i v1 v2 :
+    cboundary θ v2 ->
+    (V θ i v1 v2 <-> V_top i v1 v2).
+  Proof. unfold V_top; tauto. Qed.
+
+  Lemma R_R_top :
+    forall i r1 r2,
+      cboundary_res θ r2 ->
+      (R θ i r1 r2 <-> R_top i r1 r2).
+  Proof.
+    unfold R, R_top, R', cboundary_res.
+    intros.
+    split; destruct r1; destruct r2; try contradiction;
+      intros; eauto;
+      eapply V_V_top; eauto.
+  Qed.
+
+  Lemma E_E_top c A Rs i ρ1 ρ2 e :
+    θ c = A ->
+    E θ c true i ρ1 ρ2 e Rs ->
+    E_top i ρ1 e ρ2 (CCunit c A Rs e).
+  Proof.
+    unfold E, E_top, E', E_top'.
+    intros HA HE j1 r1 Hj1 Hstep.
+    edestruct HE as [j2 [r2 [I2 [Hcbstep HR]]]]; eauto.
+    exists j2, r2, I2; split; eauto.
+    eapply R_R_top; eauto.
+    eapply cbstep_fuel_cboundary_res; eauto.
+  Qed.
+
+  Lemma E_top_E c A Rs i ρ1 ρ2 e :
+    E_top i ρ1 e ρ2 (CCunit c A Rs e) ->
+    E θ c true i ρ1 ρ2 e Rs.
+  Proof.
+    unfold E, E_top, E', E_top'.
+    intros.
+    edestruct H as [j2 [r2 [I2 [Hcbstep HR]]]]; eauto.
+    exists j2, r2, I2; split; eauto.
+    eapply cbstep_top_fuel_cbstep_fuel; eauto.
+    eapply R_R_top; eauto.
+    eapply cbstep_top_fuel_cboundary_res; eauto.
+  Qed.
+
+  Definition G_top i Γ1 ρ1 ρ2 :=
+    wf_env Γ1 ρ1 /\
+      forall x,
+        (x \in Γ1) ->
+        exists v1 v2,
+          M.get x ρ1 = Some v1 /\
+            M.get x ρ2 = Some v2 /\
+            V_top i v1 v2.
+
+  Lemma G_top_G {i Γ1 ρ1 ρ2} :
+    G_top i Γ1 ρ1 ρ2 ->
+    forall c,
+      imports_unknown (θ c) Γ1 ->
+      G θ c i Γ1 ρ1 ρ2.
+  Proof.
+    unfold G_top, G, imports_unknown.
+    intros [Hwf1 HG] c Htop.
+    split; [exact Hwf1 | split; [| split; [| split]]].
+    - constructor; intros x v Hx Hget.
+      exists AVtop; split; [apply Htop; exact Hx | constructor].
+    - intros x v Hx Hget.
+      destruct (HG x Hx) as [v1 [v2 [Hg1 [Hg2 [_ HB]]]]].
+      rewrite Hg2 in Hget; inv Hget.
+      apply cboundary_cescaped; exact HB.
+    - intros x v Hx Hget.
+      destruct (HG x Hx) as [v1 [v2 [Hg1 [Hg2 [HV HB]]]]].
+      rewrite Hg2 in Hget; inv Hget.
+      apply cboundary_cbinding; [exact HB | apply Htop; exact Hx].
+    - intros x Hx.
+      destruct (HG x Hx) as [v1 [v2 [Hg1 [Hg2 [HV HB]]]]].
+      exists v1, v2; auto.
+  Qed.
+
+  Lemma G_top_wf_env_l i Γ1 ρ1 ρ2 :
+    G_top i Γ1 ρ1 ρ2 ->
+    wf_env Γ1 ρ1.
+  Proof. unfold G_top. intros; tauto. Qed.
+
+  Lemma G_top_subset i Γ1 ρ1 Γ2 ρ2 :
+    G_top i Γ1 ρ1 ρ2 ->
+    Γ2 \subset Γ1 ->
+    G_top i Γ2 ρ1 ρ2.
+  Proof.
+    unfold G_top.
+    intros [Hwf1 HG] Hsub.
+    split; [eapply wf_env_subset; eauto |].
+    intros x Hx; apply HG; apply Hsub; exact Hx.
+  Qed.
+
+  (* Top-level Monotonicity Lemmas *)
+  Lemma V_top_mono i :
+    forall {j v1 v2},
+      V_top i v1 v2 ->
+      j <= i ->
+      V_top j v1 v2.
+  Proof.
+    unfold V_top.
+    intros j v1 v2 [HV HB] Hj.
+    split; [eapply V_mono; eauto | exact HB].
+  Qed.
+
+  Lemma V_top_mono_Forall {vs1 vs2} i j :
+    Forall2 (V_top i) vs1 vs2 ->
+    j <= i ->
+    Forall2 (V_top j) vs1 vs2.
+  Proof.
+    intros H.
+    revert j.
+    induction H; simpl; intros; auto.
+    constructor; eauto.
+    eapply V_top_mono; eauto.
+  Qed.
+
+  Lemma R_top_mono {r1 r2} i j :
+    R_top i r1 r2 ->
+    j <= i ->
+    R_top j r1 r2.
+  Proof.
+    unfold R_top, R'.
+    intros.
+    destruct r1; auto.
+    destruct r2; auto.
+    eapply V_top_mono; eauto.
+  Qed.
+
+  Lemma E_top_mono {ρ1 ρ2 e1 e2} i j:
+    E_top i ρ1 e1 ρ2 e2 ->
+    j <= i ->
+    E_top j ρ1 e1 ρ2 e2.
+  Proof.
+    unfold E_top, E_top'.
+    intros.
+    destruct (H j1 r1) as [j2 [r2 [I2 [Hr2 HR]]]]; auto; try lia.
+    exists j2, r2, I2; split; eauto.
+    apply R_top_mono with (i - j1); try lia; auto.
+  Qed.
+
+  Lemma G_top_mono {Γ1 ρ1 ρ2} i j:
+    G_top i Γ1 ρ1 ρ2 ->
+    j <= i ->
+    G_top j Γ1 ρ1 ρ2.
+  Proof.
+    unfold G_top.
+    intros [Hwf1 HG] Hj.
+    split; [exact Hwf1 |].
+    intros x Hx.
+    destruct (HG x Hx) as [v1 [v2 [Hg1 [Hg2 HV]]]].
+    exists v1, v2.
+    split; [exact Hg1 | split; [exact Hg2 | eapply V_top_mono; eauto]].
+  Qed.
+
+End TopLevel.
+
+Hint Constructors cbstep_top : core.
+Hint Constructors cbstep_top_fuel : core.
+
+Section Top.
+  (* Top Level Relation and Theorem *)
+
+  (* Compositional correctness: the relation quantifies over every analysis
+     context `θ` that agrees with a coloring of the linked program, and the
+     target runs the checking semantics parameterised by that `θ`. *)
+  Definition trans_correct_top e ce :=
+    (occurs_free_top ce) \subset (occurs_free e) /\
+      (forall A, has_cunit ce A -> escapes_ok A) /\
+      forall θ cce c1 c2,
+        coloring c1 ce c2 cce ->
+        analysis_context_of θ cce ->
+        analysis_context_escape_ok θ ->
+        forall i ρ1 ρ2,
+          G_top θ i (occurs_free e) ρ1 ρ2 ->
+          E_top θ i ρ1 e ρ2 cce.
+
+  Lemma trans_correct_top_subset e ce :
+    trans_correct_top e ce ->
+    (occurs_free_top ce) \subset (occurs_free e).
+  Proof. unfold trans_correct_top. fcrush. Qed.
+
+  Theorem top A e Rs :
+    acheck A e Rs ->
+    escapes_ok A ->
+    Rs \subset (ai_esc A) ->
+    imports_unknown A (occurs_free e) ->
+    trans_correct_top e (CEunit A Rs e).
+  Proof.
+    intros Hack Hesc Hsub Himp.
+    split; [| split].
+    - destruct (occurs_free_top_cexp A Rs e) as [Hfree _]; exact Hfree.
+    - (* the only unit is `A` *)
+      intros A' Hu; inv Hu; exact Hesc.
+    - intros θ cce c1 c2 Hcol Hθ Hescθ i ρ1 ρ2 HG.
+      inv Hcol.
+      (* `θ` assigns `A` to the color of the only unit *)
+      pose proof (analysis_context_of_unit Hθ) as HA.
+      subst A.
+      assert (Hws : well_scoped (occurs_free e) e)
+        by (apply well_scoped_intro; intros y Hy; exact Hy).
+      pose proof (fundamental_property θ Hescθ (c := c1) Hws) as Hwa.
+      apply E_E_top; [reflexivity |].
+      exact (Hwa true Rs Hack Hsub i ρ1 ρ2 (G_top_G θ HG c1 Himp)).
+  Qed.
+
+End Top.
+
+Section Adequacy.
+
+  (* Note that adequacy applies for the colored semantics and objects. *)
+
+  Theorem adequacy e ce:
+    trans_correct_top e ce ->
+    forall θ cce c1 c2,
+      coloring c1 ce c2 cce ->
+      analysis_context_of θ cce ->
+      analysis_context_escape_ok θ ->
+      forall ρ1 ρ2,
+        (forall k, G_top θ k (occurs_free e) ρ1 ρ2) ->
+        forall j1 r1,
+          bstep_fuel ρ1 e j1 r1 ->
+          exists j2 r2 I2,
+            cbstep_top_fuel θ ρ2 cce j2 r2 I2 /\
+              (forall k, R_top θ k r1 r2).
+  Proof.
+    intros [HS [Hunits HT]] θ cce c1 c2 Hcol Hθ Hesc ρ1 ρ2 HG j1 r1 Hstep.
+
+    (* the run of the target, from the relation at index `j1` *)
+    assert (HE : E_top θ j1 ρ1 e ρ2 cce) by (eapply HT; eauto).
+    destruct (HE j1 r1 ltac:(lia) Hstep) as [j2 [r2 [I2 [Hstep2 HR]]]].
+    exists j2, r2, I2; split; [exact Hstep2 |].
+
+    (* the results are related at every index `k`, from the relation at
+       index `j1 + k` and the determinism of the target *)
+    intros k.
+    assert (HE' : E_top θ (j1 + k) ρ1 e ρ2 cce) by (eapply HT; eauto).
+    destruct (HE' j1 r1 ltac:(lia) Hstep) as [j2' [r2' [I2' [Hstep2' HR']]]].
+    unfold R_top.
+    destruct r1 as [| v1], r2 as [| v2], r2' as [| v2'];
+      cbn in HR, HR' |- *; try contradiction; auto.
+    replace (j1 + k - j1) with k in HR' by lia.
+    rewrite (proj1 (cbstep_top_fuel_deterministic θ v2 v2' Hstep2 Hstep2')).
+    exact HR'.
+  Qed.
+
+  (* The empty environments are related at every index. *)
+  Lemma G_top_empty θ e k :
+    occurs_free e \subset (Empty_set _) ->
+    G_top θ k (occurs_free e) (M.empty _) (M.empty _).
+  Proof.
+    intros Hclosed.
+    split.
+    - constructor.
+      + intros x v Hget; rewrite M.gempty in Hget; discriminate.
+      + intros x Hx; apply Hclosed in Hx; inv Hx.
+    - intros x Hx; apply Hclosed in Hx; inv Hx.
+  Qed.
+
+  Theorem adequacy_closed e ce :
+    trans_correct_top e ce ->
+    occurs_free e \subset (Empty_set _) ->
+    forall θ cce c1 c2,
+      coloring c1 ce c2 cce ->
+      analysis_context_of θ cce ->
+      analysis_context_escape_ok θ ->
+      forall j1 r1,
+        bstep_fuel (M.empty _) e j1 r1 ->
+        exists j2 r2 I2,
+          cbstep_top_fuel θ (M.empty _) cce j2 r2 I2 /\
+            (forall k, R_top θ k r1 r2).
+  Proof.
+    intros Htc Hclosed θ cce c1 c2 Hcol Hθ Hesc j1 r1 Hstep.
+    eapply adequacy; eauto.
+    intros k; apply G_top_empty; exact Hclosed.
+  Qed.
+
+  Theorem adequacy2 e ce:
+    trans_correct_top e ce ->
+
+    exists θ cce c1 c2,
+      coloring c1 ce c2 cce /\
+      analysis_context_of θ cce /\
+      analysis_context_escape_ok θ /\
+
+      forall ρ1 ρ2,
+        (forall k, G_top θ k (occurs_free e) ρ1 ρ2) ->
+
+        forall j1 r1,
+          bstep_fuel ρ1 e j1 r1 ->
+
+          exists j2 r2 I2,
+            cbstep_top_fuel θ ρ2 cce j2 r2 I2 /\
+              (forall k, R_top θ k r1 r2).
+  Proof.
+    intros Htc.
+    pose proof (proj1 (proj2 Htc)) as Hunits.
+
+    (* color `ce`, and pick a context agreeing with the coloring *)
+    destruct (coloring_exists 0 ce) as [c2 [cce Hcol]].
+    destruct (cexp_has_cunit ce) as [d Hd].
+    destruct (coloring_context Hcol d (Hunits d Hd) Hunits) as [θ [Hθ Hesc]].
+    exists θ, cce, 0, c2.
+    split; [exact Hcol | split; [exact Hθ | split; [exact Hesc |]]].
+
+    intros ρ1 ρ2 HG j1 r1 Hstep.
+    eapply adequacy; eassumption.
+  Qed.
+
+  Theorem adequacy_closed2 e ce :
+    trans_correct_top e ce ->
+    occurs_free e \subset (Empty_set _) ->
+
+    exists θ cce c1 c2,
+      coloring c1 ce c2 cce /\
+      analysis_context_of θ cce /\
+      analysis_context_escape_ok θ /\
+
+      forall j1 r1,
+        bstep_fuel (M.empty _) e j1 r1 ->
+
+        exists j2 r2 I2,
+          cbstep_top_fuel θ (M.empty _) cce j2 r2 I2 /\
+            (forall k, R_top θ k r1 r2).
+  Proof.
+    intros Htc Hclosed.
+    destruct (adequacy2 e ce Htc)
+      as [θ [cce [c1 [c2 [Hcol [Hθ [Hesc Hrun]]]]]]].
+    exists θ, cce, c1, c2.
+    split; [exact Hcol | split; [exact Hθ | split; [exact Hesc |]]].
+
+    intros j1 r1 Hstep.
+    eapply Hrun; [| exact Hstep].
+    intros k; apply G_top_empty; exact Hclosed.
+  Qed.
+
+End Adequacy.
+
+Section BehaviorRefinement.
+
+  (* Behavioral Refinement *)
+  Inductive val_ref : wval -> clval -> Prop :=
+  | Ref_TAG :
+    forall l v1 c v2,
+      val_ref' v1 v2 ->
+      val_ref (Tag l v1) (CTag c l v2)
+
+  with val_ref' : val -> cval -> Prop :=
+  | Ref_Vfun :
+    forall f ρ1 xs e ρ2,
+      val_ref' (Vfun f ρ1 xs e) (CVfun f ρ2 xs e)
+
+  | Ref_Vconstr_nil :
+    forall t,
+      val_ref' (Vconstr t []) (CVconstr t [])
+
+  | Ref_Vconstr_cons :
+    forall t v1 v2 vs1 vs2,
+      val_ref v1 v2 ->
+      val_ref' (Vconstr t vs1) (CVconstr t vs2) ->
+      val_ref' (Vconstr t (v1 :: vs1)) (CVconstr t (v2 :: vs2)).
+
+  Hint Constructors val_ref : core.
+  Hint Constructors val_ref' : core.
+
+  Scheme val_ref_mut := Induction for val_ref Sort Prop
+  with val_ref'_mut := Induction for val_ref' Sort Prop.
+
+  Lemma val_ref_Vconstr t l c vs1 vs2 :
+    Forall2 val_ref vs1 vs2 ->
+    val_ref (Tag l (Vconstr t vs1)) (CTag c l (CVconstr t vs2)).
+  Proof.
+    intros Hvs.
+    apply Ref_TAG.
+    induction Hvs as [| v1 v2 vs1' vs2' Hv Hvs' IHvs'].
+    - apply Ref_Vconstr_nil.
+    - apply Ref_Vconstr_cons; assumption.
+  Qed.
+
+  (* Related values agree on their shape: labels, code, and constructor tags. *)
+  Lemma V_val_ref_aux {θ v1} :
+    wf_val v1 ->
+    forall v2, (forall i, V θ i v1 v2) -> val_ref v1 v2.
+  Proof.
+    intros Hwf.
+    induction Hwf as [l w Hw IHw
+                     | f ρ xs e Γ Hρ IHρ Hfv
+                     | t
+                     | t v vs Hv IHv Hvs IHvs
+                     | Γ ρ Hget IHget Hdom]
+      using wf_val_mut
+      with (P0 := fun w _ =>
+                    forall t vs1,
+                      w = Vconstr t vs1 ->
+                      forall vs2,
+                        (forall i, Forall2 (V θ i) vs1 vs2) ->
+                        Forall2 val_ref vs1 vs2)
+           (P1 := fun _ _ _ => True).
+    - (* WF_TAG *)
+      intros v2 HV.
+      destruct v2 as [[c2 l2] w2].
+      pose proof (HV 0) as HV0; simpl in HV0.
+      destruct HV0 as [_ [<- HV0]].
+      destruct w as [f1 ρ1 xs1 e1 | t1 vs1];
+        destruct w2 as [f2 ρ2 xs2 e2 | t2 vs2];
+        simpl in HV0; try contradiction.
+      + destruct HV0 as [<- [<- [<- _]]].
+        apply Ref_TAG; apply Ref_Vfun.
+      + destruct HV0 as [<- _].
+        apply val_ref_Vconstr.
+        apply (IHw t1 vs1 eq_refl).
+        intros i.
+        destruct (V_Vconstr_inv θ (HV (S i))) as [c' [vs2' [Heq [_ [_ [_ HVs]]]]]].
+        unfold CTag in Heq; inversion Heq; subst.
+        exact HVs.
+    - (* WF_Vfun *)
+      intros t vs1 Heq; discriminate Heq.
+    - (* WF_Vconstr_nil *)
+      intros t' vs1 Heq vs2 HVs.
+      injection Heq as <- <-.
+      destruct vs2 as [| v2 vs2']; [constructor |].
+      specialize (HVs 0); fcrush.
+    - (* WF_Vconstr *)
+      intros t' vs1 Heq vs2 HVs.
+      injection Heq as <- <-.
+      destruct vs2 as [| v2 vs2'].
+      + specialize (HVs 0); fcrush.
+      + constructor.
+        * apply IHv; intros i.
+          pose proof (HVs i) as HVi; inversion HVi; assumption.
+        * apply (IHvs t vs eq_refl); intros i.
+          pose proof (HVs i) as HVi; inversion HVi; assumption.
+    - (* WF_env *)
+      exact I.
+  Qed.
+
+  Theorem V_val_ref {θ v1 v2} :
+    (forall i, V θ i v1 v2) ->
+    val_ref v1 v2.
+  Proof.
+    intros H.
+    eapply V_val_ref_aux; [eapply V_wf_val_l; exact (H 0) | exact H].
+  Qed.
+
+  Theorem V_top_val_ref {θ v1 v2} :
+    (forall i, V_top θ i v1 v2) ->
+    val_ref v1 v2.
+  Proof.
+    intros H.
+    apply (@V_val_ref θ).
+    intros i; exact (proj1 (H i)).
+  Qed.
+
+End BehaviorRefinement.
+
+Section Linking.
+  (* Linking Preservation *)
+
+  Lemma coloring_link_inv {c1 x e1 e2 c3 cce} :
+    coloring c1 (CElink x e1 e2) c3 cce ->
+    exists c2 cce1 cce2,
+      cce = CClink x cce1 cce2 /\
+        coloring c1 e1 c2 cce1 /\
+        coloring c2 e2 c3 cce2.
+  Proof.
+    intros Hcol.
+    inv Hcol.
+    do 3 eexists; split; [reflexivity | split; eassumption].
+  Qed.
+
+  Lemma coloring_has_cunit {c1 ce c2 cce} :
+    coloring c1 ce c2 cce ->
+    forall c A, has_unit cce c A -> has_cunit ce A.
+  Proof.
+    intros Hcol.
+    induction Hcol as [c A Rs e | c1 c2 c3 x e1 e2 cce1 cce2 Hc1 IH1 Hc2 IH2];
+      intros c0 A0 Hu.
+    - inv Hu.
+      apply Has_cunit_unit.
+    - inv Hu.
+      + apply Has_cunit_link1; eapply IH1; eassumption.
+      + apply Has_cunit_link2; eapply IH2; eassumption.
+  Qed.
+
+  (* Every color handed out by the coloring names a unit. *)
+  Lemma coloring_surj {c1 ce c2 cce} :
+    coloring c1 ce c2 cce ->
+    forall c, c1 <= c < c2 -> exists A, has_unit cce c A.
+  Proof.
+    intros Hcol.
+    induction Hcol as [c A Rs e | c1 c2 c3 x e1 e2 cce1 cce2 Hc1 IH1 Hc2 IH2];
+      intros c0 Hc0.
+    - exists A.
+      assert (Heq : c0 = c) by lia.
+      subst c0.
+      apply Has_unit_unit.
+    - destruct (Nat.lt_ge_cases c0 c2) as [Hlt | Hge].
+      + assert (Hc0' : c1 <= c0 < c2) by lia.
+        destruct (IH1 c0 Hc0') as [A HA].
+        exists A; apply Has_unit_link1; exact HA.
+      + assert (Hc0' : c2 <= c0 < c3) by lia.
+        destruct (IH2 c0 Hc0') as [A HA].
+        exists A; apply Has_unit_link2; exact HA.
+  Qed.
+
+  (* The environment relation for the first component: the closure `f` is
+   unused. *)
+  Lemma G_top_link1 θ i f x e1 e2 ρ1 ρ2 :
+    ~ (f \in occurs_free e1) ->
+    G_top θ i (occurs_free (link f x e1 e2)) ρ1 ρ2 ->
+    G_top θ i (occurs_free e1) (M.set f (Tag l0 (Vfun f ρ1 [] e1)) ρ1) ρ2.
+  Proof.
+    intros Hf [Hwf1 HG].
+    refine (conj _ _).
+    - eapply wf_env_subset; [exact (link_wf_env_fun Hwf1 Hf) |].
+      intros y Hy.
+      apply Union_intror.
+      apply link_free_e1; assumption.
+    - intros y Hy.
+      destruct (HG y (link_free_e1 f x e1 e2 Hf y Hy)) as [w1 [w2 [Hget1 [Hget2 HVw]]]].
+      exists w1, w2.
+      split; [| split; [exact Hget2 | exact HVw]].
+      rewrite M.gso by (intros Heq; subst y; contradiction).
+      exact Hget1.
+  Qed.
+
+  (* The environment relation for the second component: the result of the
+   first component, which crosses the boundary, is bound to `x`. *)
+  Lemma G_top_link2 θ i j f x e1 e2 ρ1 ρ2 v1 v2 :
+    j <= i ->
+    ~ (f \in occurs_free e1) ->
+    ~ (f \in occurs_free e2) ->
+    G_top θ i (occurs_free (link f x e1 e2)) ρ1 ρ2 ->
+    V_top θ j v1 v2 ->
+    G_top θ j (occurs_free e2)
+      (M.set x v1 (M.set f (Tag l0 (Vfun f ρ1 [] e1)) ρ1))
+      (M.set x v2 ρ2).
+  Proof.
+    intros Hj Hf1 Hf [Hwf1 HG] [HV HB].
+    assert (Hwfv1 : wf_val v1) by (eapply V_wf_val_l; eauto).
+    refine (conj _ _).
+    - eapply wf_env_subset.
+      + eapply wf_env_set; [exact (link_wf_env_fun Hwf1 Hf1) | exact Hwfv1].
+      + intros y Hy.
+        destruct (M.elt_eq x y) as [Hxy | Hxy].
+        * subst y; apply Union_introl; apply In_singleton.
+        * apply Union_intror; apply Union_intror.
+          apply link_free_e2; assumption.
+    - intros y Hy.
+      destruct (M.elt_eq x y) as [Hxy | Hxy].
+      + subst y.
+        exists v1, v2.
+        rewrite !M.gss.
+        exact (conj eq_refl (conj eq_refl (conj HV HB))).
+      + destruct (HG y (link_free_e2 f x e1 e2 Hf y Hy Hxy)) as [w1 [w2 [Hget1 [Hget2 HVw]]]].
+        exists w1, w2.
+        split; [| split].
+        * rewrite M.gso by (intros Heq; subst y; contradiction).
+          rewrite M.gso by (intros Heq; subst y; contradiction).
+          exact Hget1.
+        * rewrite M.gso by (intros Heq; subst y; contradiction).
+          exact Hget2.
+        * eapply V_top_mono; [exact HVw | exact Hj].
+  Qed.
+
+  Theorem preserves_linking f x e1 e1' e2 e2' :
+    f <> x ->
+    ~ (f \in occurs_free e1) ->
+    ~ (f \in occurs_free e2) ->
+    trans_correct_top e1 e1' ->
+    trans_correct_top e2 e2' ->
+    trans_correct_top (link f x e1 e2) (clink x e1' e2').
+  Proof.
+    intros Hfx Hf1 Hf2 [Hfree1 [Hunits1 He1]] [Hfree2 [Hunits2 He2]].
+    split; [| split].
+    - intros y Hy.
+      unfold Ensembles.In, clink in Hy.
+      inv Hy.
+      + apply link_free_e1; [exact Hf1 | apply Hfree1; assumption].
+      + apply link_free_e2; [exact Hf2 | apply Hfree2; assumption | assumption].
+    - (* the units of a link are those of its components *)
+      intros A Hu.
+      unfold clink in Hu.
+      inv Hu; [apply Hunits1 | apply Hunits2]; assumption.
+    - intros θ cce c1 c3 Hcol Hθ Hesc_ok i ρ1 ρ2 HG.
+      destruct (coloring_link_inv Hcol) as [c2 [cce1 [cce2 [Heq [Hcol1 Hcol2]]]]].
+      subst cce.
+      pose proof (analysis_context_of_link1 Hθ) as Hθ1.
+      pose proof (analysis_context_of_link2 Hθ) as Hθ2.
+      unfold E_top, E_top'.
+      intros j1 r1 Hj1 Hstep.
+      destruct (bstep_link_inv Hstep) as [HOOT | [ca [cb [v [Heqj [Hs1 Hs2]]]]]].
+      + (* out of time: so is the linked program, right away *)
+        subst r1.
+        exists 0, COOT, (Empty_set _).
+        split; [apply CbstepTF_link_OOT | exact I].
+      + subst j1.
+        (* run the first component *)
+        pose proof (He1 θ cce1 c1 c2 Hcol1 Hθ1 Hesc_ok i _ ρ2
+                      (G_top_link1 θ i f x e1 e2 ρ1 ρ2 Hf1 HG)) as HE1.
+        destruct (HE1 ca (Res v) ltac:(lia) Hs1) as [j2 [r2 [I2 [Hc1 HR1]]]].
+        destruct r2 as [| v2]; [destruct HR1 |].
+        (* run the second component with its result bound to `x` *)
+        pose proof (G_top_link2 θ i (i - ca) f x e1 e2 ρ1 ρ2 v v2
+                      ltac:(lia) Hf1 Hf2 HG HR1) as HG2.
+        pose proof (He2 θ cce2 c2 c3 Hcol2 Hθ2 Hesc_ok (i - ca) _ _ HG2) as HE2.
+        destruct (HE2 cb r1 ltac:(lia) Hs2) as [j3 [r3 [I3 [Hc2 HR2]]]].
+        exists (S (S (j2 + j3))), r3, (I2 :|: I3).
+        split.
+        * apply CbstepTF_link_Step.
+          eapply CbstepT_link_Res; [exact Hc1 | exact Hc2].
+        * apply (R_top_mono θ (i - ca - cb)); [exact HR2 | lia].
+  Qed.
+
+End Linking.

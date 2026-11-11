@@ -62,6 +62,7 @@ theories/ArityAnnotate/Comp.v
 theories/SemAnnotate/LabeledANF.v
 theories/SemAnnotate/Label.v
 theories/SemAnnotate/SimpleCFA.v
+theories/SemAnnotate/SimpleCFATheta.v
 theories/SemAnnotate/SimpleWebAssign.v
 theories/SemAnnotate/Rewrite.v
 theories/SemAnnotate/Comp.v
