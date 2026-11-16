@@ -3282,7 +3282,25 @@ Module EquivStrategy <: WEB_STRATEGY.
 End EquivStrategy.
 
 (* 3. Internal webs by equivalence classes, exposed webs by kind: one per
-   closure arity, and one for constructors *)
+   closure arity, and one for constructors.
+
+   Only the internal webs depend on `ai_int`.  The analysis is untyped, and
+   `acheck` only bounds `ai_int` from below, so `ai_int` may contain edges
+   that never happen, e.g. from a constructor to a call site, or from a
+   closure to a call site of another arity.  Requiring every predicted edge
+   to join equal webs would then force `w_con_ext = w_fun_ext n`, or
+   `w_fun_ext n = w_fun_ext m`, at an edge whose ends are both exposed.
+
+   This is why `web_map_internal_interact_eq` only constrains ends that are
+   not exposed (merging internal webs across kinds is harmless), while the
+   exposed web of a label is fixed by its own syntactic kind
+   (`web_map_kinded`).  Two exposed webs are only ever equated by
+   `web_map_edge_eq`, and only at an interaction that actually happens, which
+   the checking semantics makes kind-uniform: a call meets a closure of its
+   own arity (`set_lists` succeeds), and a projection or case meets a
+   constructor.  A dead edge is never collected, so it never constrains the
+   exposed webs.  The exposed webs need not be distinct either: sharing an
+   id is sound, since webs are only compared at actual interactions. *)
 Module EquivArityStrategy <: WEB_STRATEGY.
 
   Definition web_map_internal := internal_web_map_respects_int.
