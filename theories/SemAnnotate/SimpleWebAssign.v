@@ -642,10 +642,11 @@ Qed.
      what both ends of an interaction know. *)
 Module Type WEB_STRATEGY.
 
+  (* internal web assignment constraints *)
   Parameter web_map_internal : web_map -> An.analysis_result -> Prop.
 
   (* the internal ends of a predicted interaction share a web *)
-  Axiom web_map_internal_interact_eq :
+  Parameter web_map_internal_interact_eq :
     forall W A l1 l2 w1 w2,
       web_map_internal W A ->
       web_map_exposed W A ->
@@ -656,7 +657,7 @@ Module Type WEB_STRATEGY.
       w1 = w2.
 
   (* units that do not exist have no labels *)
-  Axiom web_map_internal_empty : forall A, web_map_internal (M.empty web) A.
+  Parameter web_map_internal_empty : forall A, web_map_internal (M.empty web) A.
 
   (* the exposed web of closures and call sites of the given arity *)
   Parameter w_fun_ext : nat -> web.
@@ -757,6 +758,7 @@ Section LRBase.
         (* the web map is the one of the defining unit *)
         W2 = ω c1 /\
         exists w2, W2 ! l2 = Some w2 /\
+        (* TODO: kind_web is only used here why not dispatching the web ids directly into the following case *)
         (* an exposed value has the exposed web of its kind *)
         (w2 \in Exposed -> w2 = kind_web v2) /\
         match v1, v2 with
@@ -3213,9 +3215,11 @@ Module SimpleStrategy <: WEB_STRATEGY.
   Parameter w_ext : web.
   Parameter w_ext_exposed : w_ext \in Exposed.
 
-  (* TODO: Refactoring *)
   Definition web_map_internal (W : web_map) (A : An.analysis_result) : Prop :=
-    forall l w, W ! l = Some w -> w = w_int \/ w = w_ext.
+    forall l w,
+      W ! l = Some w ->
+      (~ w \in Exposed) ->
+      w = w_int.
 
   (* both ends are internal, as `aexposed` is closed under interactions, hence
      both are `w_int` *)
@@ -3236,8 +3240,7 @@ Module SimpleStrategy <: WEB_STRATEGY.
       by (intros Hl; apply Hl1; eapply AExp_int_r; [exact Hint | exact Hl]).
     assert (Hn2 : ~ (w2 \in Exposed))
       by (intros Hw; apply Hl2; exact (proj1 (Hexp _ _ Hw2) Hw)).
-    destruct (Hok _ _ Hw1) as [-> | ->]; [| exfalso; exact (Hn1 w_ext_exposed)].
-    destruct (Hok _ _ Hw2) as [-> | ->]; [reflexivity | exfalso; exact (Hn2 w_ext_exposed)].
+    hfcrush unfold: web_map_internal, label, PTree.elt.
   Qed.
 
   Lemma web_map_internal_empty : forall A, web_map_internal (M.empty web) A.
@@ -3288,7 +3291,7 @@ End EquivStrategy.
 
 (* 3. Internal webs by equivalence classes, exposed webs by kind: one per
    closure arity, and one for constructors *)
-Module ArityStrategy <: WEB_STRATEGY.
+Module EquivArityStrategy <: WEB_STRATEGY.
 
   Definition web_map_internal := internal_web_map_respects_int.
 
@@ -3309,7 +3312,7 @@ Module ArityStrategy <: WEB_STRATEGY.
   Parameter w_fun_ext : nat -> web.
   Parameter w_con_ext : web.
 
-End ArityStrategy.
+End EquivArityStrategy.
 
 (* The simple strategy is the default instance; the others are obtained with,
    e.g., `Module EquivWebAssign := WebAssign EquivStrategy.` *)
