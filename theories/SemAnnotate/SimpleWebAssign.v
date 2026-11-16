@@ -90,7 +90,7 @@ Definition web_map_context := An.color -> web_map.
 
 (* Tagged Value *)
 Inductive ctag A : Type :=
-| CTAG : label -> web_map -> A -> ctag A.
+| CTAG : web_map -> label -> A -> ctag A.
 
 Hint Constructors ctag : core.
 
@@ -103,8 +103,7 @@ Hint Constructors cval : core.
 
 Definition clval := ctag cval.
 
-(* TODO: swap l and W *)
-Definition CTag l W cv := CTAG cval l W cv.
+Definition CTag W l cv := CTAG cval W l cv.
 
 (* Environment *)
 Definition cenv := M.t clval.
@@ -121,14 +120,14 @@ Inductive to_exposed : clval -> Prop :=
   forall W l w f ρ xs e,
     W ! l = Some w ->
     (w \in Exposed) ->
-    to_exposed (CTag l W (CVfun f ρ xs e))
+    to_exposed (CTag W l (CVfun f ρ xs e))
 
 | ToExp_cconstr :
   forall W l w c vs,
     W ! l = Some w ->
     (w \in Exposed) ->
     Forall to_exposed vs ->
-    to_exposed (CTag l W (CVconstr c vs)).
+    to_exposed (CTag W l (CVconstr c vs)).
 
 Hint Constructors to_exposed : core.
 
@@ -149,9 +148,9 @@ Inductive wf_cval : clval -> Prop :=
 | WF_TAG :
   forall W l w v,
     W ! l = Some w ->
-    (w \in Exposed -> to_exposed (CTag l W v)) ->
+    (w \in Exposed -> to_exposed (CTag W l v)) ->
     wf_cval' v ->
-    wf_cval (CTag l W v)
+    wf_cval (CTag W l v)
 
 with wf_cval' : cval -> Prop :=
 | WF_CVfun:
@@ -206,14 +205,14 @@ Inductive cbstep (W : web_map) (ex : bool) (ρ : cenv) : exp -> fuel -> cres -> 
 | Cbstep_fun :
   forall {f l w xs e k c r},
     W ! l = Some w ->
-    cbstep_fuel W ex (M.set f (CTag l W (CVfun f ρ xs e)) ρ) k c r ->
+    cbstep_fuel W ex (M.set f (CTag W l (CVfun f ρ xs e)) ρ) k c r ->
     cbstep W ex ρ (Efun f l xs e k) c r
 
 | Cbstep_app :
   forall {W' f f' l l' w xs ρ' xs' e vs ρ'' c r},
-    M.get f ρ = Some (CTag l' W' (CVfun f' ρ' xs' e)) ->
+    M.get f ρ = Some (CTag W' l' (CVfun f' ρ' xs' e)) ->
     get_list xs ρ = Some vs ->
-    set_lists xs' vs (M.set f' (CTag l' W' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
+    set_lists xs' vs (M.set f' (CTag W' l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
     W ! l = Some w -> (* W controls caller *)
     W' ! l' = Some w -> (* W' controls callee *)
     (w \in Exposed -> Forall to_exposed vs /\ to_exposed_cres r) -> (* Doesn't matter which W as long as `vs` and `r` are mapped to exposed web ids. *)
@@ -222,9 +221,9 @@ Inductive cbstep (W : web_map) (ex : bool) (ρ : cenv) : exp -> fuel -> cres -> 
 
 | Cbstep_letapp_Res :
   forall {W' x f f' l l' w xs k ρ' xs' e vs ρ'' c c' v r},
-    M.get f ρ = Some (CTag l' W' (CVfun f' ρ' xs' e)) ->
+    M.get f ρ = Some (CTag W' l' (CVfun f' ρ' xs' e)) ->
     get_list xs ρ = Some vs ->
-    set_lists xs' vs (M.set f' (CTag l' W' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
+    set_lists xs' vs (M.set f' (CTag W' l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
     W ! l = Some w ->
     W' ! l' = Some w ->
     cbstep_fuel W' (exposedb w) ρ'' e c (CRes v) ->
@@ -234,9 +233,9 @@ Inductive cbstep (W : web_map) (ex : bool) (ρ : cenv) : exp -> fuel -> cres -> 
 
 | Cbstep_letapp_OOT :
   forall {W' x f f' l l' w xs k ρ' xs' e vs ρ'' c},
-    M.get f ρ = Some (CTag l' W' (CVfun f' ρ' xs' e)) ->
+    M.get f ρ = Some (CTag W' l' (CVfun f' ρ' xs' e)) ->
     get_list xs ρ = Some vs ->
-    set_lists xs' vs (M.set f' (CTag l' W' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
+    set_lists xs' vs (M.set f' (CTag W' l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
     W ! l = Some w ->
     W' ! l' = Some w ->
     cbstep_fuel W' (exposedb w) ρ'' e c COOT ->
@@ -248,12 +247,12 @@ Inductive cbstep (W : web_map) (ex : bool) (ρ : cenv) : exp -> fuel -> cres -> 
     get_list xs ρ = Some vs ->
     W ! l = Some w ->
     (w \in Exposed -> Forall to_exposed vs) ->
-    cbstep_fuel W ex (M.set x (CTag l W (CVconstr t vs)) ρ) e c r ->
+    cbstep_fuel W ex (M.set x (CTag W l (CVconstr t vs)) ρ) e c r ->
     cbstep W ex ρ (Econstr x l t xs e) c r
 
 | Cbstep_proj :
   forall {W' x l l' w t i y e c r v vs},
-    M.get y ρ = Some (CTag l' W' (CVconstr t vs)) ->
+    M.get y ρ = Some (CTag W' l' (CVconstr t vs)) ->
     nth_error vs i = Some v ->
     W ! l = Some w ->
     W' ! l' = Some w ->
@@ -262,7 +261,7 @@ Inductive cbstep (W : web_map) (ex : bool) (ρ : cenv) : exp -> fuel -> cres -> 
 
 | Cbstep_case :
   forall {W' x l l' w cl t e r c vs},
-    M.get x ρ = Some (CTag l' W' (CVconstr t vs)) ->
+    M.get x ρ = Some (CTag W' l' (CVconstr t vs)) ->
     find_tag cl t e ->
     W ! l = Some w ->
     W' ! l' = Some w ->
@@ -517,13 +516,13 @@ Lemma wf_cval_CVconstr W c l w vs :
   Forall wf_cval vs ->
   W ! l = Some w ->
   (w \in Exposed -> Forall to_exposed vs) ->
-  wf_cval (CTag l W (CVconstr c vs)).
+  wf_cval (CTag W l (CVconstr c vs)).
 Proof.
   intros H.
   induction H; simpl; auto; intros.
   fcrush.
 
-  assert (Hwf : wf_cval (CTag l W (CVconstr c l0))).
+  assert (Hwf : wf_cval (CTag W l (CVconstr c l0))).
   {
     eapply IHForall; eauto.
     fcrush.
@@ -533,12 +532,12 @@ Proof.
 Qed.
 
 Lemma wf_cval_CVconstr_inv {W w l c vs} :
-  wf_cval (CTag l W (CVconstr c vs)) ->
+  wf_cval (CTag W l (CVconstr c vs)) ->
   W ! l = Some w ->
   (Forall wf_cval vs /\ (w \in Exposed -> Forall to_exposed vs)).
 Proof.
   intros.
-  remember (CTag l W (CVconstr c vs)) as v.
+  remember (CTag W l (CVconstr c vs)) as v.
   revert c vs Heqv.
   induction H using wf_cval_mut with (P0 := fun v wf =>
                                               forall c vs,
@@ -573,32 +572,32 @@ Proof.
     eapply wf_cenv_set; eauto.
 
   - (* Cbstep_app *)
-    assert (Hwfclo : wf_cval (CTag l' W' (CVfun f' ρ' xs' e))).
+    assert (Hwfclo : wf_cval (CTag W' l' (CVfun f' ρ' xs' e))).
     { eapply wf_cenv_get; eauto. }
     assert (Hwfρ' : wf_cenv ρ').
     { inv Hwfclo.
       match goal with [Hv : wf_cval' _ |- _] => inv Hv end; auto. }
     assert (Hwfvs : Forall wf_cval vs).
     { eapply wf_cenv_get_list. apply Hw. eassumption. }
-    assert (Hwfρf : wf_cenv (M.set f' (CTag l' W' (CVfun f' ρ' xs' e)) ρ')).
+    assert (Hwfρf : wf_cenv (M.set f' (CTag W' l' (CVfun f' ρ' xs' e)) ρ')).
     { eapply wf_cenv_set; eauto. }
     apply IHcbstep.
     eapply wf_cenv_set_lists
-      with (ρ := M.set f' (CTag l' W' (CVfun f' ρ' xs' e)) ρ'); eauto.
+      with (ρ := M.set f' (CTag W' l' (CVfun f' ρ' xs' e)) ρ'); eauto.
 
   - (* Cbstep_letapp_Res *)
-    assert (Hwfclo : wf_cval (CTag l' W' (CVfun f' ρ' xs' e))).
+    assert (Hwfclo : wf_cval (CTag W' l' (CVfun f' ρ' xs' e))).
     { eapply wf_cenv_get; eauto. }
     assert (Hwfρ' : wf_cenv ρ').
     { inv Hwfclo.
       match goal with [Hv : wf_cval' _ |- _] => inv Hv end; auto. }
     assert (Hwfvs : Forall wf_cval vs).
     { eapply wf_cenv_get_list. apply Hw. eassumption. }
-    assert (Hwfρf : wf_cenv (M.set f' (CTag l' W' (CVfun f' ρ' xs' e)) ρ')).
+    assert (Hwfρf : wf_cenv (M.set f' (CTag W' l' (CVfun f' ρ' xs' e)) ρ')).
     { eapply wf_cenv_set; eauto. }
     assert (Hwfρ'' : wf_cenv ρ'').
     { eapply wf_cenv_set_lists
-        with (ρ := M.set f' (CTag l' W' (CVfun f' ρ' xs' e)) ρ'); eauto. }
+        with (ρ := M.set f' (CTag W' l' (CVfun f' ρ' xs' e)) ρ'); eauto. }
     assert (Hwfres : wf_cres (CRes v)) by (apply IHcbstep; auto).
     inv Hwfres.
     apply IHcbstep0.
@@ -613,7 +612,7 @@ Proof.
   - (* Cbstep_proj *)
     apply IHcbstep.
     eapply wf_cenv_set; eauto.
-    assert (Hwfvc : wf_cval (CTag l' W' (CVconstr t vs))).
+    assert (Hwfvc : wf_cval (CTag W' l' (CVconstr t vs))).
     { eapply wf_cenv_get; eauto. }
     destruct (wf_cval_CVconstr_inv Hwfvc H2) as [Hwfvs _].
     eapply Forall_nth_error; eauto.
@@ -674,13 +673,6 @@ Import S.
 (* *Static* Web Map Invariants *)
 Definition valid_web_map_context (ω : web_map_context) (θ : An.analysis_context) : Prop :=
   forall (c : An.color), web_map_internal (ω c) (θ c) /\ web_map_exposed (ω c) (θ c).
-
-(* The exposed web of a value, by its kind *)
-Definition kind_web (v : cval) : web :=
-  match v with
-  | CVfun _ _ xs _ => w_fun_ext (length xs)
-  | CVconstr _ _ => w_con_ext
-  end.
 
 (* If the label `l` is exposed in `W`, its web is `wk`. *)
 Definition exposed_as (W : web_map) (l : label) (wk : web) : Prop :=
@@ -753,16 +745,15 @@ Section LRBase.
     An.wf_cval θ cv1 /\
     wf_cval cv2 /\
     match cv1, cv2 with
-    | An.CTAG _ A1 (c1, l1) v1, CTAG _ l2 W2 v2 =>
+    | An.CTAG _ A1 (c1, l1) v1, CTAG _ W2 l2 v2 =>
         l1 = l2 /\
         (* the web map is the one of the defining unit *)
         W2 = ω c1 /\
         exists w2, W2 ! l2 = Some w2 /\
-        (* TODO: kind_web is only used here why not dispatching the web ids directly into the following case *)
-        (* an exposed value has the exposed web of its kind *)
-        (w2 \in Exposed -> w2 = kind_web v2) /\
         match v1, v2 with
         | An.CVconstr t1 vs1, CVconstr t2 vs2 =>
+            (* an exposed constructor has the constructor web *)
+            (w2 \in Exposed -> w2 = w_con_ext) /\
             t1 = t2 /\
               length vs1 = length vs2 /\
               match i with
@@ -771,6 +762,8 @@ Section LRBase.
               end
 
         | An.CVfun f1 ρ1 xs1 e1, CVfun f2 ρ2 xs2 e2 =>
+            (* an exposed closure has the web of its arity *)
+            (w2 \in Exposed -> w2 = w_fun_ext (length xs2)) /\
             f1 = f2 /\ xs1 = xs2 /\ e1 = e2 /\
 
               (* every label of the body is assigned a web *)
@@ -790,7 +783,7 @@ Section LRBase.
                     j <= i0 ->
                     Forall2 (V (i0 - (i0 - j))) vs1 vs2 ->
                     set_lists xs1 vs1 (M.set f1 (An.CTag A1 c1 l1 (An.CVfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
-                    set_lists xs2 vs2 (M.set f2 (CTag l2 W2 (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
+                    set_lists xs2 vs2 (M.set f2 (CTag W2 l2 (CVfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
 
                     (* invariants for escaped values and variable bindings *)
                     Forall (An.cescaped c1) vs1 ->
@@ -1056,31 +1049,31 @@ Section LRBase.
     induction i as [i IH] using lt_wf_rec; intros j v1 v2 HV Hj.
     destruct (Nat.eq_dec j i) as [-> | Hneq]; [exact HV |].
     destruct i as [| i]; [lia |].
-    destruct v1 as [A1 [c1 l1] w1]; destruct v2 as [l2 W2 w2].
+    destruct v1 as [A1 [c1 l1] w1]; destruct v2 as [W2 l2 w2].
     simpl in HV.
-    destruct HV as [Hwf1 [Hwf2 [Hl [HW [w [Hw [Hk HV]]]]]]].
+    destruct HV as [Hwf1 [Hwf2 [Hl [HW [w [Hw HV]]]]]].
     destruct w1 as [f1 ρ1 xs1 e1 | t1 vs1];
       destruct w2 as [f2 ρ2 xs2 e2 | t2 vs2];
       simpl in HV; try contradiction;
       destruct j as [| j]; simpl;
-      refine (conj Hwf1 (conj Hwf2 (conj Hl (conj HW (ex_intro _ w (conj Hw (conj Hk _))))))).
+      refine (conj Hwf1 (conj Hwf2 (conj Hl (conj HW (ex_intro _ w (conj Hw _)))))).
     - (* closure, down to 0 *)
-      destruct HV as [Hf [Hxs [He [Hsub [Hsite [Hesc [Hloc _]]]]]]].
-      exact (conj Hf (conj Hxs (conj He (conj Hsub (conj Hsite (conj Hesc (conj Hloc I))))))).
+      destruct HV as [Hk [Hf [Hxs [He [Hsub [Hsite [Hesc [Hloc _]]]]]]]].
+      exact (conj Hk (conj Hf (conj Hxs (conj He (conj Hsub (conj Hsite (conj Hesc (conj Hloc I)))))))).
     - (* closure *)
-      destruct HV as [Hf [Hxs [He [Hsub [Hsite [Hesc [Hloc HV]]]]]]].
-      refine (conj Hf (conj Hxs (conj He (conj Hsub (conj Hsite (conj Hesc (conj Hloc _))))))).
+      destruct HV as [Hk [Hf [Hxs [He [Hsub [Hsite [Hesc [Hloc HV]]]]]]]].
+      refine (conj Hk (conj Hf (conj Hxs (conj He (conj Hsub (conj Hsite (conj Hesc (conj Hloc _)))))))).
       intros bdr j0 c vs1 vs2 ρ3 ρ4 Hj0.
       rewrite (normalize_step j j0 Hj0).
       specialize (HV bdr j0 c vs1 vs2 ρ3 ρ4 ltac:(lia)).
       rewrite (normalize_step i j0 ltac:(lia)) in HV.
       exact HV.
     - (* constructor, down to 0 *)
-      destruct HV as [Ht [Hlen _]].
-      exact (conj Ht (conj Hlen I)).
+      destruct HV as [Hk [Ht [Hlen _]]].
+      exact (conj Hk (conj Ht (conj Hlen I))).
     - (* constructor *)
-      destruct HV as [Ht [Hlen HVs]].
-      refine (conj Ht (conj Hlen _)).
+      destruct HV as [Hk [Ht [Hlen HVs]]].
+      refine (conj Hk (conj Ht (conj Hlen _))).
       eapply V_mono_Forall_aux; [exact IH | exact HVs | lia].
   Qed.
 
@@ -1102,13 +1095,13 @@ Section LRBase.
     (w \in Exposed -> w = w_con_ext) ->
     (w \in Exposed -> Forall to_exposed vs2) ->
     Forall2 (V i) vs1 vs2 ->
-    V i (An.CTag (θ c) c l (An.CVconstr t vs1)) (CTag l (ω c) (CVconstr t vs2)).
+    V i (An.CTag (θ c) c l (An.CVconstr t vs1)) (CTag (ω c) l (CVconstr t vs2)).
   Proof.
     intros Hw Hk Hex HVs.
     assert (Hwf1 : An.wf_cval θ (An.CTag (θ c) c l (An.CVconstr t vs1)))
       by (apply An.WF_TAG;
           [reflexivity | apply An.wf_cval'_CVconstr; eapply V_wf_cval_Forall_l; eauto]).
-    assert (Hwf2 : wf_cval (CTag l (ω c) (CVconstr t vs2)))
+    assert (Hwf2 : wf_cval (CTag (ω c) l (CVconstr t vs2)))
       by (eapply wf_cval_CVconstr; [eapply V_wf_cval_Forall_r; eauto | exact Hw | exact Hex]).
     assert (Hlen : length vs1 = length vs2) by (eapply Forall2_length; eauto).
     destruct i as [| i]; simpl.
@@ -1122,7 +1115,7 @@ Section LRBase.
   Lemma V_Vconstr_inv {i A1 c1 l1 t vs1 v2} :
     V i (An.CTag A1 c1 l1 (An.CVconstr t vs1)) v2 ->
     exists w vs2,
-      v2 = CTag l1 (ω c1) (CVconstr t vs2) /\
+      v2 = CTag (ω c1) l1 (CVconstr t vs2) /\
         (ω c1) ! l1 = Some w /\
         (w \in Exposed -> w = w_con_ext) /\
         match i with
@@ -1131,11 +1124,11 @@ Section LRBase.
         end.
   Proof.
     intros HV.
-    destruct v2 as [l2 W2 w2].
+    destruct v2 as [W2 l2 w2].
     destruct i as [| i]; simpl in HV;
-      destruct HV as [_ [_ [Hl [HW [w [Hw [Hk HV]]]]]]]; subst l2 W2;
+      destruct HV as [_ [_ [Hl [HW [w [Hw HV]]]]]]; subst l2 W2;
       destruct w2 as [f2 ρ2 xs2 e2 | t2 vs2]; simpl in HV; try contradiction;
-      destruct HV as [Ht [_ HVs]]; subst t2;
+      destruct HV as [Hk [Ht [_ HVs]]]; subst t2;
       exact (ex_intro _ w (ex_intro _ vs2 (conj eq_refl (conj Hw (conj Hk HVs))))).
   Qed.
 
@@ -1190,7 +1183,7 @@ Section LRBase.
     pose proof (V_wf_cval_r HV) as Hwf2.
     destruct (ω_valid c1) as [_ Hexp].
     unfold web_map_exposed in *.
-    destruct v2 as [l2 W2 cv2].
+    destruct v2 as [W2 l2 cv2].
     assert (Hlw : l1 = l2 /\ W2 = ω c1)
       by (destruct i; cbn in HV; destruct HV as (_ & _ & Heql & HeqW & _); split; assumption).
     destruct Hlw as [<- ->].
@@ -1661,7 +1654,7 @@ Qed.
 (* A case analysis that does not take its first branch runs as the remaining
    branches do. *)
 Lemma cbstep_fuel_case_cons {W ex ρ x l t e cl i r} :
-  (forall l' W' t' vs, M.get x ρ = Some (CTag l' W' (CVconstr t' vs)) -> t <> t') ->
+  (forall l' W' t' vs, M.get x ρ = Some (CTag W' l' (CVconstr t' vs)) -> t <> t') ->
   cbstep_fuel W ex ρ (Ecase x l cl) i r ->
   cbstep_fuel W ex ρ (Ecase x l ((t, e) :: cl)) i r.
 Proof.
@@ -1744,10 +1737,10 @@ Section Compat.
     well_annotated A c W (FromList xs :|: (f |: Γ)) e ->
     forall {i ρ1 ρ2},
       An.wf_cval θ (An.CTag A c l (An.CVfun f ρ1 xs e)) ->
-      wf_cval (CTag l W (CVfun f ρ2 xs e)) ->
+      wf_cval (CTag W l (CVfun f ρ2 xs e)) ->
       (An.AVfun l f xs e) \in (ai_env A f) ->
       G θ ω c i Γ ρ1 ρ2 ->
-      V θ ω i (An.CTag A c l (An.CVfun f ρ1 xs e)) (CTag l W (CVfun f ρ2 xs e)).
+      V θ ω i (An.CTag A c l (An.CVfun f ρ1 xs e)) (CTag W l (CVfun f ρ2 xs e)).
   Proof.
     unfold well_annotated.
     intros HS HL Hθ Hesc Hω Hweb Hw Hk He i.
@@ -1805,7 +1798,7 @@ Section Compat.
       assert (Hwfρ2 : wf_cenv ρ2) by eauto using G_wf_cenv_r.
       inv H2.
       rename c0 into v1.
-      edestruct (Hk _  bdr Rs _ _ eq_refl Hescθ Hbdr Hω eq_refl Hex (i - 1) (M.set f (An.CTag (θ c) c l (An.CVfun f ρ1 xs e)) ρ1) (M.set f (CTag l (ω c) (CVfun f ρ2 xs e)) ρ2)) with (j1 := i0) (r1 := (An.CRes v1)) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+      edestruct (Hk _  bdr Rs _ _ eq_refl Hescθ Hbdr Hω eq_refl Hex (i - 1) (M.set f (An.CTag (θ c) c l (An.CVfun f ρ1 xs e)) ρ1) (M.set f (CTag (ω c) l (CVfun f ρ2 xs e)) ρ2)) with (j1 := i0) (r1 := (An.CRes v1)) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
       + eapply G_subset.
         eapply G_set; eauto.
         eapply G_mono with i; eauto; lia.
@@ -1850,9 +1843,9 @@ Section Compat.
           Forall (An.cescaped c') vs1 /\ bdr' = true)) ->
     j <= i ->
     exists ρ2' vs2 ρ4 j2 v2,
-      M.get f ρ2 = Some (CTag l' (ω c') (CVfun f' ρ2' xs' e)) /\
+      M.get f ρ2 = Some (CTag (ω c') l' (CVfun f' ρ2' xs' e)) /\
         get_list xs ρ2 = Some vs2 /\
-        set_lists xs' vs2 (M.set f' (CTag l' (ω c') (CVfun f' ρ2' xs' e)) ρ2') = Some ρ4 /\
+        set_lists xs' vs2 (M.set f' (CTag (ω c') l' (CVfun f' ρ2' xs' e)) ρ2') = Some ρ4 /\
         (ω c') ! l' = Some w /\
         cbstep_fuel (ω c') (exposedb w) ρ4 e j2 (CRes v2) /\
         (w \in Exposed -> Forall to_exposed vs2 /\ to_exposed v2) /\
@@ -1862,9 +1855,9 @@ Section Compat.
     (* the callee is a related closure, tagged with the web map of its unit *)
     destruct (G_get _ _ HG f _ Hf Hget1) as [fv2 [Hget2 HV]].
     pose proof (An.wf_cval_CTag_inv (V_wf_cval_l _ _ HV)) as [HA' _]; subst A'.
-    destruct fv2 as [l2 W2 w2'].
+    destruct fv2 as [W2 l2 w2'].
     destruct w2' as [f2 ρ2' xs2 e2 | t2 vs2]; simpl in HV;
-      [| destruct HV as [_ [_ [_ [_ [w0 [_ [_ []]]]]]]]].
+      [| destruct HV as [_ [_ [_ [_ [w0 [_ []]]]]]]].
     destruct HV as [_ [Hwf2 [Heql [HW [w2 [Hw2 [Hkind2 [Heqf [Heqxs [Heqe [_ [Hsite [_ [_ HVb]]]]]]]]]]]]]].
     subst l2 W2 f2 xs2 e2.
 
@@ -1879,7 +1872,7 @@ Section Compat.
     assert (Hlen : length xs' = length vs2).
     { unfold var in *.
       rewrite (set_lists_length_eq _ _ _ _ Hset1). eapply Forall2_length; eauto. }
-    destruct (set_lists_length3 (M.set f' (CTag l' (ω c') (CVfun f' ρ2' xs' e)) ρ2') xs' vs2 Hlen)
+    destruct (set_lists_length3 (M.set f' (CTag (ω c') l' (CVfun f' ρ2' xs' e)) ρ2') xs' vs2 Hlen)
       as [ρ4 Hset2].
     assert (HVs' : Forall2 (V θ ω (i - (i - i))) vs1 vs2)
       by (eapply V_mono_Forall; [exact HVs | lia]).
@@ -2067,13 +2060,13 @@ Section Compat.
 
       (* the new constructor is related at the remaining index *)
       assert (HV : V θ ω (i - 1) (An.CTag (θ c) c l (An.CVconstr t vs1))
-                     (CTag l (ω c) (CVconstr t vs2))).
+                     (CTag (ω c) l (CVconstr t vs2))).
       { eapply Vconstr_V; [exact Hw | exact Hkind | exact Hexvs |].
         eapply V_mono_Forall; [exact HVs | lia]. }
 
       assert (HG' : G θ ω c (i - 1) (x |: Γ)
                       (M.set x (An.CTag (θ c) c l (An.CVconstr t vs1)) ρ1)
-                      (M.set x (CTag l (ω c) (CVconstr t vs2)) ρ2)).
+                      (M.set x (CTag (ω c) l (CVconstr t vs2)) ρ2)).
       { eapply G_set.
         - eapply G_mono; [exact HG | lia].
         - exact HV.
@@ -2277,8 +2270,8 @@ Proof. split; unfold Ensembles.Included, Ensembles.In; fcrush. Qed.
 Inductive cbstep_top (ρ : cenv) : cexp -> fuel -> cres -> Prop :=
 | CbstepT_link_Res :
   forall {x ce1 ce2 i1 i2 W l v r},
-    cbstep_top_fuel ρ ce1 i1 (CRes (CTag l W v)) ->
-    cbstep_top_fuel (M.set x (CTag l W v) ρ) ce2 i2 r ->
+    cbstep_top_fuel ρ ce1 i1 (CRes (CTag W l v)) ->
+    cbstep_top_fuel (M.set x (CTag W l v) ρ) ce2 i2 r ->
     cbstep_top ρ (CElink x ce1 ce2) (S (i1 + i2)) r
 
 | CbstepT_link_OOT :
@@ -2352,8 +2345,8 @@ Proof.
   - (* CbstepT_link_Res: the linked value is well-formed, so the second unit
        still runs in a well-formed environment *)
     intros Hρ.
-    assert (Hv : wf_cval (CTag l W v)) by (specialize (IH1 Hρ); inv IH1; assumption).
-    exact (IH2 (wf_cenv_set ρ x (CTag l W v) Hρ Hv)).
+    assert (Hv : wf_cval (CTag W l v)) by (specialize (IH1 Hρ); inv IH1; assumption).
+    exact (IH2 (wf_cenv_set ρ x (CTag W l v) Hρ Hv)).
 
   - (* CbstepT_link_OOT: no value is returned *)
     intros _; apply WF_COOT.
@@ -2981,7 +2974,7 @@ Section BehaviorRefinement.
   | Ref_TAG :
     forall A c l v1 W v2,
       val_ref' v1 v2 ->
-      val_ref (An.CTag A c l v1) (CTag l W v2)
+      val_ref (An.CTag A c l v1) (CTag W l v2)
 
   with val_ref' : An.cval -> cval -> Prop :=
   | Ref_Vfun :
@@ -3006,7 +2999,7 @@ Section BehaviorRefinement.
 
   Lemma val_ref_Vconstr A c l W t vs1 vs2 :
     Forall2 val_ref vs1 vs2 ->
-    val_ref (An.CTag A c l (An.CVconstr t vs1)) (CTag l W (CVconstr t vs2)).
+    val_ref (An.CTag A c l (An.CVconstr t vs1)) (CTag W l (CVconstr t vs2)).
   Proof.
     intros Hvs.
     apply Ref_TAG.
@@ -3036,15 +3029,15 @@ Section BehaviorRefinement.
            (P1 := fun _ _ => True).
     - (* WF_TAG *)
       intros v2 HV.
-      destruct v2 as [l2 W2 w2].
+      destruct v2 as [W2 l2 w2].
       pose proof (HV 0) as HV0; simpl in HV0.
-      destruct HV0 as [_ [_ [<- [_ [w [_ [_ HV0]]]]]]].
+      destruct HV0 as [_ [_ [<- [_ [w [_ HV0]]]]]].
       destruct v as [f1 ρ1 xs1 e1 | t1 vs1];
         destruct w2 as [f2 ρ2 xs2 e2 | t2 vs2];
         simpl in HV0; try contradiction.
-      + destruct HV0 as [<- [<- [<- _]]].
+      + destruct HV0 as [_ [<- [<- [<- _]]]].
         apply Ref_TAG; apply Ref_Vfun.
-      + destruct HV0 as [<- _].
+      + destruct HV0 as [_ [<- _]].
         apply val_ref_Vconstr.
         apply (IHv t1 vs1 eq_refl).
         intros i.
@@ -3190,7 +3183,7 @@ Section Linking.
         pose proof (G_top_link θ ω i (i - k1) x e1 e2 ρ1 ρ2 u v2 Hω ltac:(lia) HG HR1) as HG2.
         pose proof (He2 θ ω cce2 c2 c3 Hcol2 Hθ2 Hesc_ok Hω2 Hω (i - k1) _ _ HG2) as HE2.
         destruct (HE2 k2 r1 J2 ltac:(lia) Hs2) as [j3 [r3 [Hc2 HR2]]].
-        destruct v2 as [l' W' w'].
+        destruct v2 as [W' l' w'].
         exists (S (S (j2 + j3))), r3.
         split.
         * apply CbstepTF_link_Step.

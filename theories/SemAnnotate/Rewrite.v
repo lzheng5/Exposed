@@ -112,7 +112,7 @@ Fixpoint V (i : nat) (cv : clval) (wv : AT.wval) {struct i} : Prop :=
   wf_cval cv /\
     wf_val wv /\
     match cv, wv with
-    | CTAG _ l1 W v1, AT.TAG _ w2 v2 =>
+    | CTAG _ W l1 v1, AT.TAG _ w2 v2 =>
         W ! l1 = Some w2 /\
           (w2 \in Exposed -> exposed wv) /\
           match v1, v2 with
@@ -133,7 +133,7 @@ Fixpoint V (i : nat) (cv : clval) (wv : AT.wval) {struct i} : Prop :=
                       j <= i0 ->
                       (w2 \in Exposed -> Forall exposed vs2) ->
                       Forall2 (V (i0 - (i0 - j))) vs1 vs2 ->
-                      set_lists xs1 vs1 (M.set f1 (CTag l1 W (CVfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
+                      set_lists xs1 vs1 (M.set f1 (CTag W l1 (CVfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
                       set_lists xs2 vs2 (M.set f2 (AT.Tag w2 (AT.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
                       E' V W (exposedb w2) (i0 - (i0 - j)) ρ3 e1 ρ4 e2
                 end
@@ -518,11 +518,11 @@ Lemma Vfun_V W Γ1 f l w xs e1 e2  :
   W ! l = Some w ->
   trans_correct W (FromList xs :|: (f |: Γ1)) e1 e2 ->
   forall {i Γ2 ρ1 ρ2},
-    wf_cval (CTag l W (CVfun f ρ1 xs e1)) ->
+    wf_cval (CTag W l (CVfun f ρ1 xs e1)) ->
     wf_val (AT.Tag w (AT.Vfun f ρ2 xs e2)) ->
     G i Γ1 ρ1 Γ2 ρ2 ->
     AT.occurs_free e2 \subset (FromList xs :|: (f |: Γ2)) ->
-    V i (CTag l W (CVfun f ρ1 xs e1)) (AT.Tag w (AT.Vfun f ρ2 xs e2)).
+    V i (CTag W l (CVfun f ρ1 xs e1)) (AT.Tag w (AT.Vfun f ρ2 xs e2)).
 Proof.
   unfold well_annotated.
   intros HW He i.
@@ -555,7 +555,7 @@ Proof.
   inv H1.
   - exists 0, AT.OOT; split; simpl; eauto.
   - inv H2; invc.
-    edestruct (Hk ex (i - 1) (M.set f (CTag l W (CVfun f ρ1 xs e1)) ρ1) (M.set f (AT.Tag w0 (AT.Vfun f ρ2 xs e2)) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
+    edestruct (Hk ex (i - 1) (M.set f (CTag W l (CVfun f ρ1 xs e1)) ρ1) (M.set f (AT.Tag w0 (AT.Vfun f ρ2 xs e2)) ρ2)) with (j1 := c) (r1 := r1) as [j2 [r2 [Hk2 Rr]]]; eauto; try lia.
     + eapply G_subset with (Γ2 := (f |: AT.occurs_free (AT.Efun f w0 xs e2 k2))).
       eapply G_set; eauto.
       eapply G_mono with i; eauto; lia.
@@ -668,7 +668,7 @@ Fixpoint V_top (i : nat) (cv : clval) (wv : AT.wval) {struct i} : Prop :=
     wf_val wv /\
     exposed wv /\
     match cv, wv with
-    | CTAG _ l1 W v1, AT.TAG _ w v2 =>
+    | CTAG _ W l1 v1, AT.TAG _ w v2 =>
           W ! l1 = Some w /\
           match v1, v2 with
           | CVconstr c1 vs1, AT.Vconstr c2 vs2 =>
@@ -688,7 +688,7 @@ Fixpoint V_top (i : nat) (cv : clval) (wv : AT.wval) {struct i} : Prop :=
                       j <= i0 ->
                       Forall exposed vs2 ->
                       Forall2 (V_top (i0 - (i0 - j))) vs1 vs2 ->
-                      set_lists xs1 vs1 (M.set f1 (CTag l1 W (CVfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
+                      set_lists xs1 vs1 (M.set f1 (CTag W l1 (CVfun f1 ρ1 xs1 e1)) ρ1) = Some ρ3 ->
                       set_lists xs2 vs2 (M.set f2 (AT.Tag w (AT.Vfun f2 ρ2 xs2 e2)) ρ2) = Some ρ4 ->
                       E_top' V_top (i0 - (i0 - j)) ρ3 (CEunit W e1) ρ4 e2
                 end
@@ -1252,7 +1252,7 @@ Section BehaviorRefinement.
       W ! l = Some w ->
       (w \in Exposed) ->
       val_ref' v1 v2 ->
-      val_ref (Aw.CTag l W v1) (AT.Tag w v2)
+      val_ref (Aw.CTag W l v1) (AT.Tag w v2)
 
   with val_ref' : Aw.cval -> AT.val -> Prop :=
   | Ref_Vfun :
@@ -1279,7 +1279,7 @@ Section BehaviorRefinement.
     W ! l = Some w ->
     w \in Exposed ->
     Forall2 val_ref vs1 vs2 ->
-    val_ref (Aw.CTag l W (Aw.CVconstr c vs1)) (AT.Tag w (AT.Vconstr c vs2)).
+    val_ref (Aw.CTag W l (Aw.CVconstr c vs1)) (AT.Tag w (AT.Vconstr c vs2)).
   Proof.
     intros Hl Hw Hvs.
     apply Ref_TAG; [exact Hl | exact Hw |].
@@ -1427,17 +1427,17 @@ Proof.
       exists v1y, v2y; repeat (split; auto).
       rewrite M.gso; auto. intro Heq; subst y; contradiction. }
 
-  edestruct (HE1 i ρ1 (M.set f clos ρ2) HG1 i1 (CRes (CTag l W v)))
+  edestruct (HE1 i ρ1 (M.set f clos ρ2) HG1 i1 (CRes (CTag W l v)))
     as [j_e1 [r1' [Hb_e1 HR_e1]]]; [lia|auto|].
   destruct r1' as [|v']; simpl in HR_e1; [contradiction|].
 
-  assert (Hwfv : wf_cval (CTag l W v)).
-  { assert (Hwfres : wf_cres (CRes (CTag l W v)))
+  assert (Hwfv : wf_cval (CTag W l v)).
+  { assert (Hwfres : wf_cres (CRes (CTag W l v)))
       by (eapply Aw.cbstep_top_fuel_wf_cres; eauto).
     inv Hwfres; auto. }
 
   (* G_top for stepping e2 *)
-  assert (HG2 : G_top (i - S i1) (Aw.occurs_free_top e2) (M.set x (CTag l W v) ρ1)
+  assert (HG2 : G_top (i - S i1) (Aw.occurs_free_top e2) (M.set x (CTag W l v) ρ1)
                      (M.set x v' (M.set f clos ρ2))).
   { unfold G_top.
     split.
@@ -1449,7 +1449,7 @@ Proof.
 
     intros y Hy.
     destruct (M.elt_eq y x); subst.
-    + exists (CTag l W v), v'.
+    + exists (CTag W l v), v'.
         rewrite !M.gss; repeat (split; auto).
         * eapply V_top_exposed_r; eauto.
         * eapply V_top_mono; eauto; lia.
@@ -1461,7 +1461,7 @@ Proof.
         * rewrite M.gso; auto. rewrite M.gso; auto.
         * eapply V_top_mono; eauto; lia. }
 
-  edestruct (HE2 (i - S i1) (M.set x (CTag l W v) ρ1)
+  edestruct (HE2 (i - S i1) (M.set x (CTag W l v) ρ1)
                  (M.set x v' (M.set f clos ρ2)) HG2 i2 r1)
     as [j_e2 [r2 [Hb_e2 HR_e2]]]; [lia|auto|].
 
