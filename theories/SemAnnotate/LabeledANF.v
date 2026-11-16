@@ -341,6 +341,27 @@ Lemma bstep_case_inv {ρ x l cl j r} :
       bstep_fuel ρ e j r.
 Proof. intros H; inv H; do 4 eexists; split; [eassumption | split; eassumption]. Qed.
 
+Lemma bstep_letapp_inv {ρ x f l xs k j r} :
+  bstep ρ (Eletapp x f l xs k) j r ->
+  exists w' f' ρ' xs' e vs ρ'',
+    M.get f ρ = Some (Tag w' (Vfun f' ρ' xs' e)) /\
+      get_list xs ρ = Some vs /\
+      set_lists xs' vs (M.set f' (Tag w' (Vfun f' ρ' xs' e)) ρ') = Some ρ'' /\
+      ((exists j1 j2 v,
+           j = j1 + j2 /\
+             bstep_fuel ρ'' e j1 (Res v) /\
+             bstep_fuel (M.set x v ρ) k j2 r) \/
+         (r = OOT /\ bstep_fuel ρ'' e j OOT)).
+Proof.
+  intros H; inv H.
+  - do 7 eexists.
+    split; [eassumption | split; [eassumption | split; [eassumption |]]].
+    left; do 3 eexists; split; [reflexivity | split; eassumption].
+  - do 7 eexists.
+    split; [eassumption | split; [eassumption | split; [eassumption |]]].
+    right; split; [reflexivity | eassumption].
+Qed.
+
 Lemma find_tag_cons_inv {T : Type} {t e cl t' e'} :
   @find_tag T ((t, e) :: cl) t' e' ->
   (t' = t /\ e' = e) \/ (find_tag cl t' e' /\ t <> t').
