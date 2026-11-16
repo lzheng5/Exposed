@@ -139,10 +139,12 @@ Inductive acheck (A : analysis_result) : exp -> avals -> Prop :=
     (* the call site (c, l) eliminates everything that reaches [f] *)
     aelim_fun_int A f l ->
 
-    (* internal call: arguments flow to parameters, results flow out *)
+    (* internal call: arguments flow to parameters, results flow out.  Only
+       callees of the call's arity are constrained: a call of any other arity
+       gets stuck (`set_lists` fails), so it never needs a flow *)
     (forall l' f' xs' e',
         (AVfun l' f' xs' e' \in ai_env A f) ->
-        length xs = length xs' /\
+        length xs = length xs' ->
           (AVfun l' f' xs' e' \in ai_env A f') /\
           Forall2 (fun x x' => ai_env A x \subset ai_env A x') xs xs' /\
           (ai_ret A l' \subset R)) ->
@@ -155,7 +157,7 @@ Inductive acheck (A : analysis_result) : exp -> avals -> Prop :=
        (AVtop \in R) /\ (* result is unknown *)
        (forall l' f' xs' e',
            (AVfun l' f' xs' e' \in ai_esc A) ->
-             length xs = length xs' /\
+             length xs = length xs' ->
              (AVfun l' f' xs' e' \in ai_env A f') /\
              Forall2 (fun x x' => ai_env A x \subset ai_env A x') xs xs' /\ (* call the escaping function with the current arguments *)
              (ai_ret A l' \subset R))) -> (* what each escaping function may return can also be returned from this callsite *)
@@ -168,10 +170,11 @@ Inductive acheck (A : analysis_result) : exp -> avals -> Prop :=
   forall {x f l xs k R},
     aelim_fun_int A f l ->
 
-    (* internal call: arguments flow to parameters, results flow into [x] *)
+    (* internal call: arguments flow to parameters, results flow into [x]
+       (for callees of the call's arity only, as in `Acheck_app`) *)
     (forall l' f' xs' e',
         (AVfun l' f' xs' e' \in ai_env A f) ->
-        length xs = length xs' /\
+        length xs = length xs' ->
           (AVfun l' f' xs' e' \in ai_env A f') /\
           Forall2 (fun y y' => ai_env A y \subset ai_env A y') xs xs' /\
           (ai_ret A l' \subset ai_env A x)) ->
@@ -183,7 +186,7 @@ Inductive acheck (A : analysis_result) : exp -> avals -> Prop :=
        (AVtop \in ai_env A x) /\
        (forall l' f' xs' e',
            (AVfun l' f' xs' e' \in ai_esc A) ->
-             length xs = length xs' /\
+             length xs = length xs' ->
              (AVfun l' f' xs' e' \in ai_env A f') /\
              Forall2 (fun y y' => ai_env A y \subset ai_env A y') xs xs' /\
              (ai_ret A l' \subset ai_env A x))) ->
@@ -231,7 +234,7 @@ Lemma acheck_letapp_inv {A x f l xs k R} :
   aelim_fun_int A f l /\
     (forall l' f' xs' e',
         (AVfun l' f' xs' e' \in ai_env A f) ->
-        length xs = length xs' /\
+        length xs = length xs' ->
           (AVfun l' f' xs' e' \in ai_env A f') /\
           Forall2 (fun y y' => ai_env A y \subset ai_env A y') xs xs' /\
           (ai_ret A l' \subset ai_env A x)) /\
@@ -240,7 +243,7 @@ Lemma acheck_letapp_inv {A x f l xs k R} :
        (AVtop \in ai_env A x) /\
        (forall l' f' xs' e',
            (AVfun l' f' xs' e' \in ai_esc A) ->
-             length xs = length xs' /\
+             length xs = length xs' ->
              (AVfun l' f' xs' e' \in ai_env A f') /\
              Forall2 (fun y y' => ai_env A y \subset ai_env A y') xs xs' /\
              (ai_ret A l' \subset ai_env A x))) /\
@@ -2684,6 +2687,12 @@ Section Compat.
       rewrite (set_lists_length_eq _ _ _ _ H12); auto.
       eapply Forall2_length; eauto.
 
+      (* the call has the callee's arity *)
+      assert (Hlen_call : length xs = length l1).
+      { unfold var in *.
+        rewrite (get_list_length_eq _ _ _ Heqvs2); symmetry.
+        exact (set_lists_length_eq _ _ _ _ Heqρ4). }
+
       assert (HE : E θ  A0 c1 (negb (c1 =? c)) (i - (i - i)) ρ'' ρ4 e0 (ai_ret A0 l0)).
       {
         eapply (HV _ i c vs vs2); eauto.
@@ -2713,10 +2722,10 @@ Section Compat.
             destruct Hcbinding_f as [Hfown _].
 
             destruct (Hfown eq_refl) as [Hin | [Hesc Htop]].
-            * edestruct (H7 _ _ _ _ Hin) as [_ [_ [Hsub _]]]; eauto.
+            * edestruct (H7 _ _ _ _ Hin Hlen_call) as [_ [Hsub _]]; eauto.
               eapply cbinding_subset_list; eauto.
             * destruct (H8 Htop) as [_ [_ Hesc_fun]].
-              destruct (Hesc_fun _ _ _ _ Hesc) as [_ [_ [Hsub _]]].
+              destruct (Hesc_fun _ _ _ _ Hesc Hlen_call) as [_ [Hsub _]].
               eapply cbinding_subset_list; eauto.
 
           + assert (Htop : AVtop \in ai_env (θ c) f).
@@ -2751,7 +2760,10 @@ Section Compat.
           specialize (Hint eq_refl).
           inv Hint.
           * (* internal *)
-            edestruct H7 as [_ [_ [Hsub _]]]; eauto.
+            match goal with
+            | [Hin : AVfun _ _ _ _ \in ai_env _ f |- _] =>
+                destruct (H7 _ _ _ _ Hin Hlen_call) as [_ [Hsub _]]
+            end.
             eapply approx_vals_subset_list; eauto.
           * (* foreign *)
             inv H1; eauto.
@@ -2798,18 +2810,18 @@ Section Compat.
         { assert (Hcbinding_xs : Forall2 (cbinding c (θ c)) xs vs2)
             by (eapply cbinding_env_get_list; [eapply G_cbinding_env; eauto | exact Hxs | exact Heqvs2]).
           destruct Hint as [Hin | [Hesc Htop]].
-          - edestruct (H7 _ _ _ _ Hin) as [_ [_ [Hsub _]]]; eauto.
+          - edestruct (H7 _ _ _ _ Hin Hlen_call) as [_ [Hsub _]]; eauto.
             eapply cbinding_subset_list; eauto.
           - destruct (H8 Htop) as [_ [_ Hesc_fun]].
-            destruct (Hesc_fun _ _ _ _ Hesc) as [_ [_ [Hsub _]]].
+            destruct (Hesc_fun _ _ _ _ Hesc Hlen_call) as [_ [Hsub _]].
             eapply cbinding_subset_list; eauto. }
 
         (* what the callee may return can be returned from this call site *)
         assert (Hret : ai_ret (θ c) l0 \subset Rs).
         { destruct Hint as [Hin | [Hesc Htop]].
-          - destruct (H7 _ _ _ _ Hin) as [_ [_ [_ Hsub]]]; exact Hsub.
+          - destruct (H7 _ _ _ _ Hin Hlen_call) as [_ [_ Hsub]]; exact Hsub.
           - destruct (H8 Htop) as [_ [_ Hesc_fun]].
-            destruct (Hesc_fun _ _ _ _ Hesc) as [_ [_ [_ Hsub]]]; exact Hsub. }
+            destruct (Hesc_fun _ _ _ _ Hesc Hlen_call) as [_ [_ Hsub]]; exact Hsub. }
 
         assert (Hok : cresult c (θ c) Rs (CRes v2))
           by (eapply cresult_subset; [eapply cbstep_fuel_cresult; eauto | exact Hret]).
@@ -2914,7 +2926,7 @@ Section Compat.
     aelim_fun_int (θ c) f l ->
     (forall l0 f0 xs0 e0,
         (AVfun l0 f0 xs0 e0 \in ai_env (θ c) f) ->
-        length xs = length xs0 /\
+        length xs = length xs0 ->
           (AVfun l0 f0 xs0 e0 \in ai_env (θ c) f0) /\
           Forall2 (fun y y' => ai_env (θ c) y \subset ai_env (θ c) y') xs xs0 /\
           (ai_ret (θ c) l0 \subset Rx)) ->
@@ -2923,7 +2935,7 @@ Section Compat.
        (AVtop \in Rx) /\
        (forall l0 f0 xs0 e0,
            (AVfun l0 f0 xs0 e0 \in ai_esc (θ c)) ->
-             length xs = length xs0 /\
+             length xs = length xs0 ->
              (AVfun l0 f0 xs0 e0 \in ai_env (θ c) f0) /\
              Forall2 (fun y y' => ai_env (θ c) y \subset ai_env (θ c) y') xs xs0 /\
              (ai_ret (θ c) l0 \subset Rx))) ->
@@ -2967,6 +2979,10 @@ Section Compat.
       rewrite (set_lists_length_eq _ _ _ _ Hset1). eapply Forall2_length; eauto. }
     destruct (set_lists_length3 (M.set f' (CTag (θ c0) c0 l0 (CVfun f' ρ2' xs' e)) ρ2') xs' vs2 Hlen)
       as [ρ4 Hset2].
+    (* the call has the callee's arity *)
+    assert (Hlen_call : length xs = length xs').
+    { unfold var in *.
+      rewrite (get_list_length_eq _ _ _ Hgl2); symmetry; exact Hlen. }
     assert (HVs' : Forall2 (V θ (i - (i - i))) vs1 vs2)
       by (eapply V_mono_Forall; [exact HVs | lia]).
     pose proof (cbinding_env_get f _ (G_cbinding_env _ HG) Hf Hget2) as Hb_f.
@@ -2984,9 +3000,9 @@ Section Compat.
       assert (Hflow : Forall2 (fun y y' => ai_env (θ c) y \subset ai_env (θ c) y') xs xs' /\
                         (ai_ret (θ c) l0 \subset Rx)).
       { destruct Hint as [Hin | [Hesc Htop]].
-        - destruct (Hknown _ _ _ _ Hin) as [_ [_ [Hsub Hret]]]; split; assumption.
+        - destruct (Hknown _ _ _ _ Hin Hlen_call) as [_ [Hsub Hret]]; split; assumption.
         - destruct (Hunknown Htop) as [_ [_ Hesc_fun]].
-          destruct (Hesc_fun _ _ _ _ Hesc) as [_ [_ [Hsub Hret]]]; split; assumption. }
+          destruct (Hesc_fun _ _ _ _ Hesc Hlen_call) as [_ [Hsub Hret]]; split; assumption. }
       destruct Hflow as [Hsub Hret].
       pose proof (cbinding_env_get_list (G_cbinding_env _ HG) _ _ Hxs Hgl2) as Hbind_xs.
       pose proof (cbinding_subset_list Hbind_xs Hsub) as Hbind_params.
