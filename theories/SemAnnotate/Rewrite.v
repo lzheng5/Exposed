@@ -7,11 +7,11 @@ Require Import Lia.
 From Hammer Require Import Hammer Tactics Reflect.
 
 From Common Require Import Util.
-From SemAnnotate Require Import LabeledANF SimpleWebAssign.
+From SemAnnotate Require Import LabeledANF AssignWeb.
 From LambdaWeb Require Import ANF.
 
 Module AS := LabeledANF.
-Module Aw := SimpleWebAssign.
+Module Aw := SemAnnotate.AssignWeb.
 Module AT := LambdaWeb.ANF.
 
 (* Checking Semantics -> Web Semantics *)

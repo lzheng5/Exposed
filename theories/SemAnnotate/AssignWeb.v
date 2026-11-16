@@ -15,7 +15,7 @@ Module An := SimpleCFA.
 (* Web Assignment, Parameterized by a Web Strategy *)
 
 (* Sound web assignment guarantees the exposed constraints in LambdaWeb.
-   The proof is a functor (`WebAssign`) over a strategy (`WEB_STRATEGY`) that
+   The proof is a functor (`AssignWeb`) over a strategy (`WEB_STRATEGY`) that
    says how internal webs are chosen and which exposed web each kind of label
    gets; see the instances at the end of the file. *)
 
@@ -666,7 +666,7 @@ Module Type WEB_STRATEGY.
 
 End WEB_STRATEGY.
 
-Module WebAssign (S : WEB_STRATEGY).
+Module AssignWeb (S : WEB_STRATEGY).
 
 Import S.
 
@@ -3192,7 +3192,7 @@ Section Linking.
 
 End Linking.
 
-End WebAssign.
+End AssignWeb.
 
 (* --------------------------------------------------------------- *)
 (* Web Strategies                                                  *)
@@ -3308,5 +3308,5 @@ End EquivArityStrategy.
 
 (* TODO: generalize Comp to talk about any WEB_STRATEGY *)
 (* The simple strategy is the default instance; the others are obtained with,
-   e.g., `Module EquivWebAssign := WebAssign EquivStrategy.` *)
-Include WebAssign SimpleStrategy.
+   e.g., `Module EquivAssignWeb := AssignWeb EquivStrategy.` *)
+Include AssignWeb SimpleStrategy.
