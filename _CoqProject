@@ -63,7 +63,7 @@ theories/SemAnnotate/LabeledANF.v
 theories/SemAnnotate/Label.v
 theories/SemAnnotate/SimpleCFA.v
 theories/SemAnnotate/SimpleCFAProp.v
-theories/SemAnnotate/AssignWeb.v
+theories/SemAnnotate/SimpleWebAssign.v
 theories/SemAnnotate/Rewrite.v
 theories/SemAnnotate/Comp.v
 #theories/SemAnnotate/CompAttempt.v
