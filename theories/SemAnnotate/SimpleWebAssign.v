@@ -2220,24 +2220,23 @@ Hint Constructors cexp : core.
 (* Linking *)
 Definition clink x e1 e2 : cexp := CElink x e1 e2.
 
-(* TODO: renaming *)
 (* `A` is the analysis result of one of the units of `ce`. *)
-Inductive has_cunit : cexp -> web_map -> Prop :=
-| Has_cunit_unit :
+Inductive has_unit : cexp -> web_map -> Prop :=
+| Has_unit_unit :
   forall W e,
-    has_cunit (CEunit W e) W
+    has_unit (CEunit W e) W
 
-| Has_cunit_link1 :
+| Has_unit_link1 :
   forall x ce1 ce2 W,
-    has_cunit ce1 W ->
-    has_cunit (CElink x ce1 ce2) W
+    has_unit ce1 W ->
+    has_unit (CElink x ce1 ce2) W
 
-| Has_cunit_link2 :
+| Has_unit_link2 :
   forall x ce1 ce2 W,
-    has_cunit ce2 W ->
-    has_cunit (CElink x ce1 ce2) W.
+    has_unit ce2 W ->
+    has_unit (CElink x ce1 ce2) W.
 
-Hint Constructors has_cunit : core.
+Hint Constructors has_unit : core.
 
 Inductive occurs_free_top : cexp -> vars :=
 | Free_cexp :
@@ -2491,16 +2490,16 @@ Hint Constructors web_map_valid_of : core.
 (* `web_map_context_of` only depends on `ω` at the colors of the units. *)
 Lemma web_map_context_of_ext {ω ω' cce we} :
   web_map_context_of ω cce we ->
-  (forall c A, An.has_unit cce c A -> ω c = ω' c) ->
+  (forall c A, An.has_cunit cce c A -> ω c = ω' c) ->
   web_map_context_of ω' cce we.
 Proof.
   intros H.
   induction H as [c A Rs e | x cce1 cce2 we1 we2 H1 IH1 H2 IH2]; intros Hag.
-  - rewrite (Hag c A (An.Has_unit_unit A Rs c e)).
+  - rewrite (Hag c A (An.Has_cunit_unit A Rs c e)).
     constructor.
   - constructor.
-    + apply IH1; intros c A Hu; eapply Hag; eapply An.Has_unit_link1; exact Hu.
-    + apply IH2; intros c A Hu; eapply Hag; apply An.Has_unit_link2; exact Hu.
+    + apply IH1; intros c A Hu; eapply Hag; eapply An.Has_cunit_link1; exact Hu.
+    + apply IH2; intros c A Hu; eapply Hag; apply An.Has_cunit_link2; exact Hu.
 Qed.
 
 (* A web map context agreeing with the coloring, falling back to the empty map
@@ -2525,7 +2524,7 @@ Proof.
     + intros c'; unfold ω.
       destruct (Nat.eqb c' c) eqn:Hc.
       * apply Nat.eqb_eq in Hc; subst c'.
-        rewrite <- (Hθ c A (An.Has_unit_unit A Rs c e)).
+        rewrite <- (Hθ c A (An.Has_cunit_unit A Rs c e)).
         split; [exact Hok | exact Hexp].
       * split; [apply web_map_internal_empty |].
         intros l w Hget; rewrite M.gempty in Hget; discriminate.
@@ -2749,7 +2748,7 @@ Section Top.
     (occurs_free_top we) \subset (An.occurs_free_top ce) /\
       (* each web map is valid for the analysis result of its unit *)
       web_map_valid_of ce we /\
-      (forall A, An.has_cunit ce A -> An.escapes_ok A) /\
+      (forall A, An.has_unit ce A -> An.escapes_ok A) /\
       forall θ ω cce c1 c2,
         coloring c1 ce c2 cce ->
         analysis_context_of θ cce ->
@@ -2813,7 +2812,7 @@ Section Top.
       + eapply G_top_subset; eauto.
         eapply An.occurs_free_top_cexp; eauto.
       + intros y Hy.
-        rewrite <- (H0 c1 A (An.Has_unit_unit A Rs c1 e)).
+        rewrite <- (H0 c1 A (An.Has_cunit_unit A Rs c1 e)).
         apply Himp; exact Hy.
   Qed.
 
@@ -2912,7 +2911,7 @@ Section Adequacy.
 
     (* color `ce`, and pick contexts agreeing with the coloring *)
     destruct (An.coloring_exists 0 ce) as [c2 [cce Hcol]].
-    destruct (An.cexp_has_cunit ce) as [d Hd].
+    destruct (An.cexp_has_unit ce) as [d Hd].
     destruct (An.coloring_context Hcol d (Hunits d Hd) Hunits) as [θ [Hθ Hesc]].
     destruct (web_map_context_exists Hcol Hθ we Hvalid) as [ω [Hωof Hω]].
     exists θ, ω, cce, 0, c2.
@@ -3307,6 +3306,7 @@ Module EquivArityStrategy <: WEB_STRATEGY.
 
 End EquivArityStrategy.
 
+(* TODO: generalize Comp to talk about any WEB_STRATEGY *)
 (* The simple strategy is the default instance; the others are obtained with,
    e.g., `Module EquivWebAssign := WebAssign EquivStrategy.` *)
 Include WebAssign SimpleStrategy.

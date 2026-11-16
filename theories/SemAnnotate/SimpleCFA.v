@@ -3431,22 +3431,22 @@ Hint Constructors cexp : core.
 Definition clink x e1 e2 : cexp := CElink x e1 e2.
 
 (* `A` is the analysis result of one of the units of `ce`. *)
-Inductive has_cunit : cexp -> analysis_result -> Prop :=
-| Has_cunit_unit :
+Inductive has_unit : cexp -> analysis_result -> Prop :=
+| Has_unit_unit :
   forall A Rs e,
-    has_cunit (CEunit A Rs e) A
+    has_unit (CEunit A Rs e) A
 
-| Has_cunit_link1 :
+| Has_unit_link1 :
   forall x ce1 ce2 A,
-    has_cunit ce1 A ->
-    has_cunit (CElink x ce1 ce2) A
+    has_unit ce1 A ->
+    has_unit (CElink x ce1 ce2) A
 
-| Has_cunit_link2 :
+| Has_unit_link2 :
   forall x ce1 ce2 A,
-    has_cunit ce2 A ->
-    has_cunit (CElink x ce1 ce2) A.
+    has_unit ce2 A ->
+    has_unit (CElink x ce1 ce2) A.
 
-Hint Constructors has_cunit : core.
+Hint Constructors has_unit : core.
 
 Inductive occurs_free_top : cexp -> vars :=
 | Free_cexp :
@@ -3502,22 +3502,22 @@ Inductive coloring : color -> cexp -> color -> ccexp -> Prop :=
 Hint Constructors coloring : core.
 
 (* `(c, A)` is one of the units of `cce`. *)
-Inductive has_unit : ccexp -> color -> analysis_result -> Prop :=
-| Has_unit_unit :
+Inductive has_cunit : ccexp -> color -> analysis_result -> Prop :=
+| Has_cunit_unit :
   forall A Rs c e,
-    has_unit (CCunit c A Rs e) c A
+    has_cunit (CCunit c A Rs e) c A
 
-| Has_unit_link1 :
+| Has_cunit_link1 :
   forall x cce1 cce2 c A,
-    has_unit cce1 c A ->
-    has_unit (CClink x cce1 cce2) c A
+    has_cunit cce1 c A ->
+    has_cunit (CClink x cce1 cce2) c A
 
-| Has_unit_link2 :
+| Has_cunit_link2 :
   forall x cce1 cce2 c A,
-    has_unit cce2 c A ->
-    has_unit (CClink x cce1 cce2) c A.
+    has_cunit cce2 c A ->
+    has_cunit (CClink x cce1 cce2) c A.
 
-Hint Constructors has_unit : core.
+Hint Constructors has_cunit : core.
 
 Lemma coloring_mono {c1 ce c2 cce} :
   coloring c1 ce c2 cce ->
@@ -3526,7 +3526,7 @@ Proof. intros Hcol; induction Hcol; lia. Qed.
 
 Lemma coloring_range {c1 ce c2 cce} :
   coloring c1 ce c2 cce ->
-  forall c A, has_unit cce c A -> c1 <= c < c2.
+  forall c A, has_cunit cce c A -> c1 <= c < c2.
 Proof.
   intros Hcol.
   induction Hcol as [c A e | c1 c2 c3 x e1 e2 cce1 cce2 Hc1 IH1 Hc2 IH2];
@@ -3534,11 +3534,11 @@ Proof.
   - inv Hunit; lia.
   - inv Hunit.
     + match goal with
-      | [Hu : has_unit cce1 c0 A0 |- _] => destruct (IH1 c0 A0 Hu) as [Hlo Hhi]
+      | [Hu : has_cunit cce1 c0 A0 |- _] => destruct (IH1 c0 A0 Hu) as [Hlo Hhi]
       end.
       pose proof (coloring_mono Hc2) as Hm; lia.
     + match goal with
-      | [Hu : has_unit cce2 c0 A0 |- _] => destruct (IH2 c0 A0 Hu) as [Hlo Hhi]
+      | [Hu : has_cunit cce2 c0 A0 |- _] => destruct (IH2 c0 A0 Hu) as [Hlo Hhi]
       end.
       pose proof (coloring_mono Hc1) as Hm; lia.
 Qed.
@@ -3547,8 +3547,8 @@ Qed.
 Lemma coloring_unique {c1 ce c2 cce} :
   coloring c1 ce c2 cce ->
   forall c A A',
-    has_unit cce c A ->
-    has_unit cce c A' ->
+    has_cunit cce c A ->
+    has_cunit cce c A' ->
     A = A'.
 Proof.
   intros Hcol.
@@ -3557,30 +3557,30 @@ Proof.
   - inv Hu; inv Hu'; reflexivity.
   - inv Hu; inv Hu'.
     + match goal with
-      | [Ha : has_unit cce1 c0 A0, Hb : has_unit cce1 c0 A0' |- _] =>
+      | [Ha : has_cunit cce1 c0 A0, Hb : has_cunit cce1 c0 A0' |- _] =>
           exact (IH1 c0 A0 A0' Ha Hb)
       end.
     + exfalso.
       match goal with
-      | [Ha : has_unit cce1 c0 A0, Hb : has_unit cce2 c0 A0' |- _] =>
+      | [Ha : has_cunit cce1 c0 A0, Hb : has_cunit cce2 c0 A0' |- _] =>
           destruct (coloring_range Hc1 c0 A0 Ha) as [Hlo Hhi];
           destruct (coloring_range Hc2 c0 A0' Hb) as [Hlo' Hhi']
       end; lia.
     + exfalso.
       match goal with
-      | [Ha : has_unit cce2 c0 A0, Hb : has_unit cce1 c0 A0' |- _] =>
+      | [Ha : has_cunit cce2 c0 A0, Hb : has_cunit cce1 c0 A0' |- _] =>
           destruct (coloring_range Hc2 c0 A0 Ha) as [Hlo Hhi];
           destruct (coloring_range Hc1 c0 A0' Hb) as [Hlo' Hhi']
       end; lia.
     + match goal with
-      | [Ha : has_unit cce2 c0 A0, Hb : has_unit cce2 c0 A0' |- _] =>
+      | [Ha : has_cunit cce2 c0 A0, Hb : has_cunit cce2 c0 A0' |- _] =>
           exact (IH2 c0 A0 A0' Ha Hb)
       end.
 Qed.
 
 (* `Θ` agrees with the coloring of `cce`. *)
 Definition analysis_context_of (Θ : analysis_context) (cce : ccexp) : Prop :=
-  forall c A, has_unit cce c A -> A = Θ c.
+  forall c A, has_cunit cce c A -> A = Θ c.
 
 (* Every colorless unit tree can be colored, starting from any color. *)
 Lemma coloring_exists c1 ce :
@@ -3594,12 +3594,12 @@ Proof.
     exists c3, (CClink x cce1 cce2); econstructor; eassumption.
 Qed.
 
-Lemma cexp_has_cunit ce :
-  exists A, has_cunit ce A.
+Lemma cexp_has_unit ce :
+  exists A, has_unit ce A.
 Proof.
   induction ce as [A Rs e | x ce1 IH1 ce2 IH2].
   - exists A; constructor.
-  - destruct IH1 as [A HA]; exists A; apply Has_cunit_link1; exact HA.
+  - destruct IH1 as [A HA]; exists A; apply Has_unit_link1; exact HA.
 Qed.
 
 (* A context agreeing with the coloring, falling back to `d` on colors that
@@ -3608,7 +3608,7 @@ Lemma coloring_context {c1 ce c2 cce} :
   coloring c1 ce c2 cce ->
   forall d,
     escapes_ok d ->
-    (forall A, has_cunit ce A -> escapes_ok A) ->
+    (forall A, has_unit ce A -> escapes_ok A) ->
     exists θ,
       analysis_context_of θ cce /\
       analysis_context_escape_ok θ.
@@ -3621,21 +3621,21 @@ Proof.
       cbn beta; rewrite Nat.eqb_refl; reflexivity.
     + intros c'; cbn beta.
       destruct (Nat.eqb c' c); [apply Hesc; constructor | exact Hd].
-  - destruct (IH1 d Hd (fun A HA => Hesc A (Has_cunit_link1 x e1 e2 A HA)))
+  - destruct (IH1 d Hd (fun A HA => Hesc A (Has_unit_link1 x e1 e2 A HA)))
       as [θ1 [Hof1 Hok1]].
-    destruct (IH2 d Hd (fun A HA => Hesc A (Has_cunit_link2 x e1 e2 A HA)))
+    destruct (IH2 d Hd (fun A HA => Hesc A (Has_unit_link2 x e1 e2 A HA)))
       as [θ2 [Hof2 Hok2]].
     exists (fun c' => if Nat.ltb c' c2 then θ1 c' else θ2 c'); split.
     + intros c' A' Hu; inv Hu; cbn beta.
       * match goal with
-        | [Hu1 : has_unit cce1 c' A' |- _] =>
+        | [Hu1 : has_cunit cce1 c' A' |- _] =>
             destruct (coloring_range Hc1 c' A' Hu1) as [_ Hhi];
             destruct (Nat.ltb c' c2) eqn:Hb;
             [exact (Hof1 c' A' Hu1)
             | exfalso; pose proof (proj1 (Nat.ltb_ge c' c2) Hb); lia]
         end.
       * match goal with
-        | [Hu2 : has_unit cce2 c' A' |- _] =>
+        | [Hu2 : has_cunit cce2 c' A' |- _] =>
             destruct (coloring_range Hc2 c' A' Hu2) as [Hlo _];
             destruct (Nat.ltb c' c2) eqn:Hb;
             [exfalso; pose proof (proj1 (Nat.ltb_lt c' c2) Hb); lia
@@ -3647,7 +3647,7 @@ Qed.
 
 Lemma coloring_closed ce :
   occurs_free_top ce \subset (Empty_set _) ->
-  (forall A, has_cunit ce A -> escapes_ok A) ->
+  (forall A, has_unit ce A -> escapes_ok A) ->
   exists cce c1 c2 θ,
     coloring c1 ce c2 cce /\
     analysis_context_of θ cce /\
@@ -3655,7 +3655,7 @@ Lemma coloring_closed ce :
 Proof.
   intros Hclose Hesc.
   destruct (coloring_exists 0 ce) as [c2 [cce Hcol]].
-  destruct (cexp_has_cunit ce) as [d Hd].
+  destruct (cexp_has_unit ce) as [d Hd].
   destruct (coloring_context Hcol d (Hesc d Hd) Hesc) as [θ [Hof Hok]].
   exists cce, 0, c2, θ; auto.
 Qed.
@@ -3858,14 +3858,14 @@ Qed.
 Lemma analysis_context_of_unit {Θ Rs A c e} :
   analysis_context_of Θ (CCunit c A Rs e) ->
   A = Θ c.
-Proof. intros HΘ; exact (HΘ c A (Has_unit_unit A Rs c e)). Qed.
+Proof. intros HΘ; exact (HΘ c A (Has_cunit_unit A Rs c e)). Qed.
 
 Lemma analysis_context_of_link1 {Θ x cce1 cce2} :
   analysis_context_of Θ (CClink x cce1 cce2) ->
   analysis_context_of Θ cce1.
 Proof.
   intros HΘ c A Hunit.
-  exact (HΘ c A (Has_unit_link1 x cce1 cce2 c A Hunit)).
+  exact (HΘ c A (Has_cunit_link1 x cce1 cce2 c A Hunit)).
 Qed.
 
 Lemma analysis_context_of_link2 {Θ x cce1 cce2} :
@@ -3873,7 +3873,7 @@ Lemma analysis_context_of_link2 {Θ x cce1 cce2} :
   analysis_context_of Θ cce2.
 Proof.
   intros HΘ c A Hunit.
-  exact (HΘ c A (Has_unit_link2 x cce1 cce2 c A Hunit)).
+  exact (HΘ c A (Has_cunit_link2 x cce1 cce2 c A Hunit)).
 Qed.
 
 (* A value returned by a linked program agrees with Θ. *)
@@ -4213,7 +4213,7 @@ Section Top.
 
   Definition trans_correct_top e ce :=
     (occurs_free_top ce) \subset (occurs_free e) /\
-      (forall A, has_cunit ce A -> escapes_ok A) /\
+      (forall A, has_unit ce A -> escapes_ok A) /\
       forall θ cce c1 c2,
         coloring c1 ce c2 cce ->
         analysis_context_of θ cce ->
@@ -4258,7 +4258,7 @@ Section Top.
       eapply H0; eauto.
     - eapply G_top_G; eauto.
       intros y Hy.
-      rewrite <- (H0 c1 A (Has_unit_unit A Rs c1 e)).
+      rewrite <- (H0 c1 A (Has_cunit_unit A Rs c1 e)).
       apply Himp; exact Hy.
   Qed.
 
@@ -4352,7 +4352,7 @@ Section Adequacy.
 
     (* color `ce`, and pick a context agreeing with the coloring *)
     destruct (coloring_exists 0 ce) as [c2 [cce Hcol]].
-    destruct (cexp_has_cunit ce) as [d Hd].
+    destruct (cexp_has_unit ce) as [d Hd].
     destruct (coloring_context Hcol d (Hunits d Hd) Hunits) as [θ [Hθ Hesc]].
     exists θ, cce, 0, c2.
     split; [exact Hcol | split; [exact Hθ | split; [exact Hesc |]]].
@@ -4531,24 +4531,24 @@ Section Linking.
     do 3 eexists; split; [reflexivity | split; eassumption].
   Qed.
 
-  Lemma coloring_has_cunit {c1 ce c2 cce} :
+  Lemma coloring_has_unit {c1 ce c2 cce} :
     coloring c1 ce c2 cce ->
-    forall c A, has_unit cce c A -> has_cunit ce A.
+    forall c A, has_cunit cce c A -> has_unit ce A.
   Proof.
     intros Hcol.
     induction Hcol as [c A Rs e | c1 c2 c3 x e1 e2 cce1 cce2 Hc1 IH1 Hc2 IH2];
       intros c0 A0 Hu.
     - inv Hu.
-      apply Has_cunit_unit.
+      apply Has_unit_unit.
     - inv Hu.
-      + apply Has_cunit_link1; eapply IH1; eassumption.
-      + apply Has_cunit_link2; eapply IH2; eassumption.
+      + apply Has_unit_link1; eapply IH1; eassumption.
+      + apply Has_unit_link2; eapply IH2; eassumption.
   Qed.
 
   (* Every color handed out by the coloring names a unit. *)
   Lemma coloring_surj {c1 ce c2 cce} :
     coloring c1 ce c2 cce ->
-    forall c, c1 <= c < c2 -> exists A, has_unit cce c A.
+    forall c, c1 <= c < c2 -> exists A, has_cunit cce c A.
   Proof.
     intros Hcol.
     induction Hcol as [c A Rs e | c1 c2 c3 x e1 e2 cce1 cce2 Hc1 IH1 Hc2 IH2];
@@ -4556,14 +4556,14 @@ Section Linking.
     - exists A.
       assert (Heq : c0 = c) by lia.
       subst c0.
-      apply Has_unit_unit.
+      apply Has_cunit_unit.
     - destruct (Nat.lt_ge_cases c0 c2) as [Hlt | Hge].
       + assert (Hc0' : c1 <= c0 < c2) by lia.
         destruct (IH1 c0 Hc0') as [A HA].
-        exists A; apply Has_unit_link1; exact HA.
+        exists A; apply Has_cunit_link1; exact HA.
       + assert (Hc0' : c2 <= c0 < c3) by lia.
         destruct (IH2 c0 Hc0') as [A HA].
-        exists A; apply Has_unit_link2; exact HA.
+        exists A; apply Has_cunit_link2; exact HA.
   Qed.
 
   (* The environment relation for the first component: the closure `f` is
