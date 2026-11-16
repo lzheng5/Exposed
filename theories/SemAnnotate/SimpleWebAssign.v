@@ -480,6 +480,20 @@ Proof.
   induction H; eauto.
 Qed.
 
+(* A value returned by a body run under an exposed web is exposed. *)
+Lemma cbstep_fuel_exposed_to_exposed {W ρ e k w v} :
+  w \in Exposed ->
+  cbstep_fuel W (exposedb w) ρ e k (CRes v) ->
+  to_exposed v.
+Proof.
+  intros Hw Hstep.
+  assert (Hb : exposedb w = true)
+    by (destruct (exposed_reflect w); [reflexivity | contradiction]).
+  rewrite Hb in Hstep.
+  pose proof (cbstep_fuel_to_exposed_cres _ _ _ _ _ Hstep) as Hx.
+  inv Hx; assumption.
+Qed.
+
 (* Lemmas about [wf_val] and [wf_env] *)
 Lemma wf_cenv_get ρ :
   wf_cenv ρ ->
@@ -1359,6 +1373,49 @@ Proof.
     split; [assumption | split; [assumption | split; [assumption | split; assumption]]].
 Qed.
 
+(* A call binding a returned value: the call is internal (the callee wears
+   the caller's color, its parameters are bound as the caller sees them, and
+   its body runs off the boundary) or foreign (the callee has escaped, so have
+   the arguments, and its body runs at the boundary). *)
+Lemma An_cbstep_letapp_Res_inv {A c bdr ρ x f l xs k j Rs v I} :
+  An.cbstep A c bdr ρ (Eletapp x f l xs k) j Rs (An.CRes v) I ->
+  exists A' c' l' f' ρ' xs' e vs ρ'' j1 j2 v' I1 I2 bdr',
+    M.get f ρ = Some (An.CTag A' c' l' (An.CVfun f' ρ' xs' e)) /\
+      get_list xs ρ = Some vs /\
+      set_lists xs' vs (M.set f' (An.CTag A' c' l' (An.CVfun f' ρ' xs' e)) ρ') = Some ρ'' /\
+      j = j1 + j2 /\
+      I = ((((c', l'), (c, l)) |: I1) :|: I2) /\
+      An.cbstep_fuel A' c' bdr' ρ'' e j1 (An.ai_ret A' l') (An.CRes v') I1 /\
+      ((c' = c /\ Forall2 (An.cbinding c A) xs' vs /\ bdr' = false) \/
+         (c <> c' /\ (An.AVfun l' f' xs' e \in An.ai_esc A') /\
+            Forall (An.cescaped c') vs /\ bdr' = true)) /\
+      An.cescaped c v' /\
+      An.cbinding c A x v' /\
+      An.cbstep_fuel A c bdr (M.set x v' ρ) k j2 Rs (An.CRes v) I2.
+Proof.
+  intros H; inv H.
+  - (* An.Cbstep_letapp_External_Res *)
+    do 15 eexists.
+    split; [eassumption |].
+    split; [eassumption |].
+    split; [eassumption |].
+    split; [reflexivity |].
+    split; [reflexivity |].
+    split; [eassumption |].
+    split; [right; split; [eassumption | split; [eassumption | split; [eassumption | reflexivity]]] |].
+    split; [eassumption | split; eassumption].
+  - (* An.Cbstep_letapp_Internal_Res *)
+    do 15 eexists.
+    split; [eassumption |].
+    split; [eassumption |].
+    split; [eassumption |].
+    split; [reflexivity |].
+    split; [reflexivity |].
+    split; [eassumption |].
+    split; [left; split; [reflexivity | split; [eassumption | reflexivity]] |].
+    split; [eassumption | split; eassumption].
+Qed.
+
 Lemma An_cbstep_constr_inv {A c bdr ρ x l t ys k j Rs r I} :
   An.cbstep A c bdr ρ (Econstr x l t ys k) j Rs r I ->
   exists vs,
@@ -1788,6 +1845,177 @@ Section Compat.
              exact (V_exposed θ ω Hω HVv Hesc_v Hfl_v Hex).
   Qed.
 
+  (* A call at the site `l` of the unit `c`, whose edge is predicted by `c`,
+     runs as the callee's body does, under the callee's web map, and the call
+     site and the callee share a web:
+     - an internal call: the edge is an internal interaction;
+     - a foreign call: both ends interact with the unknown side, hence are
+       exposed, and so are the arguments and the result. *)
+  Lemma call_compat {θ ω c Γ i ρ1 ρ2 f l w xs Iall A' c' l' f' ρ1' xs' e vs1 ρ3 bdr' j v I1} :
+    valid_web_map_context ω θ ->
+    An.analysis_context_escape_ok θ ->
+    G θ ω c (S i) Γ ρ1 ρ2 ->
+    (f \in Γ) ->
+    (FromList xs \subset Γ) ->
+    (ω c) ! l = Some w ->
+    An.approx_int c (An.ai_int (θ c)) Iall ->
+    (((c', l'), (c, l)) \in Iall) ->
+    M.get f ρ1 = Some (An.CTag A' c' l' (An.CVfun f' ρ1' xs' e)) ->
+    get_list xs ρ1 = Some vs1 ->
+    set_lists xs' vs1 (M.set f' (An.CTag A' c' l' (An.CVfun f' ρ1' xs' e)) ρ1') = Some ρ3 ->
+    An.cbstep_fuel A' c' bdr' ρ3 e j (An.ai_ret A' l') (An.CRes v) I1 ->
+    ((c' = c /\ Forall2 (An.cbinding c (θ c)) xs' vs1 /\ bdr' = false) \/
+       (c <> c' /\ (An.AVfun l' f' xs' e \in An.ai_esc A') /\
+          Forall (An.cescaped c') vs1 /\ bdr' = true)) ->
+    j <= i ->
+    exists ρ2' vs2 ρ4 j2 v2,
+      M.get f ρ2 = Some (CTag l' (ω c') (CVfun f' ρ2' xs' e)) /\
+        get_list xs ρ2 = Some vs2 /\
+        set_lists xs' vs2 (M.set f' (CTag l' (ω c') (CVfun f' ρ2' xs' e)) ρ2') = Some ρ4 /\
+        (ω c') ! l' = Some w /\
+        cbstep_fuel (ω c') (exposedb w) ρ4 e j2 (CRes v2) /\
+        (w \in Exposed -> Forall to_exposed vs2 /\ to_exposed v2) /\
+        V θ ω (i - j) v v2.
+  Proof.
+    intros Hω Hescθ HG Hf Hxs Hw Hint Hin Hget1 Hgl1 Hset1 Hrun1 Hcall Hj.
+    (* the callee is a related closure, tagged with the web map of its unit *)
+    destruct (G_get _ _ HG f _ Hf Hget1) as [fv2 [Hget2 HV]].
+    pose proof (An.wf_cval_CTag_inv (V_wf_cval_l _ _ HV)) as [HA' _]; subst A'.
+    destruct fv2 as [l2 W2 w2'].
+    destruct w2' as [f2 ρ2' xs2 e2 | t2 vs2]; simpl in HV;
+      [| destruct HV as [_ [_ [_ [_ [w0 [_ []]]]]]]].
+    destruct HV as [_ [Hwf2 [Heql [HW [w2 [Hw2 [Heqf [Heqxs [Heqe [_ [Hsite [_ [_ HVb]]]]]]]]]]]]].
+    subst l2 W2 f2 xs2 e2.
+
+    (* the arguments *)
+    destruct (G_get_list _ _ HG xs vs1 Hxs Hgl1) as [vs2 [Hgl2 HVs]].
+    assert (Hlen : length xs' = length vs2).
+    { unfold var in *.
+      rewrite (set_lists_length_eq _ _ _ _ Hset1). eapply Forall2_length; eauto. }
+    destruct (set_lists_length3 (M.set f' (CTag l' (ω c') (CVfun f' ρ2' xs' e)) ρ2') xs' vs2 Hlen)
+      as [ρ4 Hset2].
+    assert (HVs' : Forall2 (V θ ω (i - (i - i))) vs1 vs2)
+      by (eapply V_mono_Forall; [exact HVs | lia]).
+    pose proof (An.cescaped_env_get_list (G_cescaped_env _ _ HG) _ _ Hxs Hgl1) as Hesc_args.
+    destruct (Hint _ _ _ _ Hin) as [Hcc [_ Hec]].
+
+    destruct Hcall as [[-> [Hbind_params ->]] | [Hneqc [Hfesc [Hesc_args' ->]]]].
+    - (* internal call: caller and callee share a web *)
+      assert (Heqw : w2 = w).
+      { destruct (Hω c) as [Hassign Hexp].
+        exact (web_map_interact_eq Hassign Hexp (Hcc eq_refl eq_refl) Hw2 Hw). }
+      subst w2.
+
+      (* the callee is exposed, hence so are its parameters *)
+      assert (Hexvs2 : w \in Exposed -> Forall to_exposed vs2).
+      { intros Hwx.
+        destruct (Hω c) as [_ Hexp].
+        eapply (V_exposed_Forall_cbinding θ ω Hω (xs := xs'));
+          [ exact HVs | exact Hesc_args | exact Hbind_params | ].
+        intros y Hy av Hav.
+        eapply AExp_param; [exact Hsite | | exact Hy | exact Hav].
+        apply (Hexp _ _ Hw2), w_ext_exposed; exact Hwx. }
+
+      pose proof (HVb false i c vs1 vs2 ρ3 ρ4 (le_n i) HVs' Hset1 Hset2 Hesc_args Hbind_params
+                    (fun Hneq => False_ind _ (Hneq eq_refl)) Hexvs2 I) as HE.
+      destruct (HE j (An.CRes v) I1 ltac:(lia) Hrun1) as [j2 [r2 [Hrun2 HR]]].
+      destruct r2 as [| v2]; [exact (False_ind _ HR) |].
+      change (V θ ω (i - (i - i) - j) v v2) in HR.
+
+      exists ρ2', vs2, ρ4, j2, v2.
+      split; [exact Hget2 |].
+      split; [exact Hgl2 |].
+      split; [exact Hset2 |].
+      split; [exact Hw2 |].
+      split; [exact Hrun2 |].
+      split.
+      + intros Hwx; split; [exact (Hexvs2 Hwx) | exact (cbstep_fuel_exposed_to_exposed Hwx Hrun2)].
+      + eapply V_mono; [exact HR | lia].
+
+    - (* foreign call: both ends interact with the unknown side, hence are exposed *)
+      assert (Hl' : l' \in aexposed (θ c')) by exact (AExp_esc _ _ Hfesc).
+      assert (Hl : l \in aexposed (θ c))
+        by (eapply AExp_int_l; [exact (Hec (not_eq_sym Hneqc) eq_refl) | apply AExp_top_intro]).
+      destruct (Hω c) as [_ Hexp].
+      destruct (Hω c') as [_ Hexp'].
+      pose proof (proj2 (Hexp _ _ Hw) Hl) as Hwext.
+      pose proof (proj2 (Hexp' _ _ Hw2) Hl') as Hw2ext.
+      subst w w2.
+
+      (* the parameters belong to the callee's unit: its closure has escaped,
+         so by `escapes_ok` every parameter holds `AVtop` *)
+      assert (Hbind_params : Forall2 (An.cbinding c' (θ c')) xs' vs1).
+      { destruct (Hescθ c') as [_ [Hesc_ok _]].
+        destruct (Hesc_ok _ _ _ _ Hfesc) as [Hparams _].
+        eapply (An.cbinding_handover_list (not_eq_sym Hneqc));
+          [ exact (An.wf_cenv_get_list (G_wf_cenv_l _ _ HG) _ _ Hgl1)
+          | exact Hesc_args
+          | exact Hparams
+          | exact Hset1 ]. }
+      (* the arguments escape, hence are exposed *)
+      pose proof (V_exposed_Forall_escaped θ ω Hω Hneqc HVs Hesc_args Hesc_args') as Hexvs2.
+
+      pose proof (HVb true i c vs1 vs2 ρ3 ρ4 (le_n i) HVs' Hset1 Hset2 Hesc_args' Hbind_params
+                    (fun _ => Hfesc) (fun _ => Hexvs2) Hfesc) as HE.
+      destruct (HE j (An.CRes v) I1 ltac:(lia) Hrun1) as [j2 [r2 [Hrun2 HR]]].
+      destruct r2 as [| v2]; [exact (False_ind _ HR) |].
+      change (V θ ω (i - (i - i) - j) v v2) in HR.
+
+      exists ρ2', vs2, ρ4, j2, v2.
+      split; [exact Hget2 |].
+      split; [exact Hgl2 |].
+      split; [exact Hset2 |].
+      split; [exact Hw2 |].
+      split; [exact Hrun2 |].
+      split.
+      + intros Hwx; split; [exact Hexvs2 | exact (cbstep_fuel_exposed_to_exposed Hwx Hrun2)].
+      + eapply V_mono; [exact HR | lia].
+  Qed.
+
+  Lemma letapp_compat A c W w Γ x f l xs k :
+    W ! l = Some w ->
+    (f \in Γ) ->
+    (FromList xs \subset Γ) ->
+    well_annotated A c W (x |: Γ) k ->
+    well_annotated A c W Γ (Eletapp x f l xs k).
+  Proof.
+    unfold well_annotated, E, E'.
+    intros Hw Hf Hxs Hk θ bdr Rs ω ex Heqθ Hescθ Hbdr Hω HW Hex i ρ1 ρ2 HG j1 r1 I1 Hj1 Hstep.
+    subst A W.
+    destruct r1 as [| v1].
+    - exists 0, COOT; split; [apply CbstepF_OOT | exact I].
+    - destruct (An_cbstep_fuel_inv Hstep) as [[_ [Heq _]] | [n1 [-> [Hb [_ [Hint _]]]]]];
+        [discriminate Heq |].
+      destruct (An_cbstep_letapp_Res_inv Hb)
+        as [A' [c' [l' [f' [ρ1' [xs' [e [vs1 [ρ3 [n2 [n3 [v [I2 [I3 [bdr'
+             [Hget1 [Hgl1 [Hset1 [-> [-> [Hrun1 [Hcall [Hesc_v [Hbind_v Hrun_k]]]]]]]]]]]]]]]]]]]]]]]].
+      destruct i as [| i]; [lia |].
+      assert (Hn2 : n2 <= i) by lia.
+      assert (Hin : ((c', l'), (c, l)) \in ((((c', l'), (c, l)) |: I2) :|: I3))
+        by (apply Union_introl; apply Union_introl; constructor).
+
+      (* the call *)
+      destruct (call_compat Hω Hescθ HG Hf Hxs Hw Hint Hin Hget1 Hgl1 Hset1 Hrun1 Hcall Hn2)
+        as [ρ2' [vs2 [ρ4 [j2 [v2 [Hget2 [Hgl2 [Hset2 [Hw' [Hrun2 [Hexp HVv]]]]]]]]]]].
+
+      (* its result is bound at `x` *)
+      assert (HG' : G θ ω c (i - n2) (x |: Γ) (M.set x v ρ1) (M.set x v2 ρ2)).
+      { eapply G_set;
+          [ eapply G_mono; [exact HG | lia] | exact HVv | exact Hesc_v | exact Hbind_v ]. }
+
+      (* the continuation *)
+      destruct (Hk θ bdr Rs ω ex eq_refl Hescθ Hbdr Hω eq_refl Hex (i - n2) _ _ HG' n3 (An.CRes v1) I3
+                  ltac:(lia) Hrun_k)
+        as [j3 [r3 [Hrun3 HR]]].
+      exists (S (j2 + j3)), r3; split.
+      + apply CbstepF_Step.
+        * eapply Cbstep_letapp_Res;
+            [ exact Hget2 | exact Hgl2 | exact Hset2 | exact Hw | exact Hw'
+            | exact Hrun2 | exact Hrun3 | exact Hexp ].
+        * destruct ex; [eapply cbstep_fuel_to_exposed_cres; eauto | exact I].
+      + eapply R_mono; [exact HR | lia].
+  Qed.
+
   Lemma constr_compat A c W w Γ x l t ys k :
     W ! l = Some w ->
     (FromList ys \subset Γ) ->
@@ -1948,13 +2176,12 @@ Section Compat.
       + eapply well_scoped_inv; eauto.
       + exact Hlab.
     - eapply app_compat; eauto.
-    - (* letapp *)
-      admit.
+    - eapply letapp_compat; eauto.
     - eapply constr_compat; eauto.
     - eapply proj_compat; eauto.
     - eapply case_nil_compat; eauto.
     - eapply case_cons_compat; eauto.
-  Admitted.
+  Qed.
 
 End Compat.
 
