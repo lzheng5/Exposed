@@ -12,6 +12,15 @@ From SemAnnotate Require Import LabeledANF.
 (* kCFA *)
 (* Please note that everything related to the analysis is *static*. *)
 
+(* Precision of the CFA *)
+Parameter k : nat.
+
+(* Keep only the [k] most recent call sites. *)
+Definition truncate {A : Type} (xs : list A) := firstn k xs.
+
+(* The context entered by a call made at site [l] from context [δ]. *)
+Definition push {A : Type} (x : A) (xs : list A) : list A := truncate (x :: xs).
+
 (* --------------------------------------------------------------- *)
 (* The Unknown/Foreign Side                                          *)
 (* --------------------------------------------------------------- *)
@@ -30,17 +39,8 @@ Definition ainteractions := Ensemble ainteraction.
 (* Contexts                                                          *)
 (* --------------------------------------------------------------- *)
 
-(* Call String, most recent call site first. *)
+(* Abstract call String, most recent call site first. *)
 Definition acalls := list label.
-
-(* Precision of the CFA *)
-Parameter k : nat.
-
-(* Keep only the [k] most recent call sites. *)
-Definition truncate (δ : acalls) : acalls := firstn k δ.
-
-(* The context entered by a call made at site [l] from context [δ]. *)
-Definition push (l : label) (δ : acalls) : acalls := truncate (l :: δ).
 
 (* Abstract binding environment: the context in which each variable in scope
      was bound.  It is the abstraction of a concrete environment [ρ], and is
@@ -233,7 +233,6 @@ Inductive acheck (A : analysis_result) : acalls -> abenv -> exp -> avals -> Prop
 
 Hint Constructors acheck : core.
 
-
 (* Checking Semantics With Respect to Colored Label Pair Set *)
 
 (* Color *)
@@ -279,6 +278,10 @@ Inductive cres : Type :=
 | CRes : clval -> cres.
 
 Hint Constructors cres : core.
+
+(* Concrete call strings *)
+
+Definition calls := list clabel.
 
 (* Free variables of a closure: those of its body, minus its parameters and
    its own name. *)
@@ -573,4 +576,70 @@ Proof.
   unfold approx_int.
   intros H1 H2 c1 l1 c2 l2 Hin.
   inv Hin; eauto.
+Qed.
+
+(* `approx_clabel c l cl`: the abstract call site `l` approximates the
+   colored call site `cl`, as seen from the unit wearing color `c`:
+   - one of our call sites is approximated by itself;
+   - a foreign call site is approximated by `l_top_elim`, as for interactions. *)
+Definition approx_clabel (c : color) (l : label) (cl : clabel) : Prop :=
+  match cl with
+  | (c', l') => (c' = c -> l = l') /\ (c' <> c -> l = l_top_elim)
+  end.
+
+(* `approx_calls c δ cs`: the abstract call string `δ` approximates the
+   concrete call string `cs`, as seen from the unit wearing color `c`: `δ`
+   approximates, site by site, the [k] most recent call sites of `cs`. *)
+Definition approx_calls (c : color) (δ : acalls) (cs : calls) : Prop :=
+  Forall2 (approx_clabel c) δ (truncate cs).
+
+Lemma Forall2_firstn {A B} (R : A -> B -> Prop) n xs ys :
+  Forall2 R xs ys ->
+  Forall2 R (firstn n xs) (firstn n ys).
+Proof.
+  intros H; revert n.
+  induction H; intros [| n]; simpl; constructor; auto.
+Qed.
+
+Lemma approx_calls_nil c :
+  approx_calls c [] [].
+Proof. unfold approx_calls, truncate. destruct k; auto. Qed.
+
+(* A call made at a site approximated by `l` extends the call string. *)
+Lemma approx_calls_push {c δ cs} l cl :
+  approx_clabel c l cl ->
+  approx_calls c δ cs ->
+  approx_calls c (push l δ) (cl :: cs).
+Proof.
+  unfold approx_calls, push, truncate.
+  intros Hl H.
+  (* [simpl] only the goal: in [H], [firstn (S n) cs] has to stay folded for
+     [firstn_firstn] to apply *)
+  revert H; destruct k as [| n]; intros H; simpl.
+  - constructor.
+  - constructor; [exact Hl |].
+    pose proof (Forall2_firstn _ n _ _ H) as H'.
+    rewrite firstn_firstn in H'.
+    rewrite Nat.min_l in H' by lia.
+    exact H'.
+Qed.
+
+(* Internal call: made at one of our own call sites. *)
+Lemma approx_calls_push_internal {c δ cs} l :
+  approx_calls c δ cs ->
+  approx_calls c (push l δ) ((c, l) :: cs).
+Proof.
+  apply approx_calls_push.
+  split; intros Hc; [reflexivity | exfalso; apply Hc; reflexivity].
+Qed.
+
+(* Foreign call: made at a call site of another unit. *)
+Lemma approx_calls_push_external {c δ cs} c' l :
+  c' <> c ->
+  approx_calls c δ cs ->
+  approx_calls c (push l_top_elim δ) ((c', l) :: cs).
+Proof.
+  intros Hneq.
+  apply approx_calls_push.
+  split; intros Hc; [contradiction | reflexivity].
 Qed.
