@@ -381,7 +381,7 @@ Inductive approx_val : aval -> clval -> Prop :=
 with approx_val' : analysis_result -> aval -> cval -> Prop :=
 | Approx_CVfun :
   forall A l f ρ xs e,
-    approx_env (ai_env A) (fun_fv f xs e) ρ ->
+    approx_env (fun_fv f xs e) (ai_env A) ρ ->
     approx_val' A (AVfun l f xs e) (CVfun f ρ xs e)
 
 (* A constructor is approximated by its own allocation site.  Its fields are
@@ -393,14 +393,14 @@ with approx_val' : analysis_result -> aval -> cval -> Prop :=
 
 (* Every value bound in `ρ` at a variable of `Γ` is approximated by some
    abstract value in the value set of its variable. *)
-with approx_env : aenv -> vars -> cenv -> Prop :=
+with approx_env : vars -> aenv -> cenv -> Prop :=
 | Approx_env :
   forall AE Γ ρ,
     (forall x v,
         (x \in Γ) ->
         ρ ! x = Some v ->
         exists av, (av \in AE x) /\ approx_val av v) ->
-    approx_env AE Γ ρ.
+    approx_env Γ AE ρ.
 
 Hint Constructors approx_val : core.
 Hint Constructors approx_val' : core.
@@ -454,22 +454,22 @@ Proof.
 Qed.
 
 Lemma approx_env_get {AE Γ ρ x v} :
-  approx_env AE Γ ρ ->
+  approx_env Γ AE ρ ->
   (x \in Γ) ->
   ρ ! x = Some v ->
   approx_vals (AE x) v.
 Proof. intros Henv Hx Hget; inv Henv; unfold approx_vals; eauto. Qed.
 
 Lemma approx_env_subset {AE Γ Γ' ρ} :
-  approx_env AE Γ ρ ->
+  approx_env Γ AE ρ ->
   Γ' \subset Γ ->
-  approx_env AE Γ' ρ.
+  approx_env Γ' AE ρ.
 Proof. intros Henv Hsub; inv Henv; constructor; eauto. Qed.
 
 Lemma approx_env_set {AE Γ ρ} x v :
-  approx_env AE Γ ρ ->
+  approx_env Γ AE ρ ->
   approx_vals (AE x) v ->
-  approx_env AE (x |: Γ) (M.set x v ρ).
+  approx_env (x |: Γ) AE (M.set x v ρ).
 Proof.
   intros Henv Hv.
   inv Henv.
@@ -481,7 +481,7 @@ Proof.
 Qed.
 
 Lemma approx_env_get_list {AE Γ ρ} :
-  approx_env AE Γ ρ ->
+  approx_env Γ AE ρ ->
   forall xs vs,
     FromList xs \subset Γ ->
     get_list xs ρ = Some vs ->
@@ -501,11 +501,11 @@ Proof.
 Qed.
 
 Lemma approx_env_set_lists {AE Γ ρ} :
-  approx_env AE Γ ρ ->
+  approx_env Γ AE ρ ->
   forall xs vs ρ',
     Forall2 (fun x v => approx_vals (AE x) v) xs vs ->
     set_lists xs vs ρ = Some ρ' ->
-    approx_env AE (FromList xs :|: Γ) ρ'.
+    approx_env (FromList xs :|: Γ) AE ρ'.
 Proof.
   intros Henv xs.
   induction xs as [| x xs IHxs]; intros vs ρ' Hall Hset; simpl in Hset.
@@ -997,7 +997,7 @@ Inductive cbstep (A : analysis_result) (c : color) (bdr : bool) (ρ : cenv) : ex
 
     (* callee side: the (unknown) arguments flow to the parameters *)
     set_lists xs' vs (M.set f' (CTag A' c' l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
-    approx_env (ai_env A') (occurs_free e) ρ'' ->
+    approx_env (occurs_free e) (ai_env A') ρ'' ->
 
     (* the body is validated against the callee's own analysis result and
        returns into `ai_ret A' l'` *)
@@ -1035,7 +1035,7 @@ Inductive cbstep (A : analysis_result) (c : color) (bdr : bool) (ρ : cenv) : ex
     get_list xs ρ = Some vs ->
     Forall (cescaped c') vs ->
     set_lists xs' vs (M.set f' (CTag A' c' l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
-    approx_env (ai_env A') (occurs_free e) ρ'' ->
+    approx_env (occurs_free e) (ai_env A') ρ'' ->
     cbstep_fuel A' c' true ρ'' e i (ai_ret A' l') (CRes v) I1 ->
 
     (* the result is bound at `x` *)
@@ -1054,7 +1054,7 @@ Inductive cbstep (A : analysis_result) (c : color) (bdr : bool) (ρ : cenv) : ex
     get_list xs ρ = Some vs ->
     Forall (cescaped c') vs ->
     set_lists xs' vs (M.set f' (CTag A' c' l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
-    approx_env (ai_env A') (occurs_free e) ρ'' ->
+    approx_env (occurs_free e) (ai_env A') ρ'' ->
     cbstep_fuel A' c' true ρ'' e i (ai_ret A' l') COOT I ->
     cbstep A c bdr ρ (Eletapp x f l xs k) i Rs COOT (((c', l'), (c, l)) |: I)
 
@@ -1883,7 +1883,7 @@ Section LRBase.
 
                   (* the closure is recorded at its defining unit *)
                   (AVfun l2 f2 xs2 e2 \in ai_env A2 f2) /\
-                  approx_env (ai_env A2) (fun_fv f2 xs2 e2) ρ2 /\
+                  approx_env (fun_fv f2 xs2 e2) (ai_env A2) ρ2 /\
 
                   (* the closure environment invariants, at its free variables *)
                   cescaped_env c2 (fun_fv f2 xs2 e2) ρ2 /\
@@ -1992,7 +1992,7 @@ Section LRBase.
   Definition G c i Γ1 ρ1 ρ2 :=
     wf_env Γ1 ρ1 /\
       wf_cenv θ ρ2 /\
-      approx_env (ai_env (θ c)) Γ1 ρ2 /\
+      approx_env Γ1 (ai_env (θ c)) ρ2 /\
       cescaped_env c Γ1 ρ2 /\
       cbinding_env c (θ c) Γ1 ρ2 /\
       forall x,
@@ -2031,7 +2031,7 @@ Section LRBase.
 
   Lemma G_approx_env {c i Γ1 ρ1 ρ2}:
     G c i Γ1 ρ1 ρ2 ->
-    approx_env (ai_env (θ c)) Γ1 ρ2.
+    approx_env Γ1 (ai_env (θ c)) ρ2.
   Proof. unfold G. intros [_ [_ [Haenv _]]]. exact Haenv. Qed.
 
   Lemma G_cescaped_env {c i Γ1 ρ1 ρ2}:
@@ -2409,7 +2409,7 @@ Section Compat.
     intros HS Hθ Hesc [_ He] Hack i.
     induction i; simpl; subst; intros; auto;
       (* the closure environment invariants, at the free variables of the closure *)
-      assert (Haenv : approx_env (ai_env (θ c)) (fun_fv f xs e) ρ2)
+      assert (Haenv : approx_env (fun_fv f xs e) (ai_env (θ c)) ρ2)
         by (eapply approx_env_subset; [eapply G_approx_env; eauto | eapply fun_fv_subset; eauto]);
       assert (Hesc_env : cescaped_env c (fun_fv f xs e) ρ2)
         by (eapply cescaped_env_subset; [eapply G_cescaped_env; eauto | eapply fun_fv_subset; eauto]);
@@ -2537,7 +2537,7 @@ Section Compat.
     wf_cenv θ ρ ->
     cescaped_env c Γ ρ ->
     cbinding_env c (θ c) Γ ρ ->
-    approx_env (ai_env (θ c)) Γ ρ ->
+    approx_env Γ (ai_env (θ c)) ρ ->
     FromList xs \subset Γ ->
     Forall (fun x => ai_env (θ c) x \subset ai_esc (θ c)) xs ->
     get_list xs ρ = Some vs ->
@@ -2881,7 +2881,7 @@ Section Compat.
              eapply G_cescaped_handover_list; eauto.
 
           -- (* the callee's environment, at the free variables of its body *)
-             assert (Happrox : approx_env (ai_env (θ c1)) (v0 |: fun_fv v0 l1 e0)
+             assert (Happrox : approx_env (v0 |: fun_fv v0 l1 e0) (ai_env (θ c1))
                                  (M.set v0 (CTag (θ c1) c1 l0 (CVfun v0 t l1 e0)) t))
                by (apply approx_env_set; eauto).
              eapply approx_env_subset; [| apply occurs_free_fun_fv].
@@ -2959,7 +2959,7 @@ Section Compat.
               (AVfun l' f' xs' e \in ai_esc A') /\
               ((l', l_top_elim) \in ai_int A') /\
               Forall (cescaped c') vs2 /\
-              approx_env (ai_env A') (occurs_free e) ρ4 /\
+              approx_env (occurs_free e) (ai_env A') ρ4 /\
               cbstep_fuel A' c' true ρ4 e j2 (ai_ret A' l') (CRes v2) I2)).
   Proof.
     intros Hescθ HG Hf Hxs Haelim Hknown Hunknown Hget1 Hgl1 Hset1 Hrun1 Hj.
@@ -3097,7 +3097,7 @@ Section Compat.
         split; [exact Hesc_args0 |].
         split; [| exact Hrun2].
         (* the callee's environment, at the free variables of its body *)
-        assert (Happrox : approx_env (ai_env (θ c0)) (f' |: fun_fv f' xs' e)
+        assert (Happrox : approx_env (f' |: fun_fv f' xs' e) (ai_env (θ c0))
                             (M.set f' (CTag (θ c0) c0 l0 (CVfun f' ρ2' xs' e)) ρ2'))
           by (apply approx_env_set; [exact Haenv | exact Havs]).
         eapply approx_env_subset; [| apply occurs_free_fun_fv].
