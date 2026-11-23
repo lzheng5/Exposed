@@ -220,3 +220,272 @@ Inductive acheck (A : analysis_result) : calls -> abenv -> exp -> avals -> Prop 
     acheck A δ β (Eapp f l xs) R.
 
 Hint Constructors acheck : core.
+
+
+(* Checking Semantics With Respect to Colored Label Pair Set *)
+
+(* Color *)
+Definition color := nat.
+Definition colors := Ensemble nat.
+
+(* Colored Label *)
+Definition clabel : Type := (color * label).
+Definition clabels : Type := Ensemble clabel.
+
+(* Interaction Set *)
+(* Each pair has the format (l_intro, l_elim). *)
+Definition interaction : Type := (clabel * clabel).
+Definition interactions := Ensemble interaction.
+
+(* Tagged Value *)
+Inductive ctag A : Type :=
+| CTAG : analysis_result -> clabel -> A -> ctag A.
+
+Hint Constructors ctag : core.
+
+(* Value *)
+(* A closure records, next to its captured environment `ρ`, the abstract
+   binding environment `β` it was created under: the context in which each
+   variable of `ρ` was bound.  This pins down the abstract value of the
+   closure, `AVfun l β f xs e`. *)
+Inductive cval : Type :=
+| CVfun : var -> M.t (ctag cval) -> abenv -> list var -> exp -> cval
+| CVconstr : ctor_tag -> list (ctag cval) -> cval.
+
+Hint Constructors cval : core.
+
+Definition clval := ctag cval.
+
+Definition CTag A c l cv := CTAG cval A (c, l) cv.
+
+(* Environment *)
+Definition cenv := M.t clval.
+
+(* Result *)
+Inductive cres : Type :=
+| COOT
+| CRes : clval -> cres.
+
+Hint Constructors cres : core.
+
+(* Free variables of a closure: those of its body, minus its parameters and
+   its own name. *)
+Definition fun_fv (f : var) (xs : list var) (e : exp) : vars :=
+  fun y => (y \in occurs_free e) /\ ~ List.In y xs /\ y <> f.
+
+(* The body of a closure only reads its parameters, its own name, and its free
+   variables. *)
+Lemma occurs_free_fun_fv f xs e :
+  occurs_free e \subset FromList xs :|: (f |: fun_fv f xs e).
+Proof.
+  intros y Hy.
+  destruct (in_dec M.elt_eq y xs) as [Hin | Hnin].
+  - apply Union_introl; exact Hin.
+  - apply Union_intror.
+    destruct (M.elt_eq y f) as [-> | Hneq].
+    + apply Union_introl; apply In_singleton.
+    + apply Union_intror; unfold fun_fv, Ensembles.In; auto.
+Qed.
+
+Lemma fun_fv_subset f xs e Γ :
+  occurs_free e \subset FromList xs :|: (f |: Γ) ->
+  fun_fv f xs e \subset Γ.
+Proof.
+  intros HS y [Hy [Hxs Hf]].
+  destruct (HS y Hy) as [y' Hy' | y' Hy'].
+  - contradiction.
+  - inv Hy'; [inv H; contradiction | assumption].
+Qed.
+
+(* Approximation *)
+(* `approx_val av v`: the abstract value `av` over-approximates the concrete
+   value `v`, with respect to the analysis result carried by the tag of `v`.
+   - [AVtop] stands for everything unknown, so it approximates any value;
+   - otherwise `av` must share the introduction label of `v` and approximate
+     the untagged value under the tag's analysis result. *)
+Inductive approx_val : aval -> clval -> Prop :=
+| Approx_top :
+  forall v,
+    approx_val AVtop v
+
+| Approx_TAG :
+  forall A c l av v,
+    label_of av = l ->
+    approx_val' A av v ->
+    approx_val av (CTag A c l v)
+
+(* A closure is approximated by its own allocation site, under the abstract
+   binding environment `β` it records, provided that its captured environment
+   is approximated by `A` under `β` at the free variables of the closure. *)
+with approx_val' : analysis_result -> aval -> cval -> Prop :=
+| Approx_CVfun :
+  forall A l β f ρ xs e,
+    approx_env (ai_env A) β (fun_fv f xs e) ρ ->
+    approx_val' A (AVfun l β f xs e) (CVfun f ρ β xs e)
+
+(* A constructor is approximated by its own allocation site.  Its fields are
+   approximated by the field set of that site, which the logical relation
+   records for every constructor it relates. *)
+| Approx_CVconstr :
+  forall A l t vs,
+    approx_val' A (AVconstr l t) (CVconstr t vs)
+
+(* Every value bound in `ρ` at a variable of `Γ` is approximated by some
+   abstract value in the value set of its variable, looked up under `β` as
+   `aeval` does. *)
+with approx_env : aenv -> abenv -> vars -> cenv -> Prop :=
+| Approx_env :
+  forall AE β Γ ρ,
+    (forall x v,
+        (x \in Γ) ->
+        ρ ! x = Some v ->
+        exists av, (av \in AE (x, abenv_get β x)) /\ approx_val av v) ->
+    approx_env AE β Γ ρ.
+
+Hint Constructors approx_val : core.
+Hint Constructors approx_val' : core.
+Hint Constructors approx_env : core.
+
+Scheme approx_val_mut := Induction for approx_val Sort Prop
+with approx_val'_mut := Induction for approx_val' Sort Prop
+with approx_env_mut := Induction for approx_env Sort Prop.
+
+(* `v` is approximated by some abstract value in `avs`. *)
+Definition approx_vals (avs : avals) (v : clval) : Prop :=
+  exists av, (av \in avs) /\ approx_val av v.
+
+Lemma approx_vals_subset {AE x' v} {x : var}:
+  approx_vals (AE x) v ->
+  (AE x) \subset (AE x') ->
+  approx_vals (AE x') v.
+Proof. unfold approx_vals. fcrush. Qed.
+
+Lemma approx_vals_subset_list {AE xs vs2} :
+  Forall2 (fun (x : var) (v : clval) => approx_vals (AE x) v) xs vs2 ->
+  forall xs',
+    Forall2 (fun x x' : var => AE x \subset AE x') xs xs' ->
+    Forall2 (fun (x : var) (v1 : clval) => approx_vals (AE x) v1) xs' vs2.
+Proof.
+  intro H.
+  induction H; intros; simpl.
+  - inv H; auto.
+  - inv H1.
+    constructor; auto.
+    eapply approx_vals_subset; eauto.
+Qed.
+
+Lemma set_lists_approx_top {AE xs vs ρ ρ'} :
+  (forall x, List.In x xs -> AVtop \in AE x) ->
+  set_lists xs vs ρ = Some ρ' ->
+  Forall2 (fun x v => approx_vals (AE x) v) xs vs.
+Proof.
+  intros Htop.
+  revert vs ρ ρ' Htop.
+  induction xs as [| x xs IHxs]; intros vs ρ ρ' Htop Hset.
+  - destruct vs as [| v vs]; [constructor | discriminate Hset].
+  - destruct vs as [| v vs]; [discriminate Hset |].
+    simpl in Hset.
+    destruct (set_lists xs vs ρ) as [ρ'' |] eqn:Heq; [| discriminate Hset].
+    constructor.
+    + (* `AVtop` approximates every value *)
+      exists AVtop; split; [apply Htop; left; reflexivity | constructor].
+    + eapply IHxs; [| exact Heq].
+      intros y Hy; apply Htop; right; exact Hy.
+Qed.
+
+Lemma approx_env_get {AE β Γ ρ x v} :
+  approx_env AE β Γ ρ ->
+  (x \in Γ) ->
+  ρ ! x = Some v ->
+  approx_vals (AE (x, (abenv_get β x))) v.
+Proof. intros Henv Hx Hget; inv Henv; unfold approx_vals; eauto. Qed.
+
+Lemma approx_env_subset {AE β Γ Γ' ρ} :
+  approx_env AE β Γ ρ ->
+  Γ' \subset Γ ->
+  approx_env AE β Γ' ρ.
+Proof. intros Henv Hsub; inv Henv; constructor; eauto. Qed.
+
+(*
+Lemma approx_env_set {AE β Γ ρ} x v :
+  approx_env AE β Γ ρ ->
+  approx_vals (AE x) v ->
+  approx_env AE (x |: Γ) (M.set x v ρ).
+Proof.
+  intros Henv Hv.
+  inv Henv.
+  constructor; intros y w Hy Hget.
+  destruct (M.elt_eq x y); subst.
+  - rewrite M.gss in Hget; inv Hget; exact Hv.
+  - rewrite M.gso in Hget by auto.
+    inv Hy; [inv H0; contradiction | eauto].
+Qed.
+
+Lemma approx_env_get_list {AE Γ ρ} :
+  approx_env AE Γ ρ ->
+  forall xs vs,
+    FromList xs \subset Γ ->
+    get_list xs ρ = Some vs ->
+    Forall2 (fun x v => approx_vals (AE x) v) xs vs.
+Proof.
+  intros Henv xs.
+  induction xs as [| x xs IHxs]; simpl; intros vs Hxs Hget.
+  - inv Hget; constructor.
+  - destruct (M.get x ρ) as [v |] eqn:Hx; [| discriminate Hget].
+    destruct (get_list xs ρ) as [vs' |] eqn:Hxs'; [| discriminate Hget].
+    inv Hget.
+    constructor.
+    + eapply approx_env_get; eauto.
+      apply Hxs; left; reflexivity.
+    + eapply IHxs; eauto.
+      intros y Hy; apply Hxs; right; exact Hy.
+Qed.
+
+Lemma approx_env_set_lists {AE Γ ρ} :
+  approx_env AE Γ ρ ->
+  forall xs vs ρ',
+    Forall2 (fun x v => approx_vals (AE x) v) xs vs ->
+    set_lists xs vs ρ = Some ρ' ->
+    approx_env AE (FromList xs :|: Γ) ρ'.
+Proof.
+  intros Henv xs.
+  induction xs as [| x xs IHxs]; intros vs ρ' Hall Hset; simpl in Hset.
+  - destruct vs as [| v vs]; [| discriminate Hset].
+    inv Hset.
+    eapply approx_env_subset; [exact Henv |].
+    intros y Hy; inv Hy; [inv H | exact H].
+  - destruct vs as [| v vs]; [discriminate Hset |].
+    destruct (set_lists xs vs ρ) as [ρ'' |] eqn:Heq; [| discriminate Hset].
+    inv Hset.
+    inv Hall.
+    apply (approx_env_subset (Γ := x |: (FromList xs :|: Γ))).
+    + apply approx_env_set; [eapply IHxs; eauto | eassumption].
+    + intros y Hy.
+      inv Hy.
+      * destruct H as [-> | Hin].
+        -- apply Union_introl; apply In_singleton.
+        -- apply Union_intror; apply Union_introl; exact Hin.
+      * apply Union_intror; apply Union_intror; exact H.
+Qed.
+
+(* A result is approximated by `R` if it is out of time, or returns a value
+   approximated by some abstract value in `R`. *)
+Inductive approx_res : avals -> cres -> Prop :=
+| Approx_OOT :
+  forall R,
+    approx_res R COOT
+
+| Approx_res :
+  forall R av v,
+    (av \in R) ->
+    approx_val av v ->
+    approx_res R (CRes v).
+
+Hint Constructors approx_res : core.
+
+Lemma approx_res_subset Rs Rs' r :
+  approx_res Rs r ->
+  Rs \subset Rs' ->
+  approx_res Rs' r.
+Proof. intros. inv H; fcrush. Qed.
+*)

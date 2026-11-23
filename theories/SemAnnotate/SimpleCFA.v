@@ -395,12 +395,12 @@ with approx_val' : analysis_result -> aval -> cval -> Prop :=
    abstract value in the value set of its variable. *)
 with approx_env : aenv -> vars -> cenv -> Prop :=
 | Approx_env :
-  forall aenv Γ ρ,
+  forall AE Γ ρ,
     (forall x v,
         (x \in Γ) ->
         ρ ! x = Some v ->
-        exists av, (av \in aenv x) /\ approx_val av v) ->
-    approx_env aenv Γ ρ.
+        exists av, (av \in AE x) /\ approx_val av v) ->
+    approx_env AE Γ ρ.
 
 Hint Constructors approx_val : core.
 Hint Constructors approx_val' : core.
