@@ -31,33 +31,33 @@ Definition ainteractions := Ensemble ainteraction.
 (* --------------------------------------------------------------- *)
 
 (* Call String, most recent call site first. *)
-Definition calls := list label.
+Definition acalls := list label.
 
 (* Precision of the CFA *)
 Parameter k : nat.
 
 (* Keep only the [k] most recent call sites. *)
-Definition truncate (δ : calls) : calls := firstn k δ.
+Definition truncate (δ : acalls) : acalls := firstn k δ.
 
 (* The context entered by a call made at site [l] from context [δ]. *)
-Definition push (l : label) (δ : calls) : calls := truncate (l :: δ).
+Definition push (l : label) (δ : acalls) : acalls := truncate (l :: δ).
 
 (* Abstract binding environment: the context in which each variable in scope
      was bound.  It is the abstraction of a concrete environment [ρ], and is
      kept as a [M.t] so that it can be read off [ρ] by [M.map]. *)
-Definition abenv := M.t calls.
+Definition abenv := M.t acalls.
 
-Definition abenv_get (β : abenv) (x : var) : calls :=
+Definition abenv_get (β : abenv) (x : var) : acalls :=
   match M.get x β with
   | Some δ => δ
   | None => []
   end.
 
-Definition abenv_set (x : var) (δ : calls) (β : abenv) : abenv :=
+Definition abenv_set (x : var) (δ : acalls) (β : abenv) : abenv :=
   M.set x δ β.
 
 (* Bind every variable of [xs] in context [δ]. *)
-Definition abenv_set_list (xs : list var) (δ : calls) (β : abenv) : abenv :=
+Definition abenv_set_list (xs : list var) (δ : acalls) (β : abenv) : abenv :=
   fold_right (fun x β => abenv_set x δ β) β xs.
 
 Lemma abenv_get_set_eq x δ β :
@@ -99,11 +99,11 @@ Definition label_of (av : aval) : label :=
 
 (* Abstract environment (store): one value set per variable and the context it
      was bound in (polyvariant). *)
-Definition aenv := (var * calls) -> avals.
+Definition aenv := (var * acalls) -> avals.
 
 (* Abstract return sets, keyed by the closure's introduction label and the
      context its body is entered in. *)
-Definition aret := (label * calls) -> avals.
+Definition aret := (label * acalls) -> avals.
 
 (* Abstract field sets, keyed by the constructor's introduction label: every
      field of every constructor allocated at a site is collected in [afld] at
@@ -113,7 +113,7 @@ Definition afld := label -> avals.
 
 (* Abstract entry contexts, keyed by the closure's introduction label: every
      context in which the body may be entered. *)
-Definition actx := label -> Ensemble calls.
+Definition actx := label -> Ensemble acalls.
 
 (* --------------------------------------------------------------- *)
 (* The analysis result                                             *)
@@ -180,7 +180,7 @@ Definition aelim_constr_int (A : analysis_result) (β : abenv) (y : var) (l : la
      This is the "abstract semantics": a declarative
      constraint system rather than a fixpoint computation, so any solver that
      produces an [analysis_result] may be plugged in and checked against it. *)
-Inductive acheck (A : analysis_result) : calls -> abenv -> exp -> avals -> Prop :=
+Inductive acheck (A : analysis_result) : acalls -> abenv -> exp -> avals -> Prop :=
 | Acheck_ret :
   forall {δ β x R},
     (aeval A β x \subset R) ->
