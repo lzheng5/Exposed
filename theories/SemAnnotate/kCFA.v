@@ -53,9 +53,21 @@ Definition abenv_get (β : abenv) (x : var) : calls :=
   | None => []
   end.
 
+Definition abenv_set (x : var) (δ : calls) (β : abenv) : abenv :=
+  M.set x δ β.
+
 (* Bind every variable of [xs] in context [δ]. *)
-Definition abenv_set (xs : list var) (δ : calls) (β : abenv) : abenv :=
-  fold_right (fun x β => M.set x δ β) β xs.
+Definition abenv_set_list (xs : list var) (δ : calls) (β : abenv) : abenv :=
+  fold_right (fun x β => abenv_set x δ β) β xs.
+
+Lemma abenv_get_set_eq x δ β :
+  abenv_get (abenv_set x δ β) x = δ.
+Proof. unfold abenv_get, abenv_set; rewrite M.gss; reflexivity. Qed.
+
+Lemma abenv_get_set_neq x y δ β :
+  x <> y ->
+  abenv_get (abenv_set x δ β) y = abenv_get β y.
+Proof. intros Hxy; unfold abenv_get, abenv_set; rewrite M.gso by congruence; reflexivity. Qed.
 
 (* --------------------------------------------------------------- *)
 (* Abstract values                                                   *)
@@ -135,7 +147,7 @@ Definition escapes_ok (A : analysis_result) : Prop :=
         forall δ,
           (δ \in ai_ctx A l) /\
           (AVfun l β f xs e \in ai_env A (f, δ)) /\
-          (forall x, List.In x xs -> (AVtop \in aeval A (abenv_set xs δ (M.set f δ β)) x)) /\ (* [AVtop] only flows into the variable under [δ] *)
+          (forall x, List.In x xs -> (AVtop \in aeval A (abenv_set_list xs δ (M.set f δ β)) x)) /\ (* [AVtop] only flows into the variable under [δ] *)
           (ai_ret A (l, δ) \subset ai_esc A)) /\
     (forall l t,
         (AVconstr l t \in ai_esc A) ->
@@ -182,7 +194,7 @@ Inductive acheck (A : analysis_result) : calls -> abenv -> exp -> avals -> Prop 
        returns into [ai_ret A (l, δ')] *)
     (forall δ',
         (δ' \in ai_ctx A l) ->
-        acheck A δ' (abenv_set xs δ (M.set f δ' β)) e (ai_ret A (l, δ'))) ->
+        acheck A δ' (abenv_set_list xs δ (M.set f δ' β)) e (ai_ret A (l, δ'))) ->
     acheck A δ (M.set f δ β) k R ->
     acheck A δ β (Efun f l xs e k) R
 
@@ -320,7 +332,7 @@ Inductive approx_val : aval -> clval -> Prop :=
 with approx_val' : analysis_result -> aval -> cval -> Prop :=
 | Approx_CVfun :
   forall A l β f ρ xs e,
-    approx_env (ai_env A) β (fun_fv f xs e) ρ ->
+    approx_env (fun_fv f xs e) (ai_env A) β ρ ->
     approx_val' A (AVfun l β f xs e) (CVfun f ρ β xs e)
 
 (* A constructor is approximated by its own allocation site.  Its fields are
@@ -333,14 +345,14 @@ with approx_val' : analysis_result -> aval -> cval -> Prop :=
 (* Every value bound in `ρ` at a variable of `Γ` is approximated by some
    abstract value in the value set of its variable, looked up under `β` as
    `aeval` does. *)
-with approx_env : aenv -> abenv -> vars -> cenv -> Prop :=
+with approx_env : vars -> aenv -> abenv -> cenv -> Prop :=
 | Approx_env :
-  forall AE β Γ ρ,
+  forall AE Γ β ρ,
     (forall x v,
         (x \in Γ) ->
         ρ ! x = Some v ->
         exists av, (av \in AE (x, abenv_get β x)) /\ approx_val av v) ->
-    approx_env AE β Γ ρ.
+    approx_env Γ AE β ρ.
 
 Hint Constructors approx_val : core.
 Hint Constructors approx_val' : core.
@@ -393,40 +405,25 @@ Proof.
       intros y Hy; apply Htop; right; exact Hy.
 Qed.
 
+Lemma approx_env_subset {AE β Γ Γ' ρ} :
+  approx_env Γ AE β ρ ->
+  Γ' \subset Γ ->
+  approx_env Γ' AE β ρ.
+Proof. intros Henv Hsub; inv Henv; constructor; eauto. Qed.
+
 Lemma approx_env_get {AE β Γ ρ x v} :
-  approx_env AE β Γ ρ ->
+  approx_env Γ AE β ρ ->
   (x \in Γ) ->
   ρ ! x = Some v ->
   approx_vals (AE (x, (abenv_get β x))) v.
 Proof. intros Henv Hx Hget; inv Henv; unfold approx_vals; eauto. Qed.
 
-Lemma approx_env_subset {AE β Γ Γ' ρ} :
-  approx_env AE β Γ ρ ->
-  Γ' \subset Γ ->
-  approx_env AE β Γ' ρ.
-Proof. intros Henv Hsub; inv Henv; constructor; eauto. Qed.
-
-(*
-Lemma approx_env_set {AE β Γ ρ} x v :
-  approx_env AE β Γ ρ ->
-  approx_vals (AE x) v ->
-  approx_env AE (x |: Γ) (M.set x v ρ).
-Proof.
-  intros Henv Hv.
-  inv Henv.
-  constructor; intros y w Hy Hget.
-  destruct (M.elt_eq x y); subst.
-  - rewrite M.gss in Hget; inv Hget; exact Hv.
-  - rewrite M.gso in Hget by auto.
-    inv Hy; [inv H0; contradiction | eauto].
-Qed.
-
-Lemma approx_env_get_list {AE Γ ρ} :
-  approx_env AE Γ ρ ->
+Lemma approx_env_get_list {AE Γ β ρ} :
+  approx_env Γ AE β ρ ->
   forall xs vs,
     FromList xs \subset Γ ->
     get_list xs ρ = Some vs ->
-    Forall2 (fun x v => approx_vals (AE x) v) xs vs.
+    Forall2 (fun x v => approx_vals (AE (x, abenv_get β x)) v) xs vs.
 Proof.
   intros Henv xs.
   induction xs as [| x xs IHxs]; simpl; intros vs Hxs Hget.
@@ -441,12 +438,30 @@ Proof.
       intros y Hy; apply Hxs; right; exact Hy.
 Qed.
 
-Lemma approx_env_set_lists {AE Γ ρ} :
-  approx_env AE Γ ρ ->
+Lemma approx_env_set {AE β Γ ρ} x δ v :
+  approx_env Γ AE β ρ ->
+  approx_vals (AE (x, δ)) v ->
+  approx_env (x |: Γ) AE (abenv_set x δ β) (M.set x v ρ).
+Proof.
+  intros Henv Hv.
+  inv Henv.
+  constructor; intros y w Hy Hget.
+  destruct (M.elt_eq x y); subst.
+  - rewrite M.gss in Hget; inv Hget.
+    rewrite abenv_get_set_eq.
+    exact Hv.
+  - rewrite M.gso in Hget by auto.
+    rewrite abenv_get_set_neq by auto.
+    inv Hy; [inv H0; contradiction | eauto].
+Qed.
+
+(* The parameters [xs] are all bound in the same context [δ]. *)
+Lemma approx_env_set_lists {AE Γ β ρ} δ :
+  approx_env Γ AE β ρ ->
   forall xs vs ρ',
-    Forall2 (fun x v => approx_vals (AE x) v) xs vs ->
+    Forall2 (fun x v => approx_vals (AE (x, δ)) v) xs vs ->
     set_lists xs vs ρ = Some ρ' ->
-    approx_env AE (FromList xs :|: Γ) ρ'.
+    approx_env (FromList xs :|: Γ) AE (abenv_set_list xs δ β) ρ'.
 Proof.
   intros Henv xs.
   induction xs as [| x xs IHxs]; intros vs ρ' Hall Hset; simpl in Hset.
@@ -458,6 +473,7 @@ Proof.
     destruct (set_lists xs vs ρ) as [ρ'' |] eqn:Heq; [| discriminate Hset].
     inv Hset.
     inv Hall.
+    change (abenv_set_list (x :: xs) δ β) with (abenv_set x δ (abenv_set_list xs δ β)).
     apply (approx_env_subset (Γ := x |: (FromList xs :|: Γ))).
     + apply approx_env_set; [eapply IHxs; eauto | eassumption].
     + intros y Hy.
@@ -467,6 +483,7 @@ Proof.
         -- apply Union_intror; apply Union_introl; exact Hin.
       * apply Union_intror; apply Union_intror; exact H.
 Qed.
+
 
 (* A result is approximated by `R` if it is out of time, or returns a value
    approximated by some abstract value in `R`. *)
@@ -488,4 +505,72 @@ Lemma approx_res_subset Rs Rs' r :
   Rs \subset Rs' ->
   approx_res Rs' r.
 Proof. intros. inv H; fcrush. Qed.
-*)
+
+(* `approx_int c AI I`: the static interactions `AI` of the unit wearing color
+   `c` over-approximate the collected interactions `I`, as seen from that unit.
+   `l_top_intro` and `l_top_elim` approximate all foreign interactions:
+   - an internal interaction is predicted as it is;
+   - one of our values eliminated by the context is predicted as eliminated
+     at `l_top_elim`;
+   - a foreign value eliminated by us is predicted as introduced at
+     `l_top_intro`;
+   - interactions between other units are not constrained. *)
+Definition approx_int (c : color) (AI : ainteractions) (I : interactions) : Prop :=
+  forall c1 l1 c2 l2,
+    (((c1, l1), (c2, l2)) \in I) ->
+    (c1 = c -> c2 = c -> (l1, l2) \in AI) /\
+    (c1 = c -> c2 <> c -> (l1, l_top_elim) \in AI) /\
+    (c1 <> c -> c2 = c -> (l_top_intro, l2) \in AI).
+
+Lemma approx_int_empty c AI :
+  approx_int c AI (Empty_set _).
+Proof. unfold approx_int, Ensembles.In. fcrush. Qed.
+
+(* Adding an internal interaction of the unit `c` that its analysis predicts. *)
+Lemma approx_int_add_internal {c AI l1 l2 I} :
+  (l1, l2) \in AI ->
+  approx_int c AI I ->
+  approx_int c AI (((c, l1), (c, l2)) |: I).
+Proof.
+  unfold approx_int.
+  intros Hl HI c1 l1' c2 l2' Hin.
+  inv Hin.
+  - match goal with [Hs : _ \in [set _] |- _] => inv Hs end.
+    repeat split.
+    + intros _ _; exact Hl.
+    + intros _ Hneq; exfalso; apply Hneq; reflexivity.
+    + intros Hneq _; exfalso; apply Hneq; reflexivity.
+  - match goal with [HI' : _ \in I |- _] => exact (HI _ _ _ _ HI') end.
+Qed.
+
+Lemma approx_int_add {c AI cl I} :
+  approx_int c AI [set cl] ->
+  approx_int c AI I ->
+  approx_int c AI (cl |: I).
+Proof.
+  unfold approx_int.
+  intros H1 H2 c1 l1 c2 l2 Hin.
+  inv Hin; eauto.
+Qed.
+
+Lemma approx_int_singleton {c AI c1 l1 c2 l2} :
+  (c1 = c -> c2 = c -> (l1, l2) \in AI) ->
+  (c1 = c -> c2 <> c -> (l1, l_top_elim) \in AI) ->
+  (c1 <> c -> c2 = c -> (l_top_intro, l2) \in AI) ->
+  approx_int c AI [set ((c1, l1), (c2, l2))].
+Proof.
+  unfold approx_int.
+  intros H1 H2 H3 c1' l1' c2' l2' Hin.
+  inv Hin.
+  auto.
+Qed.
+
+Lemma approx_int_union {c AI I1 I2} :
+  approx_int c AI I1 ->
+  approx_int c AI I2 ->
+  approx_int c AI (I1 :|: I2).
+Proof.
+  unfold approx_int.
+  intros H1 H2 c1 l1 c2 l2 Hin.
+  inv Hin; eauto.
+Qed.
