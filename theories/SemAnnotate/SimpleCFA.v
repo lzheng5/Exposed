@@ -710,9 +710,9 @@ Proof.
       * apply Union_intror; apply Union_intror; exact H.
 Qed.
 
-(* Invariants for Variable Binding *)
+(* Invariants for Value Flow *)
 (* How a value held by the unit wearing `c` (with analysis result `A`) is
-   approximated at variable `x`:
+   approximated in the value set `avs`:
    - a value of the unit itself is approximated by its own allocation site,
      not merely by `AVtop` -- unless it has already *escaped*, in which case
      `AVtop` stands for it.  This is what lets its exact site reach `ai_esc A`
@@ -720,19 +720,48 @@ Qed.
      elimination;
    - a foreign value is approximated by `AVtop`, so that eliminating it is
      treated as an unknown elimination. *)
-Definition cbinding (c : color) (A : analysis_result) (x : var) (v : clval) : Prop :=
+Definition cflows (c : color) (A : analysis_result) (avs : avals) (v : clval) : Prop :=
   match v with
   | CTAG _ _ (c', l) (CVfun f _ xs e) =>
       (c' = c -> (* c is the defining unit *)
-       (AVfun l f xs e \in ai_env A x) \/ (* internal closure *)
-         ((AVfun l f xs e \in ai_esc A) /\ (AVtop \in ai_env A x))) /\ (* unknown closure *)
-        (c' <> c -> AVtop \in ai_env A x) (* c is not the defining unit *)
+       (AVfun l f xs e \in avs) \/ (* internal closure *)
+         ((AVfun l f xs e \in ai_esc A) /\ (AVtop \in avs))) /\ (* unknown closure *)
+        (c' <> c -> AVtop \in avs) (* c is not the defining unit *)
   | CTAG _ _ (c', l) (CVconstr t _) =>
       (c' = c -> (* c is the defining unit *)
-       (AVconstr l t \in ai_env A x) \/ (* internal constructor *)
-         ((AVconstr l t \in ai_esc A) /\ (AVtop \in ai_env A x))) /\ (* unknown constructor *)
-        (c' <> c -> AVtop \in ai_env A x) (* c is not the defining unit *)
+       (AVconstr l t \in avs) \/ (* internal constructor *)
+         ((AVconstr l t \in ai_esc A) /\ (AVtop \in avs))) /\ (* unknown constructor *)
+        (c' <> c -> AVtop \in avs) (* c is not the defining unit *)
   end.
+
+Lemma cflows_subset {c A avs avs' v} :
+  cflows c A avs v ->
+  avs \subset avs' ->
+  cflows c A avs' v.
+Proof.
+  intros Hb Hsub.
+  destruct v as [A' [c' l'] w].
+  destruct w as [f ρ xs e | t vs]; unfold cflows in *.
+  - destruct Hb as [Hown Hforeign].
+    split.
+    + intros Heq.
+      destruct (Hown Heq) as [Hin | [Hesc Htop]].
+      * left; apply Hsub; exact Hin.
+      * right; split; [exact Hesc | apply Hsub; exact Htop].
+    + intros Hneq; apply Hsub; exact (Hforeign Hneq).
+  - destruct Hb as [Hown Hforeign].
+    split.
+    + intros Heq.
+      destruct (Hown Heq) as [Hin | [Hesc Htop]].
+      * left; apply Hsub; exact Hin.
+      * right; split; [exact Hesc | apply Hsub; exact Htop].
+    + intros Hneq; apply Hsub; exact (Hforeign Hneq).
+Qed.
+
+(* Invariants for Variable Binding *)
+(* `cflows` specialised to the value set of variable `x`. *)
+Definition cbinding (c : color) (A : analysis_result) (x : var) (v : clval) : Prop :=
+  cflows c A (ai_env A x) v.
 
 Definition cbinding_env (c : color) (A : analysis_result) (Γ : vars) (ρ : cenv) : Prop :=
   forall x v, (x \in Γ) -> ρ ! x = Some v -> cbinding c A x v.
@@ -816,25 +845,7 @@ Lemma cbinding_subset {c A x x' v} :
   cbinding c A x v ->
   ai_env A x \subset ai_env A x' ->
   cbinding c A x' v.
-Proof.
-  intros Hb Hsub.
-  destruct v as [A' [c' l'] w].
-  destruct w as [f ρ xs e | t vs]; unfold cbinding in *.
-  - destruct Hb as [Hown Hforeign].
-    split.
-    + intros Heq.
-      destruct (Hown Heq) as [Hin | [Hesc Htop]].
-      * left; apply Hsub; exact Hin.
-      * right; split; [exact Hesc | apply Hsub; exact Htop].
-    + intros Hneq; apply Hsub; exact (Hforeign Hneq).
-  - destruct Hb as [Hown Hforeign].
-    split.
-    + intros Heq.
-      destruct (Hown Heq) as [Hin | [Hesc Htop]].
-      * left; apply Hsub; exact Hin.
-      * right; split; [exact Hesc | apply Hsub; exact Htop].
-    + intros Hneq; apply Hsub; exact (Hforeign Hneq).
-Qed.
+Proof. apply cflows_subset. Qed.
 
 Lemma cbinding_subset_list {c A xs xs' vs} :
   Forall2 (cbinding c A) xs vs ->
@@ -848,24 +859,6 @@ Proof.
   - constructor; [eapply cbinding_subset; eauto | eapply IH; eauto].
 Qed.
 
-(* Invariants for Value Flow *)
-(* `cbinding` generalised from the value set of a variable to an arbitrary
-   value set `avs`, e.g. the return set of an expression: how a value held by
-   the unit wearing `c` is approximated in `avs`. *)
-Definition cflows (c : color) (A : analysis_result) (avs : avals) (v : clval) : Prop :=
-  match v with
-  | CTAG _ _ (c', l) (CVfun f _ xs e) =>
-      (c' = c -> (* c is the defining unit *)
-       (AVfun l f xs e \in avs) \/ (* internal closure *)
-         ((AVfun l f xs e \in ai_esc A) /\ (AVtop \in avs))) /\ (* unknown closure *)
-        (c' <> c -> AVtop \in avs) (* c is not the defining unit *)
-  | CTAG _ _ (c', l) (CVconstr t _) =>
-      (c' = c -> (* c is the defining unit *)
-       (AVconstr l t \in avs) \/ (* internal constructor *)
-         ((AVconstr l t \in ai_esc A) /\ (AVtop \in avs))) /\ (* unknown constructor *)
-        (c' <> c -> AVtop \in avs) (* c is not the defining unit *)
-  end.
-
 Lemma cbinding_cflows {c A x v} :
   cbinding c A x v ->
   cflows c A (ai_env A x) v.
@@ -875,30 +868,6 @@ Lemma cflows_cbinding {c A x v} :
   cflows c A (ai_env A x) v ->
   cbinding c A x v.
 Proof. intros H; exact H. Qed.
-
-Lemma cflows_subset {c A avs avs' v} :
-  cflows c A avs v ->
-  avs \subset avs' ->
-  cflows c A avs' v.
-Proof.
-  intros Hb Hsub.
-  destruct v as [A' [c' l'] w].
-  destruct w as [f ρ xs e | t vs]; unfold cflows in *.
-  - destruct Hb as [Hown Hforeign].
-    split.
-    + intros Heq.
-      destruct (Hown Heq) as [Hin | [Hesc Htop]].
-      * left; apply Hsub; exact Hin.
-      * right; split; [exact Hesc | apply Hsub; exact Htop].
-    + intros Hneq; apply Hsub; exact (Hforeign Hneq).
-  - destruct Hb as [Hown Hforeign].
-    split.
-    + intros Heq.
-      destruct (Hown Heq) as [Hin | [Hesc Htop]].
-      * left; apply Hsub; exact Hin.
-      * right; split; [exact Hesc | apply Hsub; exact Htop].
-    + intros Hneq; apply Hsub; exact (Hforeign Hneq).
-Qed.
 
 (* The fields of a constructor, read from the variables `xs`, flow into a
    value set `avs` that includes the value sets of all the variables. *)
@@ -2430,7 +2399,7 @@ Section Compat.
         eapply IHi; eauto.
         apply G_mono with (S i); eauto; lia.
       + eauto using cescaped_defining.
-      + unfold cbinding; simpl.
+      + unfold cbinding, cflows; simpl.
         split; intros; fcrush.
       + destruct (Nat.eq_dec c0 c); try auto.
         eapply set_lists_approx_top; eauto.
@@ -2477,7 +2446,7 @@ Section Compat.
         * eapply Vfun_V; eauto.
           apply G_mono with i; eauto; lia.
         * eauto using cescaped_defining.
-        * unfold cbinding; simpl.
+        * unfold cbinding, cflows; simpl.
           split; intros; fcrush.
         * apply Included_refl.
       + edestruct R_res_inv_l as [w2 [Heqw2 HV]]; eauto; subst.
@@ -2704,7 +2673,7 @@ Section Compat.
           + (* foreign call: the caller approximates the callee by `AVtop`, so its arguments escape *)
             assert (Htop : AVtop \in ai_env (θ c) f).
             { pose proof (cbinding_env_get f _ (G_cbinding_env _ H) Hf Heqfv2) as Hloc_f.
-              unfold cbinding in Hloc_f.
+              unfold cbinding, cflows in Hloc_f.
               destruct Hloc_f as [_ Hforeign].
               exact (Hforeign Hneqc). }
             destruct (H8 Htop) as [Hargs _].
@@ -2718,7 +2687,7 @@ Section Compat.
             {
               eapply cbinding_env_get; [eapply G_cbinding_env; eauto | exact Hf | eauto ].
             }
-            unfold cbinding in Hcbinding_f.
+            unfold cbinding, cflows in Hcbinding_f.
             destruct Hcbinding_f as [Hfown _].
 
             destruct (Hfown eq_refl) as [Hin | [Hesc Htop]].
@@ -2730,7 +2699,7 @@ Section Compat.
 
           + assert (Htop : AVtop \in ai_env (θ c) f).
             { pose proof (cbinding_env_get f _ (G_cbinding_env _ H) Hf Heqfv2) as Hloc_f.
-              unfold cbinding in Hloc_f.
+              unfold cbinding, cflows in Hloc_f.
               destruct Hloc_f as [_ Hforeign].
               exact (Hforeign Hneqc). }
             destruct (H8 Htop) as [Hargs [HRs Hesc_fun]].
@@ -2755,7 +2724,7 @@ Section Compat.
           inv Hwf2.
           pose proof (approx_env_get_list (G_approx_env _ H) _ _ Hxs Heqvs2) as Happrox_xs.
           pose proof (cbinding_env_get f _ (G_cbinding_env _ H) Hf Heqfv2) as Hloc_f.
-          unfold cbinding in Hloc_f.
+          unfold cbinding, cflows in Hloc_f.
           destruct Hloc_f as [Hint _].
           specialize (Hint eq_refl).
           inv Hint.
@@ -2800,7 +2769,7 @@ Section Compat.
                         (Ensembles.In aval (ai_esc (θ c)) (AVfun l0 v0 l1 e0) /\ Ensembles.In aval (ai_env (θ c) f) AVtop)).
         {
           pose proof (cbinding_env_get f _ (G_cbinding_env _ H) Hf Heqfv2) as Hloc_f.
-          unfold cbinding in Hloc_f.
+          unfold cbinding, cflows in Hloc_f.
           destruct Hloc_f as [Hint _].
           apply (Hint eq_refl).
         }
@@ -2855,7 +2824,7 @@ Section Compat.
 
         assert (Htop : AVtop \in ai_env (θ c) f).
         { pose proof (cbinding_env_get f _ (G_cbinding_env _ H) Hf Heqfv2) as Hloc_f.
-          unfold cbinding in Hloc_f.
+          unfold cbinding, cflows in Hloc_f.
           destruct Hloc_f as [_ Hforeign].
           exact (Hforeign n). }
 
@@ -2994,7 +2963,7 @@ Section Compat.
       subst c0.
       assert (Hint : (AVfun l0 f' xs' e \in ai_env (θ c) f) \/
                        ((AVfun l0 f' xs' e \in ai_esc (θ c)) /\ (AVtop \in ai_env (θ c) f))).
-      { unfold cbinding in Hb_f. destruct Hb_f as [Hown _]. exact (Hown eq_refl). }
+      { unfold cbinding, cflows in Hb_f. destruct Hb_f as [Hown _]. exact (Hown eq_refl). }
 
       (* the arguments flow to the parameters, and the result into `Rx` *)
       assert (Hflow : Forall2 (fun y y' => ai_env (θ c) y \subset ai_env (θ c) y') xs xs' /\
@@ -3038,7 +3007,7 @@ Section Compat.
 
     - (* foreign call: the caller approximates the callee by `AVtop` *)
       assert (Htop : AVtop \in ai_env (θ c) f).
-      { unfold cbinding in Hb_f. destruct Hb_f as [_ Hforeign]. exact (Hforeign Hneqc). }
+      { unfold cbinding, cflows in Hb_f. destruct Hb_f as [_ Hforeign]. exact (Hforeign Hneqc). }
       assert (Hfesc : AVfun l0 f' xs' e \in ai_esc (θ c0)).
       { unfold cescaped in He_f. exact (He_f Hneqc). }
       destruct (Hunknown Htop) as [Hargs [HRx _]].
@@ -3180,7 +3149,7 @@ Section Compat.
   Proof.
     intros Hescθ HV He Hb [Helim Htop].
     destruct (wf_cval_CTag_inv (V_wf_cval_r _ HV)) as [HA' _]; subst A'.
-    unfold cbinding in Hb; unfold cescaped in He; simpl in Hb, He.
+    unfold cbinding, cflows in Hb; unfold cescaped in He; simpl in Hb, He.
     destruct Hb as [Hown Hforeign].
     split.
     - apply approx_int_singleton.
@@ -3238,7 +3207,7 @@ Section Compat.
           exists (AVconstr l t); split; [exact Hx |].
           apply Approx_TAG; [reflexivity | apply Approx_CVconstr].
         - apply cescaped_defining.
-        - unfold cbinding; simpl.
+        - unfold cbinding, cflows; simpl.
           split; [intros _; left; exact Hx | intros Hneq; exfalso; apply Hneq; reflexivity]. }
 
       destruct (Hk θ bdr Rs eq_refl Hescθ Hack_k Hbdr (i - 1) _ _ HG' n1 r1 ltac:(lia) Hstep1)
@@ -3285,7 +3254,7 @@ Section Compat.
 
       (* the projected field is bound at `x` as the environment relation requires *)
       assert (Hbind : approx_vals (ai_env (θ c) x) v2 /\ cescaped c v2 /\ cbinding c (θ c) x v2).
-      { unfold cbinding in Hb_y; simpl in Hb_y.
+      { unfold cbinding, cflows in Hb_y; simpl in Hb_y.
         destruct Hb_y as [Hown Hforeign].
         destruct (Nat.eq_dec c' c) as [Heqc | Hneqc].
         - (* internal: the fields flow from the field set of the site into `x` *)
@@ -3691,7 +3660,7 @@ Proof.
   subst A'.
   destruct w as [f ρ xs e | t vs];
     unfold cboundary in Htop;
-    unfold cbinding; split; intros; subst;
+    unfold cbinding, cflows; split; intros; subst;
     fcrush.
 Qed.
 
