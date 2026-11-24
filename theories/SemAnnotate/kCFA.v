@@ -500,6 +500,18 @@ Proof.
       * apply Union_intror; apply Union_intror; exact H.
 Qed.
 
+(* The fields of a constructor, read from the variables `xs`, flow into a
+   value set `avs` that includes the value sets of all the variables. *)
+Lemma approx_vals_fields {AE : afld} {xs vs avs} :
+  Forall2 (fun x v => approx_vals (AE x) v) xs vs ->
+  Forall (fun x => AE x \subset avs) xs ->
+  Forall (approx_vals avs) vs.
+Proof.
+  intros H; induction H as [| x v xs vs Hv Hvs IH]; intros Hsub; constructor.
+  - destruct Hv as [av [Hin Hav]].
+    exists av; split; [exact (Forall_inv Hsub av Hin) | exact Hav].
+  - exact (IH (Forall_inv_tail Hsub)).
+Qed.
 
 (* A result is approximated by `R` if it is out of time, or returns a value
    approximated by some abstract value in `R`. *)
@@ -791,3 +803,147 @@ Definition cbinding (c : color) (A : analysis_result) (x : var) (δ : acalls) (v
 
 Definition cbinding_env (c : color) (A : analysis_result) (Γ : vars) (β : abenv) (ρ : cenv) : Prop :=
   forall x v, (x \in Γ) -> ρ ! x = Some v -> cbinding c A x (abenv_get β x) v.
+
+Lemma cbinding_env_subset {c A Γ Γ' β ρ} :
+  cbinding_env c A Γ β ρ ->
+  Γ' \subset Γ ->
+  cbinding_env c A Γ' β ρ.
+Proof. unfold cbinding_env; eauto. Qed.
+
+Lemma cbinding_env_set {c A Γ β ρ} x δ v :
+  cbinding_env c A Γ β ρ ->
+  cbinding c A x δ v ->
+  cbinding_env c A (x |: Γ) (abenv_set x δ β) (M.set x v ρ).
+Proof.
+  unfold cbinding_env.
+  intros Hex Hv y w Hy Hget.
+  destruct (M.elt_eq x y); subst.
+  - rewrite M.gss in Hget; inv Hget.
+    rewrite abenv_get_set_eq; auto.
+  - rewrite M.gso in Hget by auto.
+    inv Hy; [inv H; contradiction | eauto].
+    rewrite abenv_get_set_neq; auto.
+Qed.
+
+Lemma cbinding_env_get {c A Γ β ρ} x v :
+  cbinding_env c A Γ β ρ ->
+  (x \in Γ) ->
+  ρ ! x = Some v ->
+  cbinding c A x (abenv_get β x) v.
+Proof. unfold cbinding_env; eauto. Qed.
+
+Lemma cbinding_env_get_list {c A Γ β ρ} :
+  cbinding_env c A Γ β ρ ->
+  forall xs vs,
+    FromList xs \subset Γ ->
+    get_list xs ρ = Some vs ->
+    Forall2 (fun x v => cbinding c A x (abenv_get β x) v) xs vs.
+Proof.
+  intros Hloc xs.
+  induction xs as [| x xs IHxs]; simpl; intros vs Hxs Hget.
+  - inv Hget; constructor.
+  - destruct (M.get x ρ) as [v |] eqn:Hx; [| discriminate Hget].
+    destruct (get_list xs ρ) as [vs' |] eqn:Hxs'; [| discriminate Hget].
+    inv Hget.
+    constructor.
+    + eapply cbinding_env_get; eauto.
+      apply Hxs; left; reflexivity.
+    + eapply IHxs; eauto.
+      intros y Hy; apply Hxs; right; exact Hy.
+Qed.
+
+Lemma cbinding_env_set_lists {c A Γ β ρ} :
+  cbinding_env c A Γ β ρ ->
+  forall xs vs δ ρ',
+    Forall2 (fun x v => cbinding c A x δ v) xs vs ->
+    set_lists xs vs ρ = Some ρ' ->
+    cbinding_env c A (FromList xs :|: Γ) (abenv_set_list xs δ β) ρ'.
+Proof.
+  intros Hloc xs.
+  induction xs as [| x xs IHxs]; intros vs δ ρ' Hall Hset; simpl in Hset.
+  - destruct vs as [| v vs]; [| discriminate Hset].
+    inv Hset.
+    eapply cbinding_env_subset; [exact Hloc |].
+    intros y Hy; inv Hy; [inv H | exact H].
+  - destruct vs as [| v vs]; [discriminate Hset |].
+    destruct (set_lists xs vs ρ) as [ρ'' |] eqn:Heq; [| discriminate Hset].
+    inv Hset.
+    inv Hall.
+    apply (cbinding_env_subset (Γ := x |: (FromList xs :|: Γ))).
+    + apply cbinding_env_set; [eapply IHxs; eauto | eassumption].
+    + intros y Hy.
+      inv Hy.
+      * destruct H as [-> | Hin].
+        -- apply Union_introl; apply In_singleton.
+        -- apply Union_intror; apply Union_introl; exact Hin.
+      * apply Union_intror; apply Union_intror; exact H.
+Qed.
+
+(* `cbinding` is preserved when the value flows into a variable whose value
+   set includes that of the original one. *)
+Lemma cbinding_subset {c A x δ x' v} :
+  cbinding c A x δ v ->
+  ai_env A (x, δ) \subset ai_env A (x', δ) ->
+  cbinding c A x' δ v.
+Proof. apply cflows_subset. Qed.
+
+Lemma cbinding_subset_list {c A δ xs xs' vs} :
+  Forall2 (fun x v => cbinding c A x δ v) xs vs ->
+  Forall2 (fun x x' => ai_env A (x, δ) \subset ai_env A (x', δ)) xs xs' ->
+  Forall2 (fun x' v => cbinding c A x' δ v) xs' vs.
+Proof.
+  intros Hb.
+  revert xs'.
+  induction Hb as [| x v xs vs Hx Hb IH]; intros xs' Hsub; inv Hsub.
+  - constructor.
+  - constructor; [eapply cbinding_subset; eauto | eapply IH; eauto].
+Qed.
+
+Lemma cbinding_cflows {c A x δ v} :
+  cbinding c A x δ v ->
+  cflows c A (ai_env A (x, δ)) v.
+Proof. intros H; exact H. Qed.
+
+Lemma cflows_cbinding {c A x δ v} :
+  cflows c A (ai_env A (x, δ)) v ->
+  cbinding c A x δ v.
+Proof. intros H; exact H. Qed.
+
+Lemma cflows_fields {c A δ xs vs avs} :
+  Forall2 (fun x v => cbinding c A x δ v) xs vs ->
+  Forall (fun x => ai_env A (x, δ) \subset avs) xs ->
+  Forall (cflows c A avs) vs.
+Proof.
+  intros H; induction H as [| x v xs vs Hv Hvs IH]; intros Hsub; constructor.
+  - eapply cflows_subset; [eapply cbinding_cflows; exact Hv | exact (Forall_inv Hsub)].
+  - exact (IH (Forall_inv_tail Hsub)).
+Qed.
+
+(* Invariants for Results *)
+(* A result returned by the unit wearing `c` into the return set `Rs` keeps
+   the invariants of a binding: a foreign value has escaped, and a closure of
+   the unit itself is approximated in `Rs` by its own allocation site, unless
+   it has escaped already.  Unlike `approx_res`, this survives `AVtop ∈ Rs`. *)
+Definition cresult (c : color) (A : analysis_result) (Rs : avals) (r : cres) : Prop :=
+  match r with
+  | COOT => True
+  | CRes v => cescaped c v /\ cflows c A Rs v
+  end.
+
+Lemma cresult_subset {c A Rs Rs' r} :
+  cresult c A Rs r ->
+  Rs \subset Rs' ->
+  cresult c A Rs' r.
+Proof.
+  intros Hok Hsub.
+  destruct r as [| v]; [exact I |].
+  destruct Hok as [Hesc Hfl].
+  split; [exact Hesc | eapply cflows_subset; eauto].
+Qed.
+
+(* A value that crosses the program boundary: a value that has escaped
+   from its unit with its own allocation site. *)
+Definition cboundary (cv : clval) : Prop :=
+  match cv with
+  | CTAG _ A (c, l) w => aval_of l w \in ai_esc A
+  end.

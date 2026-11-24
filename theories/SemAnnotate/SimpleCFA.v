@@ -534,6 +534,19 @@ Proof.
       * apply Union_intror; apply Union_intror; exact H.
 Qed.
 
+(* The fields of a constructor, read from the variables `xs`, flow into a
+   value set `avs` that includes the value sets of all the variables. *)
+Lemma approx_vals_fields {AE : afld} {xs vs avs} :
+  Forall2 (fun x v => approx_vals (AE x) v) xs vs ->
+  Forall (fun x => AE x \subset avs) xs ->
+  Forall (approx_vals avs) vs.
+Proof.
+  intros H; induction H as [| x v xs vs Hv Hvs IH]; intros Hsub; constructor.
+  - destruct Hv as [av [Hin Hav]].
+    exists av; split; [exact (Forall_inv Hsub av Hin) | exact Hav].
+  - exact (IH (Forall_inv_tail Hsub)).
+Qed.
+
 (* A result is approximated by `R` if it is out of time, or returns a value
    approximated by some abstract value in `R`. *)
 Inductive approx_res : avals -> cres -> Prop :=
@@ -861,19 +874,6 @@ Lemma cflows_cbinding {c A x v} :
   cflows c A (ai_env A x) v ->
   cbinding c A x v.
 Proof. intros H; exact H. Qed.
-
-(* The fields of a constructor, read from the variables `xs`, flow into a
-   value set `avs` that includes the value sets of all the variables. *)
-Lemma approx_vals_fields {AE : afld} {xs vs avs} :
-  Forall2 (fun x v => approx_vals (AE x) v) xs vs ->
-  Forall (fun x => AE x \subset avs) xs ->
-  Forall (approx_vals avs) vs.
-Proof.
-  intros H; induction H as [| x v xs vs Hv Hvs IH]; intros Hsub; constructor.
-  - destruct Hv as [av [Hin Hav]].
-    exists av; split; [exact (Forall_inv Hsub av Hin) | exact Hav].
-  - exact (IH (Forall_inv_tail Hsub)).
-Qed.
 
 Lemma cflows_fields {c A xs vs avs} :
   Forall2 (cbinding c A) xs vs ->
