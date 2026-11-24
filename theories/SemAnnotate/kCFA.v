@@ -85,7 +85,7 @@ Proof. intros Hxy; unfold abenv_get, abenv_set; rewrite M.gso by congruence; ref
        context.  Its introduction clabel is [l_top_intro]. *)
 Inductive aval : Type :=
 | AVtop : aval
-| AVfun : label -> abenv -> var -> list var -> exp -> aval
+| AVfun : label -> var -> abenv -> list var -> exp -> aval
 | AVconstr : label -> ctor_tag -> aval.
 
 Definition avals := Ensemble aval.
@@ -143,10 +143,10 @@ Definition escapes_ok (A : analysis_result) : Prop :=
       (av \in ai_esc A) ->
       ((label_of av, l_top_elim) \in ai_int A)) /\
     (forall l β f xs e,
-        (AVfun l β f xs e \in ai_esc A) ->
+        (AVfun l f β xs e \in ai_esc A) ->
         forall δ,
           (δ \in ai_ctx A l) /\
-          (AVfun l β f xs e \in ai_env A (f, δ)) /\
+          (AVfun l f β xs e \in ai_env A (f, δ)) /\
           (forall x, List.In x xs -> (AVtop \in aeval A (abenv_set_list xs δ (M.set f δ β)) x)) /\ (* [AVtop] only flows into the variable under [δ] *)
           (ai_ret A (l, δ) \subset ai_esc A)) /\
     (forall l t,
@@ -164,7 +164,7 @@ Definition escapes_ok (A : analysis_result) : Prop :=
 Definition aelim_fun_int (A : analysis_result) (β : abenv) (f : var) (l : label) : Prop :=
   (forall av, (av \in aeval A β f) -> ((label_of av, l) \in ai_int A)) /\
     ((AVtop \in aeval A β f) ->
-     forall l' β' f' xs' e', (AVfun l' β' f' xs' e' \in ai_esc A) -> ((l', l) \in ai_int A)).
+     forall l' f' β' xs' e', (AVfun l' f' β' xs' e' \in ai_esc A) -> ((l', l) \in ai_int A)).
 
 (* The elimination site `l` of a constructor held in `y` (by a projection or
    a case) eliminates everything that reaches `y`; since `AVtop` also stands
@@ -189,7 +189,7 @@ Inductive acheck (A : analysis_result) : acalls -> abenv -> exp -> avals -> Prop
 | Acheck_fun :
   forall {δ β f l xs e k R},
     (* the closure introduced here, closing over [β], flows into [f] *)
-    (AVfun l β f xs e \in ai_env A (f, δ)) ->
+    (AVfun l f β xs e \in ai_env A (f, δ)) ->
     (* its body is analysed here, once per context it may be entered in, and
        returns into [ai_ret A (l, δ')] *)
     (forall δ',
@@ -207,11 +207,11 @@ Inductive acheck (A : analysis_result) : acalls -> abenv -> exp -> avals -> Prop
        flow to parameters, results flow out.  Only callees of the call's arity
        are constrained: a call of any other arity gets stuck (`set_lists`
        fails), so it never needs a flow *)
-    (forall l' β' f' xs' e',
-        (AVfun l' β' f' xs' e' \in aeval A β f) ->
+    (forall l' f' β' xs' e',
+        (AVfun l' f' β' xs' e' \in aeval A β f) ->
         length xs = length xs' ->
           (push l δ \in ai_ctx A l') /\
-          (AVfun l' β' f' xs' e' \in ai_env A (f', push l δ)) /\
+          (AVfun l' f' β' xs' e' \in ai_env A (f', push l δ)) /\
           Forall2 (fun x x' => aeval A β x \subset ai_env A (x', push l δ)) xs xs' /\
           (ai_ret A (l', push l δ) \subset R)) ->
 
@@ -221,11 +221,11 @@ Inductive acheck (A : analysis_result) : acalls -> abenv -> exp -> avals -> Prop
     ((AVtop \in aeval A β f) ->
        Forall (fun x => aeval A β x \subset ai_esc A) xs /\ (* each argument can escape *)
        (AVtop \in R) /\ (* result is unknown *)
-       (forall l' β' f' xs' e',
-           (AVfun l' β' f' xs' e' \in ai_esc A) ->
+       (forall l' f' β' xs' e',
+           (AVfun l' f' β' xs' e' \in ai_esc A) ->
              length xs = length xs' ->
              (push l δ \in ai_ctx A l') /\
-             (AVfun l' β' f' xs' e' \in ai_env A (f', push l δ)) /\
+             (AVfun l' f' β' xs' e' \in ai_env A (f', push l δ)) /\
              Forall2 (fun x x' => aeval A β x \subset ai_env A (x', push l δ)) xs xs' /\ (* call the escaping function with the current arguments *)
              (ai_ret A (l', push l δ) \subset R))) -> (* what each escaping function may return can also be returned from this callsite *)
 
@@ -258,7 +258,7 @@ Hint Constructors ctag : core.
 (* A closure records, next to its captured environment `ρ`, the abstract
    binding environment `β` it was created under: the context in which each
    variable of `ρ` was bound.  This pins down the abstract value of the
-   closure, `AVfun l β f xs e`. *)
+   closure, `AVfun l f β xs e`. *)
 (* Why `β` belongs to `cval` instead of `ctag`?
    Note a tag belongs to a value, but a binding context belongs to a binding.
    The same value can be bound in several places at once:
@@ -278,7 +278,7 @@ Definition CTag A c l cv := CTAG cval A (c, l) cv.
 (* The abstract value of a value allocated at `l`. *)
 Definition aval_of (l : label) (v : cval) : aval :=
   match v with
-  | CVfun f _ β xs e => AVfun l β f xs e
+  | CVfun f _ β xs e => AVfun l f β xs e
   | CVconstr t _ => AVconstr l t
   end.
 
@@ -349,7 +349,7 @@ with approx_val' : analysis_result -> aval -> cval -> Prop :=
 | Approx_CVfun :
   forall A l β f ρ xs e,
     approx_env (fun_fv f xs e) (ai_env A) β ρ ->
-    approx_val' A (AVfun l β f xs e) (CVfun f ρ β xs e)
+    approx_val' A (AVfun l f β xs e) (CVfun f ρ β xs e)
 
 (* A constructor is approximated by its own allocation site.  Its fields are
    approximated by the field set of that site, which the logical relation
