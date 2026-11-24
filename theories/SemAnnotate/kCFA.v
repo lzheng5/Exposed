@@ -643,3 +643,242 @@ Proof.
   apply approx_calls_push.
   split; intros Hc; [contradiction | reflexivity].
 Qed.
+
+
+(* Invariants for Escaped Values *)
+(* A value held by the unit wearing `c` that belongs to another unit must have
+   escaped from that unit with its own allocation site: an `AVtop` in
+   `ai_esc` would not constrain anything. *)
+Definition cescaped (c : color) (v : clval) : Prop :=
+  match v with
+  | CTAG _ A' (c', l) (CVfun f _ β xs e) => c' <> c -> AVfun l β f xs e \in ai_esc A'
+  | CTAG _ A' (c', l) (CVconstr t _) => c' <> c -> AVconstr l t \in ai_esc A'
+  end.
+
+Lemma cescaped_defining A c l v :
+  cescaped c (CTag A c l v).
+Proof.
+  unfold cescaped; destruct v; simpl;
+    intros Hneq; exfalso; apply Hneq; reflexivity.
+Qed.
+
+Definition cescaped_env (c : color) (Γ : vars) (ρ : cenv) : Prop :=
+  forall x v, (x \in Γ) -> ρ ! x = Some v -> cescaped c v.
+
+Lemma cescaped_env_subset {c Γ Γ' ρ} :
+  cescaped_env c Γ ρ ->
+  Γ' \subset Γ ->
+  cescaped_env c Γ' ρ.
+Proof. unfold cescaped_env; eauto. Qed.
+
+Lemma cescaped_env_set {c Γ ρ} x v :
+  cescaped_env c Γ ρ ->
+  cescaped c v ->
+  cescaped_env c (x |: Γ) (M.set x v ρ).
+Proof.
+  unfold cescaped_env.
+  intros Hesc Hv y w Hy Hget.
+  destruct (M.elt_eq x y); subst.
+  - rewrite M.gss in Hget; inv Hget; exact Hv.
+  - rewrite M.gso in Hget by auto.
+    inv Hy; [inv H; contradiction | eauto].
+Qed.
+
+Lemma cescaped_env_get {c Γ ρ} x v :
+  cescaped_env c Γ ρ ->
+  (x \in Γ) ->
+  ρ ! x = Some v ->
+  cescaped c v.
+Proof. unfold cescaped_env; eauto. Qed.
+
+Lemma cescaped_env_get_list {c Γ ρ} :
+  cescaped_env c Γ ρ ->
+  forall xs vs,
+    FromList xs \subset Γ ->
+    get_list xs ρ = Some vs ->
+    Forall (cescaped c) vs.
+Proof.
+  intros Hesc xs.
+  induction xs as [| x xs IHxs]; simpl; intros vs Hxs Hget.
+  - inv Hget; constructor.
+  - destruct (M.get x ρ) as [v |] eqn:Hx; [| discriminate Hget].
+    destruct (get_list xs ρ) as [vs' |] eqn:Hxs'; [| discriminate Hget].
+    inv Hget.
+    constructor.
+    + eapply cescaped_env_get; eauto.
+      apply Hxs; left; reflexivity.
+    + eapply IHxs; eauto.
+      intros y Hy; apply Hxs; right; exact Hy.
+Qed.
+
+Lemma cescaped_env_set_lists {c Γ ρ} :
+  cescaped_env c Γ ρ ->
+  forall xs vs ρ',
+    Forall (cescaped c) vs ->
+    set_lists xs vs ρ = Some ρ' ->
+    cescaped_env c (FromList xs :|: Γ) ρ'.
+Proof.
+  intros Hesc xs.
+  induction xs as [| x xs IHxs]; intros vs ρ' Hall Hset; simpl in Hset.
+  - destruct vs as [| v vs]; [| discriminate Hset].
+    inv Hset.
+    eapply cescaped_env_subset; [exact Hesc |].
+    intros y Hy; inv Hy; [inv H | exact H].
+  - destruct vs as [| v vs]; [discriminate Hset |].
+    destruct (set_lists xs vs ρ) as [ρ'' |] eqn:Heq; [| discriminate Hset].
+    inv Hset.
+    inv Hall.
+    apply (cescaped_env_subset (Γ := x |: (FromList xs :|: Γ))).
+    + apply cescaped_env_set; [eapply IHxs; eauto | eassumption].
+    + intros y Hy.
+      inv Hy.
+      * destruct H as [-> | Hin].
+        -- apply Union_introl; apply In_singleton.
+        -- apply Union_intror; apply Union_introl; exact Hin.
+      * apply Union_intror; apply Union_intror; exact H.
+Qed.
+
+(* Invariants for Variable Binding *)
+(* How a value held by the unit wearing `c` (with analysis result `A`) is
+   approximated at variable `x`:
+   - a value of the unit itself is approximated by its own allocation site,
+     not merely by `AVtop` -- unless it has already *escaped*, in which case
+     `AVtop` stands for it.  This is what lets its exact site reach `ai_esc A`
+     when it escapes, and what makes eliminating it a (statically) known
+     elimination;
+   - a foreign value is approximated by `AVtop`, so that eliminating it is
+     treated as an unknown elimination. *)
+Definition cbinding (c : color) (A : analysis_result) (x : var) (v : clval) : Prop :=
+  match v with
+  | CTAG _ _ (c', l) (CVfun f _ β xs e) =>
+      (c' = c -> (* c is the defining unit *)
+       (AVfun l β f xs e \in aeval A β x) \/ (* internal closure *)
+         ((AVfun l β f xs e \in ai_esc A) /\ (AVtop \in aeval A β x))) /\ (* unknown closure *)
+        (c' <> c -> AVtop \in aeval A β x) (* c is not the defining unit *)
+  | CTAG _ _ (c', l) (CVconstr t _) =>
+      False
+      (* (c' = c -> (* c is the defining unit *) *)
+      (*  (AVconstr l t \in ai_env A x) \/ (* internal constructor *) *)
+      (*    ((AVconstr l t \in ai_esc A) /\ (AVtop \in ai_env A x))) /\ (* unknown constructor *) *)
+      (*   (c' <> c -> AVtop \in ai_env A x) *) (* c is not the defining unit *)
+  end.
+
+Definition cbinding_env (c : color) (A : analysis_result) (Γ : vars) (ρ : cenv) : Prop :=
+  forall x v, (x \in Γ) -> ρ ! x = Some v -> cbinding c A x v.
+
+Lemma cbinding_env_subset {c A Γ Γ' ρ} :
+  cbinding_env c A Γ ρ ->
+  Γ' \subset Γ ->
+  cbinding_env c A Γ' ρ.
+Proof. unfold cbinding_env; eauto. Qed.
+
+Lemma cbinding_env_set {c A Γ ρ} x v :
+  cbinding_env c A Γ ρ ->
+  cbinding c A x v ->
+  cbinding_env c A (x |: Γ) (M.set x v ρ).
+Proof.
+  unfold cbinding_env.
+  intros Hex Hv y w Hy Hget.
+  destruct (M.elt_eq x y); subst.
+  - rewrite M.gss in Hget; inv Hget; exact Hv.
+  - rewrite M.gso in Hget by auto.
+    inv Hy; [inv H; contradiction | eauto].
+Qed.
+
+Lemma cbinding_env_get {c A Γ ρ} x v :
+  cbinding_env c A Γ ρ ->
+  (x \in Γ) ->
+  ρ ! x = Some v ->
+  cbinding c A x v.
+Proof. unfold cbinding_env; eauto. Qed.
+
+Lemma cbinding_env_get_list {c A Γ ρ} :
+  cbinding_env c A Γ ρ ->
+  forall xs vs,
+    FromList xs \subset Γ ->
+    get_list xs ρ = Some vs ->
+    Forall2 (cbinding c A) xs vs.
+Proof.
+  intros Hloc xs.
+  induction xs as [| x xs IHxs]; simpl; intros vs Hxs Hget.
+  - inv Hget; constructor.
+  - destruct (M.get x ρ) as [v |] eqn:Hx; [| discriminate Hget].
+    destruct (get_list xs ρ) as [vs' |] eqn:Hxs'; [| discriminate Hget].
+    inv Hget.
+    constructor.
+    + eapply cbinding_env_get; eauto.
+      apply Hxs; left; reflexivity.
+    + eapply IHxs; eauto.
+      intros y Hy; apply Hxs; right; exact Hy.
+Qed.
+
+Lemma cbinding_env_set_lists {c A Γ ρ} :
+  cbinding_env c A Γ ρ ->
+  forall xs vs ρ',
+    Forall2 (cbinding c A) xs vs ->
+    set_lists xs vs ρ = Some ρ' ->
+    cbinding_env c A (FromList xs :|: Γ) ρ'.
+Proof.
+  intros Hloc xs.
+  induction xs as [| x xs IHxs]; intros vs ρ' Hall Hset; simpl in Hset.
+  - destruct vs as [| v vs]; [| discriminate Hset].
+    inv Hset.
+    eapply cbinding_env_subset; [exact Hloc |].
+    intros y Hy; inv Hy; [inv H | exact H].
+  - destruct vs as [| v vs]; [discriminate Hset |].
+    destruct (set_lists xs vs ρ) as [ρ'' |] eqn:Heq; [| discriminate Hset].
+    inv Hset.
+    inv Hall.
+    apply (cbinding_env_subset (Γ := x |: (FromList xs :|: Γ))).
+    + apply cbinding_env_set; [eapply IHxs; eauto | eassumption].
+    + intros y Hy.
+      inv Hy.
+      * destruct H as [-> | Hin].
+        -- apply Union_introl; apply In_singleton.
+        -- apply Union_intror; apply Union_introl; exact Hin.
+      * apply Union_intror; apply Union_intror; exact H.
+Qed.
+
+(* `cbinding` is preserved when the value flows into a variable whose value
+   set includes that of the original one. *)
+Lemma cbinding_subset {c A β x x' v} :
+  cbinding c A x v ->
+  aeval A β x \subset aeval A β x' ->
+  cbinding c A x' v.
+Proof.
+  intros Hb Hsub.
+  destruct v as [A' [c' l'] w].
+  destruct w as [f ρ β' xs e | t vs]; unfold cbinding in *.
+Admitted.
+(*   - destruct Hb as [Hown Hforeign]. *)
+(*     split. *)
+(*     + intros Heq. *)
+(*       destruct (Hown Heq) as [Hin | [Hesc Htop]]. *)
+(*       * left. *)
+(*         unfold Ensembles.Included in Hsub. *)
+(*         eapply Hsub.  *)
+(*         eapply Hsub; exact Hin. *)
+(*       * right; split; [exact Hesc | apply Hsub; exact Htop]. *)
+(*     + intros Hneq; apply Hsub; exact (Hforeign Hneq). *)
+(*   - destruct Hb as [Hown Hforeign]. *)
+(*     split. *)
+(*     + intros Heq. *)
+(*       destruct (Hown Heq) as [Hin | [Hesc Htop]]. *)
+(*       * left; apply Hsub; exact Hin. *)
+(*       * right; split; [exact Hesc | apply Hsub; exact Htop]. *)
+(*     + intros Hneq; apply Hsub; exact (Hforeign Hneq). *)
+(* Qed. *)
+
+(*
+Lemma cbinding_subset_list {c A xs xs' vs} :
+  Forall2 (cbinding c A) xs vs ->
+  Forall2 (fun x x' => ai_env A x \subset ai_env A x') xs xs' ->
+  Forall2 (cbinding c A) xs' vs.
+Proof.
+  intros Hb.
+  revert xs'.
+  induction Hb as [| x v xs vs Hx Hb IH]; intros xs' Hsub; inv Hsub.
+  - constructor.
+  - constructor; [eapply cbinding_subset; eauto | eapply IH; eauto].
+Qed.
+*)
