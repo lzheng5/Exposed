@@ -293,8 +293,10 @@ Inductive cres : Type :=
 Hint Constructors cres : core.
 
 (* Concrete call strings *)
-
 Definition calls := list clabel.
+
+(* TODO *)
+Definition acalls_of (c : color) (δ : calls) : acalls := [].
 
 (* Free variables of a closure: those of its body, minus its parameters and
    its own name. *)
@@ -947,3 +949,107 @@ Definition cboundary (cv : clval) : Prop :=
   match cv with
   | CTAG _ A (c, l) w => aval_of l w \in ai_esc A
   end.
+
+(* A result that crosses the program boundary. *)
+Definition cboundary_res (r : cres) : Prop :=
+  match r with
+  | COOT => True
+  | CRes v => cboundary v
+  end.
+
+(* Checking Semantics based on the Collecting Semantics *)
+(* This semantics dynamically validates the analysis result, `A`.
+   The collected interactions are validated against `ai_int A` once, in
+   `CbstepF_Step`, which covers every interaction produced underneath it,
+   including the call edge added by `Cbstep_app_*` and `Cbstep_letapp_*`. *)
+Inductive cbstep (A : analysis_result) (c : color) (bdr : bool) (δ : calls) (β : abenv) (ρ : cenv)
+  : exp -> fuel -> calls -> avals -> cres -> interactions -> Prop :=
+| Cbstep_ret :
+  forall {x v Rs},
+    M.get x ρ = Some v ->
+    cbstep A c bdr δ β ρ (Eret x) 0 [] Rs (CRes v) (Empty_set _)
+
+| Cbstep_fun :
+  forall {f l xs e k i Rs r I δ'},
+    cbstep_fuel A c bdr δ (abenv_set f (acalls_of c δ) β) (M.set f (CTag A c l (CVfun f ρ β xs e)) ρ) k i δ' Rs r I ->
+    (AVfun l f β xs e \in aeval A β f) ->
+    cbstep A c bdr δ β ρ (Efun f l xs e k) i δ' Rs r I
+
+           (*
+
+(* Foreign call: dynamic counterpart of the unknown-callee branch of `Acheck_app`,
+   validated from both sides.  The caller (`A`) sees an unknown value being
+   eliminated and its arguments escaping; the callee (`A'`) sees one of its
+   escaped closures being eliminated by the context. *)
+| Cbstep_app_External :
+  forall Rs {A' f f' c' l l' xs ρ' xs' e vs ρ'' i r I},
+    M.get f ρ = Some (CTag A' c' l' (CVfun f' ρ' xs' e)) ->
+    c <> c' ->
+
+    (* callee side: the closure has escaped and is eliminated by the context
+       (the caller side, `(l_top_intro, l)`, is checked by `CbstepF_Step`) *)
+    (AVfun l' f' xs' e \in ai_esc A') ->
+    ((l', l_top_elim) \in ai_int A') ->
+
+    (* caller side: the arguments escape to the callee's unit *)
+    get_list xs ρ = Some vs ->
+    Forall (cescaped c') vs ->
+
+    (* callee side: the (unknown) arguments flow to the parameters *)
+    set_lists xs' vs (M.set f' (CTag A' c' l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
+    approx_env (occurs_free e) (ai_env A') ρ'' ->
+
+    (* the body is validated against the callee's own analysis result and
+       returns into `ai_ret A' l'` *)
+    cbstep_fuel A' c' true ρ'' e i (ai_ret A' l') r I ->
+
+    cbstep A c bdr ρ (Eapp f l xs) i Rs r (((c', l'), (c, l)) |: I)
+
+            *)
+
+(* Internal call: dynamic counterpart of the known-callee branch of
+   `Acheck_app`.  The callee wears the caller's color, so it belongs to the
+   same unit and is validated against the same analysis result `A`. *)
+| Cbstep_app_Internal :
+  forall Rs { f f' l l' xs ρ' β' xs' e vs ρ'' i r I δ''},
+    M.get f ρ = Some (CTag A c l' (CVfun f' ρ' β' xs' e)) ->
+
+    (* the arguments flow to the parameters *)
+    get_list xs ρ = Some vs ->
+    Forall2 (fun x v => cbinding c A x (acalls_of c δ) v) xs' vs ->
+    set_lists xs' vs (M.set f' (CTag A c l' (CVfun f' ρ' β' xs' e)) ρ') = Some ρ'' ->
+
+    let δ' := ((c, l) :: δ) in
+    let β'' := (abenv_set_list xs (acalls_of c δ') β') in
+
+    (* the body returns into `ai_ret A l'` *)
+    cbstep_fuel A c false δ' β'' ρ'' e i δ'' (ai_ret A (l', acalls_of c δ'')) r I ->
+
+    cbstep A c bdr δ β ρ (Eapp f l xs) i δ'' Rs r (((c, l'), (c, l)) |: I)
+
+with cbstep_fuel (A : analysis_result) (c : color) (bdr : bool) (δ : calls) (β : abenv) (ρ : cenv)
+  : exp -> fuel -> calls -> avals -> cres -> interactions -> Prop :=
+| CbstepF_OOT :
+  forall {e Rs},
+    (* Approximations of inputs are valid *)
+    approx_env (occurs_free e) (ai_env A) β ρ ->
+
+    cbstep_fuel A c bdr δ β ρ e 0 [] Rs COOT (Empty_set _)
+
+| CbstepF_Step :
+  forall {e i Rs r I δ'},
+    cbstep A c bdr δ β ρ e i δ' Rs r I ->
+
+    (* Approximations of inputs and outputs are valid *)
+    approx_env (occurs_free e) (ai_env A) β ρ ->
+    approx_res Rs r ->
+    approx_int c (ai_int A) I ->
+
+    (* Coloring invariants are valid *)
+    cresult c A Rs r ->
+    (if bdr then cboundary_res r else True) ->
+
+    cbstep_fuel A c bdr δ β ρ e (S i) δ' Rs r I.
+
+Hint Constructors cbstep : core.
+Hint Constructors cbstep_fuel : core.
