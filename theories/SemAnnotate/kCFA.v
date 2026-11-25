@@ -266,7 +266,7 @@ Hint Constructors ctag : core.
    - at (x', push l δ) in the callee.
    No single per-value β can describe both. *)
 Inductive cval : Type :=
-| CVfun : var -> M.t (ctag cval) -> abenv -> list var -> exp -> cval
+| CVfun : var -> abenv -> M.t (ctag cval) -> list var -> exp -> cval
 | CVconstr : ctor_tag -> list (ctag cval) -> cval.
 
 Hint Constructors cval : core.
@@ -278,7 +278,7 @@ Definition CTag A c l cv := CTAG cval A (c, l) cv.
 (* The abstract value of a value allocated at `l`. *)
 Definition aval_of (l : label) (v : cval) : aval :=
   match v with
-  | CVfun f _ β xs e => AVfun l f β xs e
+  | CVfun f β _ xs e => AVfun l f β xs e
   | CVconstr t _ => AVconstr l t
   end.
 
@@ -393,7 +393,7 @@ with approx_val' : analysis_result -> aval -> cval -> Prop :=
 | Approx_CVfun :
   forall A l β f ρ xs e,
     approx_env (fun_fv f xs e) (ai_env A) β ρ ->
-    approx_val' A (AVfun l f β xs e) (CVfun f ρ β xs e)
+    approx_val' A (AVfun l f β xs e) (CVfun f β ρ xs e)
 
 (* A constructor is approximated by its own allocation site.  Its fields are
    approximated by the field set of that site, which the logical relation
@@ -1031,7 +1031,7 @@ Inductive cbstep (A : analysis_result) (c : color) (bdr : bool) (δ : calls) (β
 (* The closure closes over `β`, and `f` is bound in the current context. *)
 | Cbstep_fun :
   forall {f l xs e k i Rs r I},
-    cbstep_fuel A c bdr δ (abenv_set f (acalls_of c δ) β) (M.set f (CTag A c l (CVfun f ρ β xs e)) ρ) k i Rs r I ->
+    cbstep_fuel A c bdr δ (abenv_set f (acalls_of c δ) β) (M.set f (CTag A c l (CVfun f β ρ xs e)) ρ) k i Rs r I ->
     (* The abstract value is in `A` based on the current abstract call string `(acalls_of c δ)` *)
     (* Same as: (AVfun l f β xs e \in aeval A (abenv_set f (acalls_of c δ) β) f) -> *)
     (AVfun l f β xs e \in ai_env A (f, acalls_of c δ)) ->
@@ -1047,7 +1047,7 @@ Inductive cbstep (A : analysis_result) (c : color) (bdr : bool) (δ : calls) (β
    (`acalls_of_external`). *)
 | Cbstep_app_External :
   forall Rs {A' f f' c' l l' xs ρ' β' xs' e vs ρ'' i r I},
-    M.get f ρ = Some (CTag A' c' l' (CVfun f' ρ' β' xs' e)) ->
+    M.get f ρ = Some (CTag A' c' l' (CVfun f' β' ρ' xs' e)) ->
     c <> c' ->
 
     (* callee side: the closure has escaped and is eliminated by the context
@@ -1061,7 +1061,7 @@ Inductive cbstep (A : analysis_result) (c : color) (bdr : bool) (δ : calls) (β
 
     (* callee side: the (unknown) arguments flow to the parameters, bound
        together with the closure itself in the entry context *)
-    set_lists xs' vs (M.set f' (CTag A' c' l' (CVfun f' ρ' β' xs' e)) ρ') = Some ρ'' ->
+    set_lists xs' vs (M.set f' (CTag A' c' l' (CVfun f' β' ρ' xs' e)) ρ') = Some ρ'' ->
     approx_env (occurs_free e) (ai_env A')
       (abenv_set_list xs' (push l_top_elim (acalls_of c' δ))
          (abenv_set f' (push l_top_elim (acalls_of c' δ)) β'))
@@ -1083,12 +1083,12 @@ Inductive cbstep (A : analysis_result) (c : color) (bdr : bool) (δ : calls) (β
    (`acalls_of_internal`), as in `Acheck_app`. *)
 | Cbstep_app_Internal :
   forall Rs { f f' l l' xs ρ' β' xs' e vs ρ'' i r I},
-    M.get f ρ = Some (CTag A c l' (CVfun f' ρ' β' xs' e)) ->
+    M.get f ρ = Some (CTag A c l' (CVfun f' β' ρ' xs' e)) ->
 
     (* the arguments flow to the parameters, bound in the entry context *)
     get_list xs ρ = Some vs ->
     Forall2 (fun x' v => cbinding c A x' (push l (acalls_of c δ)) v) xs' vs ->
-    set_lists xs' vs (M.set f' (CTag A c l' (CVfun f' ρ' β' xs' e)) ρ') = Some ρ'' ->
+    set_lists xs' vs (M.set f' (CTag A c l' (CVfun f' β' ρ' xs' e)) ρ') = Some ρ'' ->
 
     (* the body returns into `ai_ret A (l', push l (acalls_of c δ))`, keyed by
        the context the body is *entered* in, not the caller's context `δ`:
