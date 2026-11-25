@@ -295,8 +295,50 @@ Hint Constructors cres : core.
 (* Concrete call strings *)
 Definition calls := list clabel.
 
-(* TODO *)
-Definition acalls_of (c : color) (δ : calls) : acalls := [].
+(* The abstract call site of a colored call site, as seen from the unit
+   wearing color `c`: one of our call sites is itself, a foreign call site is
+   `l_top_elim`. *)
+Definition aclabel_of (c : color) (cl : clabel) : label :=
+  let (c', l) := cl in if Nat.eq_dec c' c then l else l_top_elim.
+
+(* The abstract call string of a concrete one, as seen from the unit wearing
+   color `c`: its [k] most recent call sites, abstracted. *)
+Definition acalls_of (c : color) (cs : calls) : acalls :=
+  truncate (map (aclabel_of c) cs).
+
+(* Abstracting commutes with pushing a call site. *)
+Lemma acalls_of_cons c cl cs :
+  acalls_of c (cl :: cs) = push (aclabel_of c cl) (acalls_of c cs).
+Proof.
+  unfold acalls_of, push, truncate; cbn [map].
+  destruct k as [| n]; [reflexivity |].
+  cbn [firstn]; f_equal.
+  (* [cbn] unfolds the inner [firstn (S n) _] into a [match]; it is still
+     convertible to [firstn (S n) _], so close the goal up to conversion *)
+  assert (H : firstn n (firstn (S n) (map (aclabel_of c) cs)) = firstn n (map (aclabel_of c) cs))
+    by (rewrite firstn_firstn, Nat.min_l by lia; reflexivity).
+  exact (eq_sym H).
+Qed.
+
+(* Internal call: made at one of our own call sites. *)
+Lemma acalls_of_internal c l cs :
+  acalls_of c ((c, l) :: cs) = push l (acalls_of c cs).
+Proof.
+  rewrite acalls_of_cons.
+  change (aclabel_of c (c, l)) with (if Nat.eq_dec c c then l else l_top_elim).
+  destruct (Nat.eq_dec c c) as [_ | Hneq]; [reflexivity | exfalso; apply Hneq; reflexivity].
+Qed.
+
+(* Foreign call: made at a call site of another unit. *)
+Lemma acalls_of_external c c' l cs :
+  c' <> c ->
+  acalls_of c ((c', l) :: cs) = push l_top_elim (acalls_of c cs).
+Proof.
+  intros Hneq.
+  rewrite acalls_of_cons.
+  change (aclabel_of c (c', l)) with (if Nat.eq_dec c' c then l else l_top_elim).
+  destruct (Nat.eq_dec c' c); [contradiction | reflexivity].
+Qed.
 
 (* Free variables of a closure: those of its body, minus its parameters and
    its own name. *)
@@ -671,6 +713,23 @@ Proof.
   split; intros Hc; [contradiction | reflexivity].
 Qed.
 
+Lemma aclabel_of_approx c cl :
+  approx_clabel c (aclabel_of c cl) cl.
+Proof.
+  destruct cl as [c' l]; unfold aclabel_of, approx_clabel; cbn.
+  destruct (Nat.eq_dec c' c); split; intros; congruence.
+Qed.
+
+(* `acalls_of` computes the abstract call string that `approx_calls` relates. *)
+Lemma approx_calls_acalls_of c cs :
+  approx_calls c (acalls_of c cs) cs.
+Proof.
+  unfold approx_calls, acalls_of, truncate.
+  apply Forall2_firstn.
+  induction cs as [| cl cs IH]; simpl; constructor; auto.
+  apply aclabel_of_approx.
+Qed.
+
 (* Invariants for Escaped Values *)
 (* A value held by the unit wearing `c` that belongs to another unit must have
    escaped from that unit with its own allocation site: an `AVtop` in
@@ -963,93 +1022,111 @@ Definition cboundary_res (r : cres) : Prop :=
    `CbstepF_Step`, which covers every interaction produced underneath it,
    including the call edge added by `Cbstep_app_*` and `Cbstep_letapp_*`. *)
 Inductive cbstep (A : analysis_result) (c : color) (bdr : bool) (δ : calls) (β : abenv) (ρ : cenv)
-  : exp -> fuel -> calls -> avals -> cres -> interactions -> Prop :=
+  : exp -> fuel -> avals -> cres -> interactions -> Prop :=
 | Cbstep_ret :
   forall {x v Rs},
     M.get x ρ = Some v ->
-    cbstep A c bdr δ β ρ (Eret x) 0 [] Rs (CRes v) (Empty_set _)
+    cbstep A c bdr δ β ρ (Eret x) 0 Rs (CRes v) (Empty_set _)
 
+(* The closure closes over `β`, and `f` is bound in the current context. *)
 | Cbstep_fun :
-  forall {f l xs e k i Rs r I δ'},
-    cbstep_fuel A c bdr δ (abenv_set f (acalls_of c δ) β) (M.set f (CTag A c l (CVfun f ρ β xs e)) ρ) k i δ' Rs r I ->
-    (AVfun l f β xs e \in aeval A β f) ->
-    cbstep A c bdr δ β ρ (Efun f l xs e k) i δ' Rs r I
-
-           (*
+  forall {f l xs e k i Rs r I},
+    cbstep_fuel A c bdr δ (abenv_set f (acalls_of c δ) β) (M.set f (CTag A c l (CVfun f ρ β xs e)) ρ) k i Rs r I ->
+    (* The abstract value is in `A` based on the current abstract call string `(acalls_of c δ)` *)
+    (* Same as: (AVfun l f β xs e \in aeval A (abenv_set f (acalls_of c δ) β) f) -> *)
+    (AVfun l f β xs e \in ai_env A (f, acalls_of c δ)) ->
+    cbstep A c bdr δ β ρ (Efun f l xs e k) i Rs r I
 
 (* Foreign call: dynamic counterpart of the unknown-callee branch of `Acheck_app`,
    validated from both sides.  The caller (`A`) sees an unknown value being
    eliminated and its arguments escaping; the callee (`A'`) sees one of its
-   escaped closures being eliminated by the context. *)
+   escaped closures being eliminated by the context.  The call string is
+   extended with the caller's site `(c, l)`, which the callee abstracts as
+   `l_top_elim`: its entry context is
+   `push l_top_elim (acalls_of c' δ) = acalls_of c' ((c, l) :: δ)`
+   (`acalls_of_external`). *)
 | Cbstep_app_External :
-  forall Rs {A' f f' c' l l' xs ρ' xs' e vs ρ'' i r I},
-    M.get f ρ = Some (CTag A' c' l' (CVfun f' ρ' xs' e)) ->
+  forall Rs {A' f f' c' l l' xs ρ' β' xs' e vs ρ'' i r I},
+    M.get f ρ = Some (CTag A' c' l' (CVfun f' ρ' β' xs' e)) ->
     c <> c' ->
 
     (* callee side: the closure has escaped and is eliminated by the context
        (the caller side, `(l_top_intro, l)`, is checked by `CbstepF_Step`) *)
-    (AVfun l' f' xs' e \in ai_esc A') ->
+    (AVfun l' f' β' xs' e \in ai_esc A') ->
     ((l', l_top_elim) \in ai_int A') ->
 
     (* caller side: the arguments escape to the callee's unit *)
     get_list xs ρ = Some vs ->
     Forall (cescaped c') vs ->
 
-    (* callee side: the (unknown) arguments flow to the parameters *)
-    set_lists xs' vs (M.set f' (CTag A' c' l' (CVfun f' ρ' xs' e)) ρ') = Some ρ'' ->
-    approx_env (occurs_free e) (ai_env A') ρ'' ->
+    (* callee side: the (unknown) arguments flow to the parameters, bound
+       together with the closure itself in the entry context *)
+    set_lists xs' vs (M.set f' (CTag A' c' l' (CVfun f' ρ' β' xs' e)) ρ') = Some ρ'' ->
+    approx_env (occurs_free e) (ai_env A')
+      (abenv_set_list xs' (push l_top_elim (acalls_of c' δ))
+         (abenv_set f' (push l_top_elim (acalls_of c' δ)) β'))
+      ρ'' ->
 
-    (* the body is validated against the callee's own analysis result and
-       returns into `ai_ret A' l'` *)
-    cbstep_fuel A' c' true ρ'' e i (ai_ret A' l') r I ->
+    (* the body is validated against the callee's own analysis result, in the
+       entry context, and returns into `ai_ret A' (l', entry context)` *)
+    cbstep_fuel A' c' true ((c, l) :: δ)
+      (abenv_set_list xs' (push l_top_elim (acalls_of c' δ))
+         (abenv_set f' (push l_top_elim (acalls_of c' δ)) β'))
+      ρ'' e i (ai_ret A' (l', push l_top_elim (acalls_of c' δ))) r I ->
 
-    cbstep A c bdr ρ (Eapp f l xs) i Rs r (((c', l'), (c, l)) |: I)
-
-            *)
+    cbstep A c bdr δ β ρ (Eapp f l xs) i Rs r (((c', l'), (c, l)) |: I)
 
 (* Internal call: dynamic counterpart of the known-callee branch of
    `Acheck_app`.  The callee wears the caller's color, so it belongs to the
-   same unit and is validated against the same analysis result `A`. *)
+   same unit and is validated against the same analysis result `A`.  The body
+   is entered in the context `push l (acalls_of c δ) = acalls_of c ((c, l) :: δ)`
+   (`acalls_of_internal`), as in `Acheck_app`. *)
 | Cbstep_app_Internal :
-  forall Rs { f f' l l' xs ρ' β' xs' e vs ρ'' i r I δ''},
+  forall Rs { f f' l l' xs ρ' β' xs' e vs ρ'' i r I},
     M.get f ρ = Some (CTag A c l' (CVfun f' ρ' β' xs' e)) ->
 
-    (* the arguments flow to the parameters *)
+    (* the arguments flow to the parameters, bound in the entry context *)
     get_list xs ρ = Some vs ->
-    Forall2 (fun x v => cbinding c A x (acalls_of c δ) v) xs' vs ->
+    Forall2 (fun x' v => cbinding c A x' (push l (acalls_of c δ)) v) xs' vs ->
     set_lists xs' vs (M.set f' (CTag A c l' (CVfun f' ρ' β' xs' e)) ρ') = Some ρ'' ->
 
-    let δ' := ((c, l) :: δ) in
-    let β'' := (abenv_set_list xs (acalls_of c δ') β') in
+    (* the body returns into `ai_ret A (l', push l (acalls_of c δ))`, keyed by
+       the context the body is *entered* in, not the caller's context `δ`:
+       - the body is checked statically once per entry context `δ'`, against
+         `ai_ret A (l', δ')` (`Acheck_fun`), and the caller reads its result
+         from `ai_ret A (l', push l δ)` (`Acheck_app`), so the dynamic check
+         has to use the same key;
+       - keying by the caller's context `δ` would merge the returns of every
+         call to `l'` made from `δ`, whatever site it is made at, which is
+         exactly the precision call strings are meant to keep apart;
+       - the context at the point of return carries nothing new: in a
+         big-step semantics, control is back in the caller at `δ`. *)
+    cbstep_fuel A c false ((c, l) :: δ)
+      (abenv_set_list xs' (push l (acalls_of c δ))
+         (abenv_set f' (push l (acalls_of c δ)) β'))
+      ρ'' e i (ai_ret A (l', push l (acalls_of c δ))) r I ->
 
-    (* the body returns into `ai_ret A l'` *)
-    cbstep_fuel A c false δ' β'' ρ'' e i δ'' (ai_ret A (l', acalls_of c δ'')) r I ->
-
-    cbstep A c bdr δ β ρ (Eapp f l xs) i δ'' Rs r (((c, l'), (c, l)) |: I)
+    cbstep A c bdr δ β ρ (Eapp f l xs) i Rs r (((c, l'), (c, l)) |: I)
 
 with cbstep_fuel (A : analysis_result) (c : color) (bdr : bool) (δ : calls) (β : abenv) (ρ : cenv)
-  : exp -> fuel -> calls -> avals -> cres -> interactions -> Prop :=
+  : exp -> fuel -> avals -> cres -> interactions -> Prop :=
 | CbstepF_OOT :
   forall {e Rs},
-    (* Approximations of inputs are valid *)
-    approx_env (occurs_free e) (ai_env A) β ρ ->
-
-    cbstep_fuel A c bdr δ β ρ e 0 [] Rs COOT (Empty_set _)
+    cbstep_fuel A c bdr δ β ρ e 0 Rs COOT (Empty_set _)
 
 | CbstepF_Step :
-  forall {e i Rs r I δ'},
-    cbstep A c bdr δ β ρ e i δ' Rs r I ->
+  forall {e i Rs r I},
+    cbstep A c bdr δ β ρ e i Rs r I ->
 
-    (* Approximations of inputs and outputs are valid *)
-    approx_env (occurs_free e) (ai_env A) β ρ ->
+    (* Approximations of outputs are valid if the input environments are properly approximated. *)
     approx_res Rs r ->
     approx_int c (ai_int A) I ->
 
-    (* Coloring invariants are valid *)
+    (* Coloring invariants are valid if the input environments are valid. *)
     cresult c A Rs r ->
     (if bdr then cboundary_res r else True) ->
 
-    cbstep_fuel A c bdr δ β ρ e (S i) δ' Rs r I.
+    cbstep_fuel A c bdr δ β ρ e (S i) Rs r I.
 
 Hint Constructors cbstep : core.
 Hint Constructors cbstep_fuel : core.
